@@ -1,20 +1,24 @@
+let allAccounts = [];
+let balanceChart = null;
+
 async function fetchAccounts() {
     const app = document.getElementById('app');
     const typeFilter = document.getElementById('type-filter').value;
-    
+
     app.innerHTML = '<div class="loading">Loading accounts...</div>';
-    
+
     try {
         let url = '/api/accounts';
         if (typeFilter !== 'all') {
             url += `?type=${typeFilter}`;
         }
-        
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Error: ${response.status} ${response.statusText}`);
         }
         const accounts = await response.json();
+        allAccounts = accounts; // Store globally for chart calculation
 
         if (accounts.length === 0) {
             app.innerHTML = '<div class="loading">No accounts found for this filter.</div>';
@@ -48,13 +52,25 @@ async function fetchAccounts() {
 async function fetchChartData() {
     const chartContainer = document.querySelector('.chart-container');
     const chartError = document.getElementById('chart-error');
-    
+
     // Clear previous errors
     chartError.innerHTML = '';
-    
+
+    // Ensure we have accounts for the anchor balances
+    if (allAccounts.length === 0) {
+        try {
+            const response = await fetch('/api/accounts');
+            if (response.ok) {
+                allAccounts = await response.json();
+            }
+        } catch (e) {
+            console.warn('Failed to pre-fetch accounts for chart anchors:', e);
+        }
+    }
+
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
     const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
-    
+
     try {
         let url = '/api/accounts/balance-history';
         if (selectedIds.length > 0) {
@@ -62,13 +78,13 @@ async function fetchChartData() {
             selectedIds.forEach(id => params.append('accounts[]', id));
             url += `?${params.toString()}`;
         }
-        
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Error: ${response.status} ${response.statusText}`);
         }
         const history = await response.json();
-        
+
         if (!history || history.length === 0) {
             // If we selected specific accounts and got nothing, show error
             if (selectedIds.length > 0) {
@@ -87,16 +103,14 @@ async function fetchChartData() {
     }
 }
 
-let balanceChart = null;
-
 function renderChart(history) {
     const ctx = document.getElementById('balanceChart').getContext('2d');
-    
+
     // Destroy existing chart to avoid memory leaks
     if (balanceChart) {
         balanceChart.destroy();
     }
-    
+
     // Extract labels from the first dataset that has entries
     let labels = [];
     const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
@@ -108,12 +122,19 @@ function renderChart(history) {
         }
     }
 
-    const datasets = history.map((ds, index) => {
-        let data = [];
+    if (labels.length === 0) return;
+
+    // Aggregate all datasets into a single data series
+    const totalFlowData = new Array(labels.length).fill(0);
+    let totalAnchorBalance = 0;
+    const includedAccounts = new Set();
+
+    history.forEach(ds => {
+        let flowData = [];
         if (Array.isArray(ds.entries)) {
-            data = ds.entries.map(e => parseFloat(e.value || 0));
+            flowData = ds.entries.map(e => parseFloat(e.value || 0));
         } else {
-            data = Object.values(ds.entries).map(v => {
+            flowData = Object.values(ds.entries).map(v => {
                 if (typeof v === 'object' && v !== null) {
                     return parseFloat(v.value || 0);
                 }
@@ -121,28 +142,88 @@ function renderChart(history) {
             });
         }
 
-        const colors = [
-            '#3498db', '#2ecc71', '#e74c3c', '#f1c40f', '#9b59b6', 
-            '#1abc9c', '#e67e22', '#34495e', '#7f8c8d', '#d35400'
-        ];
-        const color = colors[index % colors.length];
+        // Sum the data into the aggregated dataset
+        flowData.forEach((val, i) => {
+            if (i < totalFlowData.length) {
+                totalFlowData[i] += val;
+            }
+        });
 
-        return {
-            label: ds.label,
-            data: data,
-            borderColor: color,
-            backgroundColor: color + '20', // Add transparency
-            borderWidth: 2,
-            tension: 0.1,
-            fill: false
-        };
+        // Find matching account for this dataset to include in anchor balance
+        // Normalize label to match account name
+        let baseLabel = ds.label
+            .replace(/ - In$/, '')
+            .replace(/ - Out$/, '')
+            .replace(/ \(In\)$/, '')
+            .replace(/ \(Out\)$/, '')
+            .replace(/ Income$/, '')
+            .replace(/ Expense$/, '')
+            .replace(/ Earned$/, '')
+            .replace(/ Spent$/, '');
+
+        const account = allAccounts.find(a => a.name === baseLabel || a.name === ds.label);
+        if (account && !includedAccounts.has(account.id)) {
+            totalAnchorBalance += parseFloat(account.balance);
+            includedAccounts.add(account.id);
+        }
     });
+
+    // If no accounts matched (maybe it's a "Net Worth" or "Assets" pre-selection),
+    // and we have selected accounts in the UI, use those.
+    if (includedAccounts.size === 0) {
+        const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
+        if (selectedCheckboxes.length > 0) {
+            selectedCheckboxes.forEach(cb => {
+                const account = allAccounts.find(a => a.id === cb.value);
+                if (account) {
+                    totalAnchorBalance += parseFloat(account.balance);
+                }
+            });
+        } else {
+            // Fallback to all asset accounts if nothing selected
+            allAccounts.forEach(account => {
+                const type = account.account_type.toLowerCase();
+                if (['asset', 'checking', 'savings', 'cash', 'default-asset'].includes(type)) {
+                    totalAnchorBalance += parseFloat(account.balance);
+                }
+            });
+        }
+    }
+
+    // Determine if the aggregated data is absolute balance or flow
+    const lastTotalValue = totalFlowData[totalFlowData.length - 1];
+    const isAbsolute = Math.abs(lastTotalValue - totalAnchorBalance) < 1.0;
+
+    let absoluteData;
+    if (isAbsolute) {
+        absoluteData = totalFlowData;
+    } else {
+        // Calculate absolute running balance backwards from the anchor balance
+        absoluteData = new Array(totalFlowData.length);
+        let current = totalAnchorBalance;
+        for (let i = totalFlowData.length - 1; i >= 0; i--) {
+            absoluteData[i] = current;
+            current -= totalFlowData[i];
+        }
+    }
+
+    const color = '#3498db';
+
+    const chartDatasets = [{
+        label: 'Total Balance',
+        data: absoluteData,
+        borderColor: color,
+        backgroundColor: color + '20',
+        borderWidth: 2,
+        tension: 0.1,
+        fill: true
+    }];
 
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: datasets
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -182,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchAccountsBtn.addEventListener('click', fetchAccounts);
     updateChartBtn.addEventListener('click', fetchChartData);
-    
+
     // Initial chart load
     fetchChartData();
 });
