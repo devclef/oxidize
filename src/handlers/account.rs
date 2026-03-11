@@ -27,10 +27,20 @@ pub async fn get_balance_history(
     let query_string = req.query_string();
     let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
 
-    let account_ids: Vec<String> = params.into_iter()
-        .filter(|(k, _)| k == "accounts[]")
-        .map(|(_, v)| v)
-        .collect();
+    let mut account_ids: Vec<String> = Vec::new();
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut period: Option<String> = None;
+
+    for (k, v) in params {
+        match k.as_str() {
+            "accounts[]" => account_ids.push(v),
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "period" => period = Some(v),
+            _ => {}
+        }
+    }
 
     let ids = if account_ids.is_empty() {
         None
@@ -38,7 +48,7 @@ pub async fn get_balance_history(
         Some(account_ids)
     };
 
-    match client.get_balance_history(ids).await {
+    match client.get_balance_history(ids, start, end, period).await {
         Ok(history) => HttpResponse::Ok().json(history),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }

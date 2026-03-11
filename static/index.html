@@ -10,8 +10,8 @@
     <h1>Firefly III Account Balances</h1>
     <div class="controls">
         <label for="type-filter">Filter by account type:</label>
-        <select id="type-filter">
-            <option value="all">All</option>
+        <select id="type-filter" multiple size="6">
+            <option value="all" selected>All</option>
             <option value="asset">Asset</option>
             <option value="cash">Cash</option>
             <option value="expense">Expense</option>
@@ -24,10 +24,36 @@
         <div class="loading">Loading accounts...</div>
     </div>
 
+    <div class="saved-lists-container">
+        <h3>Saved Account Lists</h3>
+        <div class="saved-lists-controls">
+            <input type="text" id="list-name-input" placeholder="List name">
+            <button id="save-list-btn">Save Selection</button>
+            <select id="saved-lists-select">
+                <option value="">-- Select saved list --</option>
+            </select>
+            <button id="load-list-btn">Load</button>
+            <button id="delete-list-btn">Delete</button>
+        </div>
+    </div>
+
     <div class="chart-container">
         <div class="chart-header">
-            <h2>Account Balance History (Last 30 Days)</h2>
-            <button id="update-chart-btn">Update Graph</button>
+            <h2>Account Balance History</h2>
+            <div class="chart-controls">
+                <label for="start-date">Start:</label>
+                <input type="date" id="start-date">
+                <label for="end-date">End:</label>
+                <input type="date" id="end-date">
+                <label for="interval-select">Interval:</label>
+                <select id="interval-select">
+                    <option value="auto">Auto</option>
+                    <option value="1D">Day</option>
+                    <option value="1W">Week</option>
+                    <option value="1M">Month</option>
+                </select>
+                <button id="update-chart-btn">Update Graph</button>
+            </div>
         </div>
         <div id="chart-error"></div>
         <div class="chart-wrapper">

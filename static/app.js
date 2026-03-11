@@ -1,32 +1,42 @@
 let allAccounts = [];
 let balanceChart = null;
+const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 
 async function fetchAccounts() {
     const app = document.getElementById('app');
-    const typeFilter = document.getElementById('type-filter').value;
+    const typeFilter = document.getElementById('type-filter');
+    const selectedTypes = Array.from(typeFilter.selectedOptions).map(opt => opt.value);
 
     app.innerHTML = '<div class="loading">Loading accounts...</div>';
 
     try {
-        let url = '/api/accounts';
-        if (typeFilter !== 'all') {
-            url += `?type=${typeFilter}`;
+        // If 'all' is selected or nothing is selected, fetch all accounts
+        if (selectedTypes.length === 0 || selectedTypes.includes('all')) {
+            const response = await fetch('/api/accounts');
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            allAccounts = await response.json();
+        } else {
+            // Fetch accounts for each selected type and combine results
+            allAccounts = [];
+            for (const type of selectedTypes) {
+                const response = await fetch(`/api/accounts?type=${type}`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status} ${response.statusText}`);
+                }
+                const accounts = await response.json();
+                allAccounts = allAccounts.concat(accounts);
+            }
         }
 
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Error: ${response.status} ${response.statusText}`);
-        }
-        const accounts = await response.json();
-        allAccounts = accounts; // Store globally for chart calculation
-
-        if (accounts.length === 0) {
-            app.innerHTML = '<div class="loading">No accounts found for this filter.</div>';
+        if (allAccounts.length === 0) {
+            app.innerHTML = '<div class="loading">No accounts found for selected filters.</div>';
             return;
         }
 
         let html = '<div class="account-list">';
-        accounts.forEach(account => {
+        allAccounts.forEach(account => {
             const isNegative = parseFloat(account.balance) < 0;
             html += `
                 <div class="account-card">
@@ -71,11 +81,24 @@ async function fetchChartData() {
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
     const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
+    // Get date range and interval
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    const interval = document.getElementById('interval-select').value;
+
     try {
-        let url = '/api/accounts/balance-history';
+        const params = new URLSearchParams();
+
         if (selectedIds.length > 0) {
-            const params = new URLSearchParams();
             selectedIds.forEach(id => params.append('accounts[]', id));
+        }
+
+        if (startDate) params.append('start', startDate);
+        if (endDate) params.append('end', endDate);
+        if (interval && interval !== 'auto') params.append('period', interval);
+
+        let url = '/api/accounts/balance-history';
+        if (params.toString()) {
             url += `?${params.toString()}`;
         }
 
@@ -253,16 +276,128 @@ function renderChart(history) {
     });
 }
 
+function getSavedLists() {
+    const saved = localStorage.getItem(SAVED_LISTS_KEY);
+    return saved ? JSON.parse(saved) : {};
+}
+
+function saveListToStorage(name, accountIds) {
+    const lists = getSavedLists();
+    lists[name] = accountIds;
+    localStorage.setItem(SAVED_LISTS_KEY, JSON.stringify(lists));
+}
+
+function deleteListFromStorage(name) {
+    const lists = getSavedLists();
+    delete lists[name];
+    localStorage.setItem(SAVED_LISTS_KEY, JSON.stringify(lists));
+}
+
+function updateSavedListsDropdown() {
+    const select = document.getElementById('saved-lists-select');
+    const lists = getSavedLists();
+
+    select.innerHTML = '<option value="">-- Select saved list --</option>';
+    Object.keys(lists).forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+    });
+}
+
+function saveCurrentSelection() {
+    const listName = document.getElementById('list-name-input').value.trim();
+    if (!listName) {
+        alert('Please enter a name for the list');
+        return;
+    }
+
+    const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
+    const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    if (selectedIds.length === 0) {
+        alert('Please select at least one account');
+        return;
+    }
+
+    saveListToStorage(listName, selectedIds);
+    updateSavedListsDropdown();
+    document.getElementById('list-name-input').value = '';
+    alert(`Saved list "${listName}" with ${selectedIds.length} accounts`);
+}
+
+function loadSavedList() {
+    const select = document.getElementById('saved-lists-select');
+    const listName = select.value;
+
+    if (!listName) {
+        alert('Please select a list to load');
+        return;
+    }
+
+    const lists = getSavedLists();
+    const accountIds = lists[listName];
+
+    if (!accountIds) {
+        alert('List not found');
+        return;
+    }
+
+    // Uncheck all checkboxes first
+    document.querySelectorAll('.account-select').forEach(cb => cb.checked = false);
+
+    // Check the saved accounts
+    accountIds.forEach(id => {
+        const checkbox = document.querySelector(`.account-select[value="${id}"]`);
+        if (checkbox) {
+            checkbox.checked = true;
+        }
+    });
+}
+
+function deleteSavedList() {
+    const select = document.getElementById('saved-lists-select');
+    const listName = select.value;
+
+    if (!listName) {
+        alert('Please select a list to delete');
+        return;
+    }
+
+    if (confirm(`Delete list "${listName}"?`)) {
+        deleteListFromStorage(listName);
+        updateSavedListsDropdown();
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     const fetchAccountsBtn = document.getElementById('fetch-accounts-btn');
     const updateChartBtn = document.getElementById('update-chart-btn');
+    const saveListBtn = document.getElementById('save-list-btn');
+    const loadListBtn = document.getElementById('load-list-btn');
+    const deleteListBtn = document.getElementById('delete-list-btn');
     const app = document.getElementById('app');
+
+    // Set default dates (last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    document.getElementById('end-date').valueAsDate = endDate;
+    document.getElementById('start-date').valueAsDate = startDate;
 
     app.innerHTML = '<div class="loading">Select a type and click "Fetch Accounts" to begin.</div>';
 
     fetchAccountsBtn.addEventListener('click', fetchAccounts);
     updateChartBtn.addEventListener('click', fetchChartData);
+    saveListBtn.addEventListener('click', saveCurrentSelection);
+    loadListBtn.addEventListener('click', loadSavedList);
+    deleteListBtn.addEventListener('click', deleteSavedList);
+
+    // Load saved lists dropdown
+    updateSavedListsDropdown();
 
     // Initial chart load
     fetchChartData();

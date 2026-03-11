@@ -70,7 +70,13 @@ impl FireflyClient {
         Ok(simple_accounts)
     }
 
-    pub async fn get_balance_history(&self, account_ids: Option<Vec<String>>) -> Result<ChartLine, String> {
+    pub async fn get_balance_history(
+        &self,
+        account_ids: Option<Vec<String>>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+    ) -> Result<ChartLine, String> {
         let mut headers = HeaderMap::new();
         if !self.config.firefly_token.is_empty() {
             headers.insert(
@@ -80,15 +86,18 @@ impl FireflyClient {
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
 
-        let end_date = Utc::now();
-        let start_date = end_date - Duration::days(30);
+        // Use provided dates or default to last 30 days
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+        });
 
         let url = format!("{}/v1/chart/balance/balance", self.config.firefly_url);
 
         let mut query_params = vec![
-            ("start".to_string(), start_date.format("%Y-%m-%d").to_string()),
-            ("end".to_string(), end_date.format("%Y-%m-%d").to_string()),
-            ("period".to_string(), "1D".to_string()),
+            ("start".to_string(), start),
+            ("end".to_string(), end),
+            ("period".to_string(), period.unwrap_or_else(|| "1D".to_string())),
         ];
 
         if let Some(ids) = account_ids {
