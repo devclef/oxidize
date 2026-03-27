@@ -324,13 +324,27 @@ function saveCurrentSelection() {
         return;
     }
 
-    saveListToStorage(listName, selectedIds);
+    // Also save account details for reference
+    const selectedAccounts = selectedIds.map(id => {
+        const account = allAccounts.find(a => a.id === id);
+        return {
+            id: id,
+            name: account ? account.name : 'Unknown',
+            type: account ? account.account_type : 'Unknown'
+        };
+    });
+
+    saveListToStorage(listName, {
+        ids: selectedIds,
+        accounts: selectedAccounts,
+        savedAt: new Date().toISOString()
+    });
     updateSavedListsDropdown();
     document.getElementById('list-name-input').value = '';
     alert(`Saved list "${listName}" with ${selectedIds.length} accounts`);
 }
 
-function loadSavedList() {
+async function loadSavedList() {
     const select = document.getElementById('saved-lists-select');
     const listName = select.value;
 
@@ -340,23 +354,39 @@ function loadSavedList() {
     }
 
     const lists = getSavedLists();
-    const accountIds = lists[listName];
+    const listData = lists[listName];
 
-    if (!accountIds) {
+    if (!listData) {
         alert('List not found');
         return;
+    }
+
+    // Handle both old format (array of IDs) and new format (object with ids)
+    const accountIds = Array.isArray(listData) ? listData : listData.ids;
+
+    // Fetch all accounts if we don't have any loaded
+    if (allAccounts.length === 0) {
+        await fetchAccounts();
     }
 
     // Uncheck all checkboxes first
     document.querySelectorAll('.account-select').forEach(cb => cb.checked = false);
 
     // Check the saved accounts
+    let foundCount = 0;
     accountIds.forEach(id => {
         const checkbox = document.querySelector(`.account-select[value="${id}"]`);
         if (checkbox) {
             checkbox.checked = true;
+            foundCount++;
         }
     });
+
+    if (foundCount === 0) {
+        alert('None of the accounts in this list were found. You may need to fetch accounts first.');
+    } else if (foundCount < accountIds.length) {
+        alert(`Loaded ${foundCount} of ${accountIds.length} accounts from the list.`);
+    }
 }
 
 function deleteSavedList() {
