@@ -1,5 +1,5 @@
 # Use a multi-stage build for a smaller final image
-FROM rust:1.77-slim-bookworm AS builder
+FROM rust:1.88-slim-bookworm AS builder
 
 # Set the working directory
 WORKDIR /app
