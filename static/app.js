@@ -103,7 +103,7 @@ async function fetchChartData() {
                 if (!account.account_type) return;
                 const type = account.account_type.toLowerCase();
                 // Include broad range of asset/balance-based accounts
-                if (type.includes('asset') || type.includes('checking') || type.includes('savings') || 
+                if (type.includes('asset') || type.includes('checking') || type.includes('savings') ||
                     type.includes('cash') || type.includes('credit') || type.includes('investment') ||
                     type.includes('default-asset') || type.includes('bank')) {
                     params.append('accounts[]', account.id);
@@ -111,7 +111,7 @@ async function fetchChartData() {
                 }
             });
             console.log(`Added ${addedCount} accounts to split mode request automatically`);
-            
+
             // If still nothing added, just add all of them if there aren't too many
             if (addedCount === 0 && allAccounts.length > 0) {
                 console.warn('No asset accounts found for split mode default, adding all accounts instead');
@@ -301,7 +301,7 @@ function renderChart(history) {
             allAccounts.forEach(account => {
                 if (!account.account_type) return;
                 const type = account.account_type.toLowerCase();
-                if (type.includes('asset') || type.includes('checking') || type.includes('savings') || 
+                if (type.includes('asset') || type.includes('checking') || type.includes('savings') ||
                     type.includes('cash') || type.includes('credit') || type.includes('investment') ||
                     type.includes('default-asset') || type.includes('bank')) {
                     accountInfo.push({
@@ -312,7 +312,7 @@ function renderChart(history) {
                     addedCount++;
                 }
             });
-            
+
             // If still nothing, just take all of them
             if (addedCount === 0 && allAccounts.length > 0) {
                 console.warn('Fallback: No asset accounts found in allAccounts, using everything');
@@ -379,10 +379,10 @@ function renderChart(history) {
                     fill: false
                 };
             });
-            
+
             // Set visibility to all true
             currentDatasets.forEach((_, i) => datasetVisibility[i] = true);
-            
+
             // Update account info to match the aggregate datasets for the legend
             uniqueAccountInfo = history.map(ds => ({
                 id: ds.label,
@@ -441,10 +441,19 @@ function renderChart(history) {
                 }
                 console.log(`Dataset "${dataset.label}" flowData:`, datasetFlowData);
 
-                // Determine if the data is absolute balance or flow
+                // Determine if the data is absolute balance or flow.
+                // For account-based datasets in Firefly III, they are almost always absolute balances.
+                // We use a generous threshold (50% of the value) to account for transactions that
+                // occurred since the last chart data point was calculated or for period mismatches.
                 const lastValue = datasetFlowData[datasetFlowData.length - 1];
-                const isAbsolute = Math.abs(lastValue - parseFloat(info.balance)) < 1.0;
-                console.log(`Account ${info.name}: lastValue=${lastValue}, balance=${info.balance}, isAbsolute=${isAbsolute}`);
+                const anchorBalance = parseFloat(info.balance);
+                
+                // If the dataset label is "earned" or "spent", it's always flow.
+                // Otherwise, for account-named datasets, we check if it's "close enough" to the anchor balance.
+                const isFlowLabel = info.name === 'earned' || info.name === 'spent';
+                const isAbsolute = !isFlowLabel && (Math.abs(lastValue - anchorBalance) < (Math.abs(lastValue) * 0.5 + 50.0));
+
+                console.log(`Account ${info.name}: lastValue=${lastValue}, anchorBalance=${anchorBalance}, isAbsolute=${isAbsolute}`);
 
                 let absoluteData;
                 if (isAbsolute) {
@@ -538,9 +547,15 @@ function renderChart(history) {
             totalAnchorBalance += parseFloat(info.balance);
         });
 
-        // Determine if the aggregated data is absolute balance or flow
+        // Determine if the aggregated data is absolute balance or flow.
+        // Similar to the split mode, we use a generous threshold for detection.
         const lastTotalValue = totalFlowData[totalFlowData.length - 1];
-        const isAbsolute = Math.abs(lastTotalValue - totalAnchorBalance) < 1.0;
+        
+        // Combined view usually sums account balances, so it should be absolute.
+        // We only treat it as flow if the values are very small compared to the anchor balance.
+        const isAbsolute = Math.abs(lastTotalValue - totalAnchorBalance) < (Math.abs(lastTotalValue) * 0.5 + 50.0);
+
+        console.log(`Combined Mode: lastTotalValue=${lastTotalValue}, totalAnchorBalance=${totalAnchorBalance}, isAbsolute=${isAbsolute}`);
 
         let absoluteData;
         if (isAbsolute) {
