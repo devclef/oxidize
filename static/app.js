@@ -65,6 +65,7 @@ async function fetchAccounts() {
 async function fetchChartData() {
     const chartContainer = document.querySelector('.chart-container');
     const chartError = document.getElementById('chart-error');
+    const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
     // Clear previous errors
     chartError.innerHTML = '';
@@ -94,6 +95,28 @@ async function fetchChartData() {
 
         if (selectedIds.length > 0) {
             selectedIds.forEach(id => params.append('accounts[]', id));
+        } else if (chartMode === 'split') {
+            // If in split mode and no accounts selected, include all relevant accounts
+            // so that the backend returns per-account data for the graph
+            let addedCount = 0;
+            allAccounts.forEach(account => {
+                if (!account.account_type) return;
+                const type = account.account_type.toLowerCase();
+                // Include broad range of asset/balance-based accounts
+                if (type.includes('asset') || type.includes('checking') || type.includes('savings') || 
+                    type.includes('cash') || type.includes('credit') || type.includes('investment') ||
+                    type.includes('default-asset') || type.includes('bank')) {
+                    params.append('accounts[]', account.id);
+                    addedCount++;
+                }
+            });
+            console.log(`Added ${addedCount} accounts to split mode request automatically`);
+            
+            // If still nothing added, just add all of them if there aren't too many
+            if (addedCount === 0 && allAccounts.length > 0) {
+                console.warn('No asset accounts found for split mode default, adding all accounts instead');
+                allAccounts.forEach(account => params.append('accounts[]', account.id));
+            }
         }
 
         if (startDate) params.append('start', startDate);
@@ -104,6 +127,10 @@ async function fetchChartData() {
         if (params.toString()) {
             url += `?${params.toString()}`;
         }
+
+        console.log('=== FETCHING CHART DATA ===');
+        console.log('URL:', url);
+        console.log('Selected account IDs:', selectedIds);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -116,11 +143,12 @@ async function fetchChartData() {
         console.log('Received history:', history);
 
         if (!history || history.length === 0) {
-            // If we selected specific accounts and got nothing, show error
-            if (selectedIds.length > 0) {
-                 chartError.innerHTML = '<div class="error">No data returned for selected accounts.</div>';
-            } else {
-                 chartContainer.style.display = 'none';
+            console.warn('No history data returned from API');
+            chartError.innerHTML = '<div class="info">No balance history data found for the current selection and date range.</div>';
+            chartContainer.style.display = 'block';
+            if (balanceChart) {
+                balanceChart.destroy();
+                balanceChart = null;
             }
             return;
         }
@@ -173,6 +201,7 @@ function renderChart(history) {
 
     if (labels.length === 0) {
         console.warn('No labels found in chart data');
+        chartError.innerHTML = '<div class="error">No data points found for the selected date range.</div>';
         return;
     }
 
@@ -184,6 +213,13 @@ function renderChart(history) {
     // For combined mode, build accountInfo from history data
     let accountInfo = [];
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
+
+    console.log('=== RENDERING CHART ===');
+    console.log('Mode:', chartMode);
+    console.log('All accounts available:', allAccounts.length);
+    if (allAccounts.length > 0) {
+        console.log('Sample account structure:', allAccounts[0]);
+    }
 
     if (chartMode === 'split' && selectedCheckboxes.length > 0) {
         // In split mode, use selected accounts directly
@@ -238,6 +274,8 @@ function renderChart(history) {
                 name: account.name,
                 balance: account.balance
             });
+        } else {
+            console.warn(`Could not find account matching label: ${ds.label} (base: ${baseLabel})`);
         }
     });
 
@@ -257,21 +295,38 @@ function renderChart(history) {
             });
         } else {
             // Fallback to all asset accounts if nothing selected
+            let addedCount = 0;
             allAccounts.forEach(account => {
+                if (!account.account_type) return;
                 const type = account.account_type.toLowerCase();
-                if (['asset', 'checking', 'savings', 'cash', 'default-asset'].includes(type)) {
+                if (type.includes('asset') || type.includes('checking') || type.includes('savings') || 
+                    type.includes('cash') || type.includes('credit') || type.includes('investment') ||
+                    type.includes('default-asset') || type.includes('bank')) {
                     accountInfo.push({
                         id: account.id,
                         name: account.name,
                         balance: account.balance
                     });
+                    addedCount++;
                 }
             });
+            
+            // If still nothing, just take all of them
+            if (addedCount === 0 && allAccounts.length > 0) {
+                console.warn('Fallback: No asset accounts found in allAccounts, using everything');
+                allAccounts.forEach(account => {
+                    accountInfo.push({
+                        id: account.id,
+                        name: account.name,
+                        balance: account.balance
+                    });
+                });
+            }
         }
     }
 
     // Deduplicate accountInfo (remove duplicates based on id)
-    const uniqueAccountInfo = [];
+    let uniqueAccountInfo = [];
     const seenIds = new Set();
     accountInfo.forEach(info => {
         if (!seenIds.has(info.id)) {
@@ -288,100 +343,132 @@ function renderChart(history) {
         datasetVisibility[index] = true;
     });
 
-   if (chartMode === 'split') {
+    if (chartMode === 'split') {
         console.log('=== SPLIT MODE DEBUG ===');
         console.log('Selected accounts:', uniqueAccountInfo.map(a => a.name));
         console.log('All datasets labels:', history.map(ds => ds.label));
         console.log('All accounts:', allAccounts.map(a => a.name));
 
-        // Filter out "earned"/"spent" aggregated data
         const filteredHistory = history.filter(ds => ds.label !== 'earned' && ds.label !== 'spent');
         console.log('Filtered datasets:', filteredHistory.map(ds => ds.label));
 
-        // In split mode, we need data for each selected account
-        // If we got "earned"/"spent" only, the API didn't return per-account data
-        if (filteredHistory.length === 0) {
-            // No per-account data available - hide chart
-            document.querySelector('.chart-container').style.display = 'none';
-            document.getElementById('split-legend').style.display = 'none';
-            document.getElementById('chart-error').innerHTML = `
-                <div class="error">
-                    <strong>Split mode not available</strong><br>
-                    No per-account balance history available for the selected accounts.
-                    Please use Combined mode.
-                </div>
-            `;
-            return;
-        }
+        if (filteredHistory.length === 0 && history.length > 0) {
+            console.warn('Split mode: No per-account data in history, showing aggregate instead');
+            const colors = generateColors(history.length);
+            currentDatasets = history.map((ds, index) => {
+                let flowData = [];
+                if (Array.isArray(ds.entries)) {
+                    flowData = ds.entries.map(e => parseFloat(e.value || e.amount || e.balance || 0));
+                } else {
+                    flowData = Object.values(ds.entries).map(v => {
+                        if (typeof v === 'object' && v !== null) {
+                            return parseFloat(v.value || v.amount || v.balance || 0);
+                        }
+                        return parseFloat(v);
+                    });
+                }
+                return {
+                    label: ds.label,
+                    data: flowData,
+                    borderColor: colors[index].border,
+                    backgroundColor: colors[index].background,
+                    borderWidth: 2,
+                    tension: 0.1,
+                    fill: false
+                };
+            });
+            
+            // Set visibility to all true
+            currentDatasets.forEach((_, i) => datasetVisibility[i] = true);
+            
+            // Update account info to match the aggregate datasets for the legend
+            uniqueAccountInfo = history.map(ds => ({
+                id: ds.label,
+                name: ds.label,
+                balance: '0'
+            }));
+        } else {
+            // Create individual datasets for each account
+            // The backend now returns per-account data with account name as the label
+            currentDatasets = uniqueAccountInfo.map((info, index) => {
+                // Find the dataset for this account by matching the account name
+                // Use normalization to handle potential (In)/(Out) suffixes
+                const dataset = filteredHistory.find(ds => {
+                    const normalizedDsLabel = ds.label
+                        .replace(/ - In$/, '')
+                        .replace(/ - Out$/, '')
+                        .replace(/ \(In\)$/, '')
+                        .replace(/ \(Out\)$/, '')
+                        .replace(/ Income$/, '')
+                        .replace(/ Expense$/, '')
+                        .replace(/ Earned$/, '')
+                        .replace(/ Spent$/, '');
+                    return normalizedDsLabel === info.name || ds.label === info.name;
+                });
 
-        // Create individual datasets for each account
-        // The backend now returns per-account data with account name as the label
-        currentDatasets = uniqueAccountInfo.map((info, index) => {
-            // Find the dataset for this account by matching the account name
-            const dataset = filteredHistory.find(ds => ds.label === info.name);
+                if (!dataset) {
+                    console.warn(`No data found for account: ${info.name}`);
+                    // No data for this account, return empty dataset
+                    return {
+                        label: info.name,
+                        data: new Array(labels.length).fill(null),
+                        borderColor: accountColors[index].border,
+                        backgroundColor: accountColors[index].background,
+                        borderWidth: 2,
+                        tension: 0.1,
+                        fill: false
+                    };
+                }
 
-            if (!dataset) {
-                console.warn(`No data found for account: ${info.name}`);
-                // No data for this account, return empty dataset
+                console.log(`Found dataset for: ${info.name}`);
+
+                // Get flow data from the dataset
+                let datasetFlowData = [];
+                if (Array.isArray(dataset.entries)) {
+                    datasetFlowData = dataset.entries.map(e => {
+                        const val = e.value || e.amount || e.balance || 0;
+                        return parseFloat(val);
+                    });
+                } else {
+                    datasetFlowData = Object.values(dataset.entries).map(v => {
+                        if (typeof v === 'object' && v !== null) {
+                            return parseFloat(v.value || v.amount || v.balance || 0);
+                        }
+                        return parseFloat(v);
+                    });
+                }
+                console.log(`Dataset "${dataset.label}" flowData:`, datasetFlowData);
+
+                // Determine if the data is absolute balance or flow
+                const lastValue = datasetFlowData[datasetFlowData.length - 1];
+                const isAbsolute = Math.abs(lastValue - parseFloat(info.balance)) < 1.0;
+                console.log(`Account ${info.name}: lastValue=${lastValue}, balance=${info.balance}, isAbsolute=${isAbsolute}`);
+
+                let absoluteData;
+                if (isAbsolute) {
+                    absoluteData = datasetFlowData;
+                } else {
+                    // Calculate absolute running balance backwards from the anchor balance
+                    absoluteData = new Array(datasetFlowData.length);
+                    let current = parseFloat(info.balance);
+                    for (let i = datasetFlowData.length - 1; i >= 0; i--) {
+                        absoluteData[i] = current;
+                        current -= datasetFlowData[i];
+                    }
+                }
+                console.log(`Account ${info.name}: absoluteData=`, absoluteData.slice(0, 5), '...');
+
                 return {
                     label: info.name,
-                    data: new Array(labels.length).fill(null),
+                    data: absoluteData,
                     borderColor: accountColors[index].border,
                     backgroundColor: accountColors[index].background,
                     borderWidth: 2,
                     tension: 0.1,
                     fill: false
                 };
-            }
-
-            console.log(`Found dataset for: ${info.name}`);
-
-            // Get flow data from the dataset
-            let datasetFlowData = [];
-            if (Array.isArray(dataset.entries)) {
-                datasetFlowData = dataset.entries.map(e => {
-                    const val = e.value || e.amount || e.balance || 0;
-                    return parseFloat(val);
-                });
-            } else {
-                datasetFlowData = Object.values(dataset.entries).map(v => {
-                    if (typeof v === 'object' && v !== null) {
-                        return parseFloat(v.value || v.amount || v.balance || 0);
-                    }
-                    return parseFloat(v);
-                });
-            }
-            console.log(`Dataset "${dataset.label}" flowData:`, datasetFlowData);
-
-            // Determine if the data is absolute balance or flow
-            const lastValue = datasetFlowData[datasetFlowData.length - 1];
-            const isAbsolute = Math.abs(lastValue - parseFloat(info.balance)) < 1.0;
-            console.log(`Account ${info.name}: lastValue=${lastValue}, balance=${info.balance}, isAbsolute=${isAbsolute}`);
-
-            let absoluteData;
-            if (isAbsolute) {
-                absoluteData = datasetFlowData;
-            } else {
-                // Calculate absolute running balance backwards from the anchor balance
-                absoluteData = new Array(datasetFlowData.length);
-                let current = parseFloat(info.balance);
-                for (let i = datasetFlowData.length - 1; i >= 0; i--) {
-                    absoluteData[i] = current;
-                    current -= datasetFlowData[i];
-                }
-            }
-            console.log(`Account ${info.name}: absoluteData=`, absoluteData.slice(0, 5), '...');
-
-            return {
-                label: info.name,
-                data: absoluteData,
-                borderColor: accountColors[index].border,
-                backgroundColor: accountColors[index].background,
-                borderWidth: 2,
-                tension: 0.1,
-                fill: false
-            };
-        });
+            });
+        }
 
         // Apply visibility settings to datasets
         currentDatasets.forEach((dataset, index) => {
@@ -753,6 +840,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle chart mode change
     document.querySelectorAll('input[name="chart-mode"]').forEach(radio => {
         radio.addEventListener('change', () => {
+            if (radio.value === 'split' && radio.checked) {
+                // When switching to split mode, if no accounts are selected,
+                // select all accounts by default to ensure the graph shows something
+                const selected = document.querySelectorAll('.account-select:checked');
+                if (selected.length === 0) {
+                    selectAllAccounts();
+                }
+            }
             fetchChartData();
         });
     });
@@ -761,5 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSavedListsDropdown();
 
     // Initial chart load
-    fetchChartData();
+    fetchAccounts().then(() => {
+        fetchChartData();
+    });
 });

@@ -32,13 +32,25 @@ pub async fn get_balance_history(
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
 
+    log::info!("Received balance history request with query: {}", query_string);
+
     for (k, v) in params {
+        log::info!("Query param received: {} = {}", k, v);
         match k.as_str() {
-            "accounts[]" => account_ids.push(v),
+            "accounts[]" | "accounts" => {
+                log::info!("Found account ID: {}", v);
+                account_ids.push(v);
+            },
             "start" => start = Some(v),
             "end" => end = Some(v),
             "period" => period = Some(v),
-            _ => {}
+            _ => {
+                // Check for URL-encoded variants of accounts[]
+                if k == "accounts%5B%5D" {
+                    log::info!("Found URL-encoded account ID: {}", v);
+                    account_ids.push(v);
+                }
+            }
         }
     }
 

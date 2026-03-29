@@ -119,7 +119,7 @@ impl FireflyClient {
             query_params.push(("preselected".to_string(), "assets".to_string()));
         }
 
-        let response = self.client.get(url)
+        let response = self.client.get(&url)
             .headers(headers)
             .query(&query_params)
             .send()
@@ -128,6 +128,9 @@ impl FireflyClient {
                 error!("Failed to send request: {}", e);
                 e.to_string()
             })?;
+
+        let full_url = response.url().to_string();
+        error!("Firefly API request URL: {}", full_url);
 
         if !response.status().is_success() {
             let status = response.status();
