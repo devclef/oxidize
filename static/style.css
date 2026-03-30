@@ -316,3 +316,166 @@ button:hover {
 .legend-item.hidden .legend-toggle-icon {
     transform: rotate(-90deg);
 }
+
+/* Navigation */
+.nav {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    background: #fff;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.nav a {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.nav a:hover {
+    background: #f0f7ff;
+}
+
+.nav a.active {
+    background: #3498db;
+    color: white;
+}
+
+/* Dashboard */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.widget {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #eee;
+}
+
+.widget-title {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 1rem;
+}
+
+.widget-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.widget-actions button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.widget-body {
+    padding: 1rem;
+    flex: 1;
+}
+
+.widget-chart {
+    position: relative;
+    height: 200px;
+    width: 100%;
+}
+
+.widget-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #eee;
+    font-size: 0.85rem;
+    color: #7f8c8d;
+}
+
+.widget-accounts {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.widget-account-tag {
+    background: #e8f4f8;
+    color: #2980b9;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+.widget-mode {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.widget-mode-badge {
+    background: #3498db;
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.empty-dashboard {
+    text-align: center;
+    padding: 3rem;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.empty-dashboard h3 {
+    color: #2c3e50;
+    margin-top: 0;
+}
+
+.empty-dashboard p {
+    color: #7f8c8d;
+}
+
+.empty-dashboard a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.empty-dashboard a:hover {
+    text-decoration: underline;
+}
+
+/* Save graph button */
+.save-graph-btn {
+    background-color: #27ae60;
+}
+
+.save-graph-btn:hover {
+    background-color: #219a52;
+}
+
+.chart-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}

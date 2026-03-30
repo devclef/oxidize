@@ -1,6 +1,7 @@
 let allAccounts = [];
 let balanceChart = null;
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
+const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 
 // Get config from server or use defaults
 const CONFIG = window.OXIDIZE_CONFIG || {
@@ -812,6 +813,66 @@ function deleteSavedList() {
     }
 }
 
+// Dashboard widget functions
+function getDashboardWidgets() {
+    const saved = localStorage.getItem(DASHBOARD_WIDGETS_KEY);
+    return saved ? JSON.parse(saved) : [];
+}
+
+function saveWidgetToStorage(widget) {
+    const widgets = getDashboardWidgets();
+    widget.id = widget.id || crypto.randomUUID();
+    widget.updatedAt = new Date().toISOString();
+    widgets.push(widget);
+    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+}
+
+function deleteWidgetFromStorage(id) {
+    const widgets = getDashboardWidgets().filter(w => w.id !== id);
+    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+}
+
+function updateWidgetInStorage(updatedWidget) {
+    const widgets = getDashboardWidgets().map(w =>
+        w.id === updatedWidget.id ? { ...updatedWidget, updatedAt: new Date().toISOString() } : w
+    );
+    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+}
+
+function saveGraphAsWidget() {
+    const widgetName = document.getElementById('widget-name-input').value.trim();
+    if (!widgetName) {
+        alert('Please enter a name for the widget');
+        return;
+    }
+
+    const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
+    const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    if (selectedIds.length === 0) {
+        alert('Please select at least one account');
+        return;
+    }
+
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    const interval = document.getElementById('interval-select').value;
+    const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+
+    const widget = {
+        name: widgetName,
+        accounts: selectedIds,
+        startDate: startDate,
+        endDate: endDate,
+        interval: interval,
+        chartMode: chartMode
+    };
+
+    saveWidgetToStorage(widget);
+    document.getElementById('widget-name-input').value = '';
+    alert(`Widget "${widgetName}" saved! View it on the Dashboard.`);
+}
+
 function selectAllAccounts() {
     document.querySelectorAll('.account-select').forEach(cb => cb.checked = true);
 }
@@ -898,5 +959,11 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchAccounts().then(() => {
             fetchChartData();
         });
+    }
+
+    // Save graph as widget
+    const saveGraphBtn = document.getElementById('save-graph-btn');
+    if (saveGraphBtn) {
+        saveGraphBtn.addEventListener('click', saveGraphAsWidget);
     }
 });

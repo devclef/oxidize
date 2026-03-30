@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <nav class="nav">
+        <a href="/" class="active">Graph Builder</a>
+        <a href="/dashboard">Dashboard</a>
+    </nav>
     <h1>Firefly III Account Balances</h1>
     <div class="controls">
         <label for="type-filter">Filter by account type:</label>
@@ -77,6 +81,10 @@
                     </label>
                 </div>
                 <button id="update-chart-btn">Update Graph</button>
+                <div class="chart-header-actions">
+                    <input type="text" id="widget-name-input" placeholder="Widget name" style="padding: 0.4rem; font-size: 0.9rem; border-radius: 4px; border: 1px solid #ddd;">
+                    <button id="save-graph-btn" class="save-graph-btn">Save as Widget</button>
+                </div>
             </div>
         </div>
         <div id="chart-error"></div>

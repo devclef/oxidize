@@ -28,6 +28,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(config.clone()))
             .service(handlers::account::get_accounts)
             .service(handlers::account::get_balance_history)
+            .service(handlers::dashboard::dashboard)
             .route("/", web::get().to(handlers::index::index))
             .service(actix_files::Files::new("/static", "./static"))
     })
