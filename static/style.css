@@ -479,3 +479,25 @@ button:hover {
     gap: 0.5rem;
     align-items: center;
 }
+
+/* Refresh data button */
+#refresh-data-btn {
+    background-color: #f39c12;
+}
+
+#refresh-data-btn:hover {
+    background-color: #d68910;
+}
+
+#refresh-data-btn:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+.info {
+    color: #2980b9;
+    background: #e8f4f8;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-top: 1rem;
+}

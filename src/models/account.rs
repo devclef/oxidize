@@ -20,7 +20,7 @@ pub struct AccountAttributes {
     pub currency_symbol: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SimpleAccount {
     pub id: String,
     pub name: String,
