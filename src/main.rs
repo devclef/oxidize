@@ -2,6 +2,7 @@ mod config;
 mod models;
 mod client;
 mod handlers;
+mod cache;
 
 use actix_web::{web, App, HttpServer};
 use crate::config::Config;
@@ -28,6 +29,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(config.clone()))
             .service(handlers::account::get_accounts)
             .service(handlers::account::get_balance_history)
+            .service(handlers::account::refresh_accounts)
+            .service(handlers::account::refresh_balance_history)
+            .service(handlers::account::refresh_all)
             .service(handlers::dashboard::dashboard)
             .route("/", web::get().to(handlers::index::index))
             .service(actix_files::Files::new("/static", "./static"))

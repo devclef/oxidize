@@ -894,10 +894,54 @@ function toggleAccountsSection() {
     }
 }
 
+async function refreshData() {
+    const btn = document.getElementById('refresh-data-btn');
+    const originalText = btn.textContent;
+
+    btn.textContent = 'Refreshing...';
+    btn.disabled = true;
+
+    try {
+        // Clear all caches on the backend
+        const response = await fetch('/api/refresh', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log('Cache refresh result:', result);
+
+        // Show brief success message
+        btn.textContent = 'Refreshed!';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }, 1000);
+
+        // Re-fetch accounts and chart data if there's data loaded
+        if (allAccounts.length > 0) {
+            await fetchAccounts();
+            await fetchChartData();
+        }
+    } catch (error) {
+        console.error('Refresh error:', error);
+        alert(`Failed to refresh data: ${error.message}`);
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     const fetchAccountsBtn = document.getElementById('fetch-accounts-btn');
     const updateChartBtn = document.getElementById('update-chart-btn');
+    const refreshDataBtn = document.getElementById('refresh-data-btn');
     const saveListBtn = document.getElementById('save-list-btn');
     const loadListBtn = document.getElementById('load-list-btn');
     const deleteListBtn = document.getElementById('delete-list-btn');
@@ -928,6 +972,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchAccountsBtn.addEventListener('click', fetchAccounts);
     updateChartBtn.addEventListener('click', fetchChartData);
+    refreshDataBtn.addEventListener('click', refreshData);
     saveListBtn.addEventListener('click', saveCurrentSelection);
     loadListBtn.addEventListener('click', loadSavedList);
     deleteListBtn.addEventListener('click', deleteSavedList);

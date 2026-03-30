@@ -1,6 +1,7 @@
-use actix_web::{get, web, HttpResponse, Responder, HttpRequest};
+use actix_web::{get, post, web, HttpResponse, Responder, HttpRequest};
 use crate::client::FireflyClient;
 use serde::Deserialize;
+use log::info;
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -17,6 +18,16 @@ pub async fn get_accounts(
         Ok(accounts) => HttpResponse::Ok().json(accounts),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
+}
+
+/// POST endpoint to refresh/clear the accounts cache
+#[post("/api/accounts/refresh")]
+pub async fn refresh_accounts(client: web::Data<FireflyClient>) -> impl Responder {
+    client.clear_accounts_cache();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "Accounts cache cleared"
+    }))
 }
 
 #[get("/api/accounts/balance-history")]
@@ -64,4 +75,25 @@ pub async fn get_balance_history(
         Ok(history) => HttpResponse::Ok().json(history),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
+}
+
+/// POST endpoint to refresh/clear the balance history cache
+#[post("/api/accounts/balance-history/refresh")]
+pub async fn refresh_balance_history(client: web::Data<FireflyClient>) -> impl Responder {
+    client.clear_balance_history_cache();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "Balance history cache cleared"
+    }))
+}
+
+/// POST endpoint to refresh/clear all caches
+#[post("/api/refresh")]
+pub async fn refresh_all(client: web::Data<FireflyClient>) -> impl Responder {
+    client.clear_cache();
+    info!("All caches cleared via API");
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "All caches cleared"
+    }))
 }
