@@ -27,6 +27,40 @@ function deleteWidget(id) {
     }
 }
 
+function toggleWidgetSettings(id) {
+    const settingsEl = document.getElementById(`${id}-settings`);
+    if (settingsEl.style.display === 'none' || settingsEl.style.display === '') {
+        settingsEl.style.display = 'flex';
+    } else {
+        settingsEl.style.display = 'none';
+    }
+}
+
+async function updateWidgetDateRange(widgetId) {
+    const startDate = document.getElementById(`${widgetId}-start`).value;
+    const endDate = document.getElementById(`${widgetId}-end`).value;
+    const interval = document.getElementById(`${widgetId}-interval`).value;
+
+    const widgets = getDashboardWidgets();
+    const widgetIndex = widgets.findIndex(w => w.id === widgetId);
+
+    if (widgetIndex === -1) return;
+
+    widgets[widgetIndex].startDate = startDate;
+    widgets[widgetIndex].endDate = endDate;
+    widgets[widgetIndex].interval = interval;
+    widgets[widgetIndex].updatedAt = new Date().toISOString();
+
+    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+
+    // Close settings panel
+    document.getElementById(`${widgetId}-settings`).style.display = 'none';
+
+    // Re-render the chart
+    const allAccounts = await fetchAccounts();
+    await renderWidgetChart(widgets[widgetIndex], widgetId, allAccounts);
+}
+
 async function fetchAccounts() {
     const allAccounts = [];
 
@@ -346,13 +380,32 @@ async function renderDashboard() {
             return account ? `<span class="widget-account-tag">${account.name}</span>` : '';
         }).join('');
 
+        const startDate = widget.startDate || '';
+        const endDate = widget.endDate || '';
+        const interval = widget.interval || 'auto';
+
         html += `
             <div class="widget" data-widget-id="${widget.id}">
                 <div class="widget-header">
                     <span class="widget-title">${widget.name}</span>
                     <div class="widget-actions">
+                        <button class="settings-toggle" onclick="toggleWidgetSettings('${widget.id}')">▼ Settings</button>
                         <button onclick="deleteWidget('${widget.id}')">Delete</button>
                     </div>
+                </div>
+                <div class="widget-settings" id="${widget.id}-settings" style="display: none;">
+                    <label>Start: <input type="date" id="${widget.id}-start" value="${startDate}"></label>
+                    <label>End: <input type="date" id="${widget.id}-end" value="${endDate}"></label>
+                    <label>Interval:
+                        <select id="${widget.id}-interval">
+                            <option value="auto" ${interval === 'auto' ? 'selected' : ''}>Auto</option>
+                            <option value="1D" ${interval === '1D' ? 'selected' : ''}>Day</option>
+                            <option value="1W" ${interval === '1W' ? 'selected' : ''}>Week</option>
+                            <option value="1M" ${interval === '1M' ? 'selected' : ''}>Month</option>
+                            <option value="1Y" ${interval === '1Y' ? 'selected' : ''}>Year</option>
+                        </select>
+                    </label>
+                    <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
                 </div>
                 <div class="widget-body">
                     <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>

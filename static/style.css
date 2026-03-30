@@ -465,6 +465,55 @@ button:hover {
     text-decoration: underline;
 }
 
+/* Widget Settings */
+.widget-settings {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f0f4f8;
+    border-bottom: 1px solid #eee;
+    flex-wrap: wrap;
+}
+
+.widget-settings label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: #555;
+}
+
+.widget-settings input[type="date"],
+.widget-settings select {
+    padding: 0.25rem;
+    font-size: 0.85rem;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+.widget-settings button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.widget-settings button:hover {
+    background: #2980b9;
+}
+
+.settings-toggle {
+    background: #95a5a6;
+}
+
+.settings-toggle:hover {
+    background: #7f8c8d;
+}
+
 /* Save graph button */
 .save-graph-btn {
     background-color: #27ae60;
