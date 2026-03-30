@@ -16,6 +16,7 @@ RUN rm src/*.rs
 
 # Copy the actual source code
 COPY src ./src
+COPY static ./static
 
 # Build for release
 RUN touch src/main.rs && cargo build --release
