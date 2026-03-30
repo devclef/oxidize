@@ -8,22 +8,32 @@ const CONFIG = window.OXIDIZE_CONFIG || {
     autoFetchAccounts: false
 };
 
-function getDashboardWidgets() {
-    const saved = localStorage.getItem(DASHBOARD_WIDGETS_KEY);
-    return saved ? JSON.parse(saved) : [];
+async function getDashboardWidgets() {
+    try {
+        const response = await fetch('/api/widgets');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error('Failed to fetch widgets:', e);
+        return [];
+    }
 }
 
-function deleteWidget(id) {
-    if (confirm('Delete this widget?')) {
-        // Destroy chart if exists
-        if (widgetCharts[id]) {
-            widgetCharts[id].destroy();
-            delete widgetCharts[id];
-        }
+async function deleteWidget(id) {
+    if (!confirm('Delete this widget?')) return;
 
-        const widgets = getDashboardWidgets().filter(w => w.id !== id);
-        localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
-        renderDashboard();
+    // Destroy chart if exists
+    if (widgetCharts[id]) {
+        widgetCharts[id].destroy();
+        delete widgetCharts[id];
+    }
+
+    try {
+        await fetch(`/api/widgets/${id}`, { method: 'DELETE' });
+        await renderDashboard();
+    } catch (e) {
+        console.error('Failed to delete widget:', e);
+        alert(`Failed to delete widget: ${e.message}`);
     }
 }
 
@@ -41,35 +51,45 @@ async function updateWidgetDateRange(widgetId) {
     const endDate = document.getElementById(`${widgetId}-end`).value;
     const interval = document.getElementById(`${widgetId}-interval`).value;
 
-    const widgets = getDashboardWidgets();
+    const widgets = await getDashboardWidgets();
     const widgetIndex = widgets.findIndex(w => w.id === widgetId);
 
     if (widgetIndex === -1) return;
 
-    widgets[widgetIndex].startDate = startDate;
-    widgets[widgetIndex].endDate = endDate;
-    widgets[widgetIndex].interval = interval;
-    widgets[widgetIndex].updatedAt = new Date().toISOString();
+    const widget = widgets[widgetIndex];
+    widget.start_date = startDate || null;
+    widget.end_date = endDate || null;
+    widget.interval = interval || null;
+    widget.updated_at = new Date().toISOString();
 
     // Update chart options
-    if (widgets[widgetIndex].chartOptions === undefined) {
-        widgets[widgetIndex].chartOptions = {};
+    if (widget.chart_options === undefined) {
+        widget.chart_options = {};
     }
-    widgets[widgetIndex].chartOptions.showPoints = document.getElementById(`${widgetId}-show-points`).checked;
-    widgets[widgetIndex].chartOptions.xAxisLimit = parseInt(document.getElementById(`${widgetId}-x-limit`).value);
-    widgets[widgetIndex].chartOptions.yAxisLimit = parseInt(document.getElementById(`${widgetId}-y-limit`).value);
-    widgets[widgetIndex].chartOptions.fillArea = document.getElementById(`${widgetId}-fill-area`).checked;
-    widgets[widgetIndex].chartOptions.tension = parseFloat(document.getElementById(`${widgetId}-tension`).value);
-    widgets[widgetIndex].chartOptions.beginAtZero = document.getElementById(`${widgetId}-begin-zero`).checked;
+    widget.chart_options.show_points = document.getElementById(`${widgetId}-show-points`).checked;
+    widget.chart_options.x_axis_limit = parseInt(document.getElementById(`${widgetId}-x-limit`).value);
+    widget.chart_options.y_axis_limit = parseInt(document.getElementById(`${widgetId}-y-limit`).value);
+    widget.chart_options.fill_area = document.getElementById(`${widgetId}-fill-area`).checked;
+    widget.chart_options.tension = parseFloat(document.getElementById(`${widgetId}-tension`).value);
+    widget.chart_options.begin_at_zero = document.getElementById(`${widgetId}-begin-zero`).checked;
 
-    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+    try {
+        await fetch(`/api/widgets/${widgetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widget)
+        });
 
-    // Close settings panel
-    document.getElementById(`${widgetId}-settings`).style.display = 'none';
+        // Close settings panel
+        document.getElementById(`${widgetId}-settings`).style.display = 'none';
 
-    // Re-render the chart
-    const allAccounts = await fetchAccounts();
-    await renderWidgetChart(widgets[widgetIndex], widgetId, allAccounts);
+        // Re-render the chart
+        const allAccounts = await fetchAccounts();
+        await renderWidgetChart(widget, widgetId, allAccounts);
+    } catch (e) {
+        console.error('Failed to update widget:', e);
+        alert(`Failed to update widget: ${e.message}`);
+    }
 }
 
 async function fetchAccounts() {
@@ -124,7 +144,15 @@ function getChartOptions(widget) {
         tension: 0.1,
         beginAtZero: false
     };
-    return { ...defaults, ...widget.chartOptions };
+    const opts = widget.chart_options || {};
+    return {
+        showPoints: opts.show_points ?? defaults.showPoints,
+        xAxisLimit: opts.x_axis_limit ?? defaults.xAxisLimit,
+        yAxisLimit: opts.y_axis_limit ?? defaults.yAxisLimit,
+        fillArea: opts.fill_area ?? defaults.fillArea,
+        tension: opts.tension ?? defaults.tension,
+        beginAtZero: opts.begin_at_zero ?? defaults.beginAtZero
+    };
 }
 
 async function renderWidgetChart(widget, containerId, allAccounts) {
@@ -133,8 +161,8 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
     try {
         const history = await fetchChartData(
             widget.accounts,
-            widget.startDate,
-            widget.endDate,
+            widget.start_date,
+            widget.end_date,
             widget.interval
         );
 
@@ -154,7 +182,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
             }
         }
 
-        if (widget.chartMode === 'combined') {
+        if (widget.chart_mode === 'combined') {
             // Aggregate all datasets
             const totalFlowData = new Array(labels.length).fill(0);
 
@@ -406,7 +434,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
 
 async function renderDashboard() {
     const container = document.getElementById('dashboard-container');
-    const widgets = getDashboardWidgets();
+    const widgets = await getDashboardWidgets();
 
     if (widgets.length === 0) {
         container.innerHTML = `
@@ -434,8 +462,8 @@ async function renderDashboard() {
             return account ? `<span class="widget-account-tag">${account.name}</span>` : '';
         }).join('');
 
-        const startDate = widget.startDate || '';
-        const endDate = widget.endDate || '';
+       const startDate = widget.start_date || '';
+        const endDate = widget.end_date || '';
         const interval = widget.interval || 'auto';
 
         // Get chart options with defaults
@@ -486,7 +514,7 @@ async function renderDashboard() {
                             ${accountTags}
                         </div>
                         <div class="widget-mode">
-                            <span class="widget-mode-badge">${widget.chartMode}</span>
+                            <span class="widget-mode-badge">${widget.chart_mode}</span>
                         </div>
                     </div>
                 </div>

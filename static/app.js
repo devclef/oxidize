@@ -688,37 +688,62 @@ function renderSplitLegend(accountInfo, datasets) {
     });
 }
 
-function getSavedLists() {
-    const saved = localStorage.getItem(SAVED_LISTS_KEY);
-    return saved ? JSON.parse(saved) : {};
+async function getSavedLists() {
+    try {
+        const response = await fetch('/api/saved-lists');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error('Failed to fetch saved lists:', e);
+        return [];
+    }
 }
 
-function saveListToStorage(name, accountIds) {
-    const lists = getSavedLists();
-    lists[name] = accountIds;
-    localStorage.setItem(SAVED_LISTS_KEY, JSON.stringify(lists));
+async function saveListToStorage(list) {
+    try {
+        const response = await fetch('/api/saved-lists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(list)
+        });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(error || 'Failed to save list');
+        }
+        return response.json();
+    } catch (e) {
+        console.error('Failed to save list:', e);
+        throw e;
+    }
 }
 
-function deleteListFromStorage(name) {
-    const lists = getSavedLists();
-    delete lists[name];
-    localStorage.setItem(SAVED_LISTS_KEY, JSON.stringify(lists));
+async function deleteListFromStorage(id) {
+    try {
+        const response = await fetch(`/api/saved-lists/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(error || 'Failed to delete list');
+        }
+    } catch (e) {
+        console.error('Failed to delete list:', e);
+        throw e;
+    }
 }
 
-function updateSavedListsDropdown() {
+async function updateSavedListsDropdown() {
     const select = document.getElementById('saved-lists-select');
-    const lists = getSavedLists();
+    const lists = await getSavedLists();
 
     select.innerHTML = '<option value="">-- Select saved list --</option>';
-    Object.keys(lists).forEach(name => {
+    lists.forEach(list => {
         const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
+        option.value = list.id;
+        option.textContent = list.name;
         select.appendChild(option);
     });
 }
 
-function saveCurrentSelection() {
+async function saveCurrentSelection() {
     const listName = document.getElementById('list-name-input').value.trim();
     if (!listName) {
         alert('Please enter a name for the list');
@@ -743,35 +768,47 @@ function saveCurrentSelection() {
         };
     });
 
-    saveListToStorage(listName, {
-        ids: selectedIds,
-        accounts: selectedAccounts,
-        savedAt: new Date().toISOString()
-    });
-    updateSavedListsDropdown();
-    document.getElementById('list-name-input').value = '';
-    alert(`Saved list "${listName}" with ${selectedIds.length} accounts`);
+    const list = {
+        id: crypto.randomUUID(),
+        name: listName,
+        accounts: {
+            ids: selectedIds,
+            accounts: selectedAccounts,
+            savedAt: new Date().toISOString()
+        },
+        created_at: new Date().toISOString()
+    };
+
+    try {
+        await saveListToStorage(list);
+        await updateSavedListsDropdown();
+        document.getElementById('list-name-input').value = '';
+        alert(`Saved list "${listName}" with ${selectedIds.length} accounts`);
+    } catch (e) {
+        alert(`Failed to save list: ${e.message}`);
+    }
 }
 
 async function loadSavedList() {
     const select = document.getElementById('saved-lists-select');
-    const listName = select.value;
+    const listId = select.value;
 
-    if (!listName) {
+    if (!listId) {
         alert('Please select a list to load');
         return;
     }
 
-    const lists = getSavedLists();
-    const listData = lists[listName];
+    const lists = await getSavedLists();
+    const listData = lists.find(l => l.id === listId);
 
     if (!listData) {
         alert('List not found');
         return;
     }
 
-    // Handle both old format (array of IDs) and new format (object with ids)
-    const accountIds = Array.isArray(listData) ? listData : listData.ids;
+    // Extract account IDs from the stored data
+    const accountData = listData.accounts;
+    const accountIds = accountData.ids || (Array.isArray(accountData) ? accountData : []);
 
     // Fetch all accounts if we don't have any loaded
     if (allAccounts.length === 0) {
@@ -798,48 +835,100 @@ async function loadSavedList() {
     }
 }
 
-function deleteSavedList() {
+async function deleteSavedList() {
     const select = document.getElementById('saved-lists-select');
-    const listName = select.value;
+    const listId = select.value;
 
-    if (!listName) {
+    if (!listId) {
         alert('Please select a list to delete');
         return;
     }
 
-    if (confirm(`Delete list "${listName}"?`)) {
-        deleteListFromStorage(listName);
-        updateSavedListsDropdown();
+    const lists = await getSavedLists();
+    const listData = lists.find(l => l.id === listId);
+
+    if (!listData) {
+        alert('List not found');
+        return;
+    }
+
+    if (confirm(`Delete list "${listData.name}"?`)) {
+        try {
+            await deleteListFromStorage(listId);
+            await updateSavedListsDropdown();
+        } catch (e) {
+            alert(`Failed to delete list: ${e.message}`);
+        }
     }
 }
 
 // Dashboard widget functions
-function getDashboardWidgets() {
-    const saved = localStorage.getItem(DASHBOARD_WIDGETS_KEY);
-    return saved ? JSON.parse(saved) : [];
+async function getDashboardWidgets() {
+    try {
+        const response = await fetch('/api/widgets');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error('Failed to fetch widgets:', e);
+        return [];
+    }
 }
 
-function saveWidgetToStorage(widget) {
-    const widgets = getDashboardWidgets();
+async function saveWidgetToStorage(widget) {
     widget.id = widget.id || crypto.randomUUID();
-    widget.updatedAt = new Date().toISOString();
-    widgets.push(widget);
-    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+    widget.updated_at = new Date().toISOString();
+
+    try {
+        const response = await fetch('/api/widgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(widget)
+        });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(error || 'Failed to save widget');
+        }
+        return response.json();
+    } catch (e) {
+        console.error('Failed to save widget:', e);
+        throw e;
+    }
 }
 
-function deleteWidgetFromStorage(id) {
-    const widgets = getDashboardWidgets().filter(w => w.id !== id);
-    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+async function deleteWidgetFromStorage(id) {
+    try {
+        const response = await fetch(`/api/widgets/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(error || 'Failed to delete widget');
+        }
+    } catch (e) {
+        console.error('Failed to delete widget:', e);
+        throw e;
+    }
 }
 
-function updateWidgetInStorage(updatedWidget) {
-    const widgets = getDashboardWidgets().map(w =>
-        w.id === updatedWidget.id ? { ...updatedWidget, updatedAt: new Date().toISOString() } : w
-    );
-    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgets));
+async function updateWidgetInStorage(updatedWidget) {
+    updatedWidget.updated_at = new Date().toISOString();
+
+    try {
+        const response = await fetch(`/api/widgets/${updatedWidget.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedWidget)
+        });
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(error || 'Failed to update widget');
+        }
+        return response.json();
+    } catch (e) {
+        console.error('Failed to update widget:', e);
+        throw e;
+    }
 }
 
-function saveGraphAsWidget() {
+async function saveGraphAsWidget() {
     const widgetName = document.getElementById('widget-name-input').value.trim();
     if (!widgetName) {
         alert('Please enter a name for the widget');
@@ -860,17 +949,22 @@ function saveGraphAsWidget() {
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
     const widget = {
+        id: crypto.randomUUID(),
         name: widgetName,
         accounts: selectedIds,
-        startDate: startDate,
-        endDate: endDate,
-        interval: interval,
-        chartMode: chartMode
+        start_date: startDate || null,
+        end_date: endDate || null,
+        interval: interval || null,
+        chart_mode: chartMode
     };
 
-    saveWidgetToStorage(widget);
-    document.getElementById('widget-name-input').value = '';
-    alert(`Widget "${widgetName}" saved! View it on the Dashboard.`);
+    try {
+        await saveWidgetToStorage(widget);
+        document.getElementById('widget-name-input').value = '';
+        alert(`Widget "${widgetName}" saved! View it on the Dashboard.`);
+    } catch (e) {
+        alert(`Failed to save widget: ${e.message}`);
+    }
 }
 
 function selectAllAccounts() {

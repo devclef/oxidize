@@ -3,6 +3,7 @@ mod models;
 mod client;
 mod handlers;
 mod cache;
+mod storage;
 
 use actix_web::{web, App, HttpServer};
 use crate::config::Config;
@@ -20,6 +21,10 @@ async fn main() -> std::io::Result<()> {
     info!("Starting server at http://{}:{}", host, port);
     info!("Account types: {:?}", config.account_types);
     info!("Auto-fetch accounts: {}", config.auto_fetch_accounts);
+    info!("Data directory: {}", config.data_dir);
+
+    // Initialize storage with data directory
+    storage::init_data_dir(config.data_dir.clone());
 
     let firefly_client = web::Data::new(FireflyClient::new(config.clone()));
 
@@ -33,6 +38,13 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::account::refresh_balance_history)
             .service(handlers::account::refresh_all)
             .service(handlers::dashboard::dashboard)
+            .service(handlers::widget::list_widgets)
+            .service(handlers::widget::create_widget)
+            .service(handlers::widget::update_widget)
+            .service(handlers::widget::delete_widget)
+            .service(handlers::widget::list_saved_lists)
+            .service(handlers::widget::create_saved_list)
+            .service(handlers::widget::delete_saved_list)
             .route("/", web::get().to(handlers::index::index))
             .service(actix_files::Files::new("/static", "./static"))
     })

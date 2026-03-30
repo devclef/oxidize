@@ -9,6 +9,7 @@ pub struct Config {
     pub port: u16,
     pub account_types: Vec<String>,
     pub auto_fetch_accounts: bool,
+    pub data_dir: String,
 }
 
 impl Config {
@@ -40,6 +41,14 @@ impl Config {
             .map(|v| v.trim().to_lowercase() == "true" || v.trim() == "1")
             .unwrap_or(false);
 
+        // Parse DATA_DIR: directory for SQLite database storage
+        let data_dir = env::var("DATA_DIR")
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .map(|h| format!("{}/.oxidize/data", h.display()))
+                    .unwrap_or("./data".to_string())
+            });
+
         Self {
             firefly_url,
             firefly_token,
@@ -47,6 +56,7 @@ impl Config {
             port,
             account_types,
             auto_fetch_accounts,
+            data_dir,
         }
     }
 }
