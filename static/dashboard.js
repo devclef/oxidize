@@ -1,5 +1,6 @@
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
+const THEME_KEY = 'oxidize_theme';
 let widgetCharts = {};
 
 // Get config from server or use defaults
@@ -7,6 +8,67 @@ const CONFIG = window.OXIDIZE_CONFIG || {
     accountTypes: ['asset', 'cash', 'expense', 'revenue', 'liability'],
     autoFetchAccounts: false
 };
+
+// Theme management
+function initTheme() {
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        showMoonIcon();
+    } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        showSunIcon();
+    }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem(THEME_KEY, newTheme);
+
+    if (newTheme === 'dark') {
+        showMoonIcon();
+    } else {
+        showSunIcon();
+    }
+
+    // Update all widget charts
+    updateWidgetChartsTheme(newTheme);
+}
+
+function showSunIcon() {
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+    if (sunIcon) sunIcon.style.display = 'block';
+    if (moonIcon) moonIcon.style.display = 'none';
+}
+
+function showMoonIcon() {
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+    if (sunIcon) sunIcon.style.display = 'none';
+    if (moonIcon) moonIcon.style.display = 'block';
+}
+
+function updateWidgetChartsTheme(theme) {
+    const isDark = theme === 'dark';
+    const textColor = isDark ? '#eaeaea' : '#333';
+    const gridColor = isDark ? '#444' : '#ddd';
+
+    Object.values(widgetCharts).forEach(chart => {
+        if (chart && chart.options && chart.options.scales) {
+            chart.options.scales.x.grid = { color: gridColor };
+            chart.options.scales.x.ticks = { color: textColor };
+            chart.options.scales.y.grid = { color: gridColor };
+            chart.options.scales.y.ticks = { color: textColor };
+            chart.update('none');
+        }
+    });
+}
 
 async function getDashboardWidgets() {
     try {
@@ -231,6 +293,10 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
             }
 
             const opts = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+            const chartColor = isDark ? '#5dade2' : '#3498db';
 
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
@@ -243,8 +309,8 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     datasets: [{
                         label: 'Total Balance',
                         data: absoluteData,
-                        borderColor: '#3498db',
-                        backgroundColor: '#3498db20',
+                        borderColor: chartColor,
+                        backgroundColor: chartColor + '20',
                         borderWidth: 2,
                         tension: opts.tension,
                         fill: opts.fillArea,
@@ -270,7 +336,9 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     scales: {
                         y: {
                             beginAtZero: opts.beginAtZero,
+                            grid: { color: chartGridColor },
                             ticks: {
+                                color: chartTextColor,
                                 maxTicksLimit: opts.yAxisLimit,
                                 callback: function(value) {
                                     return value.toLocaleString();
@@ -279,7 +347,9 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                         },
                         x: {
                             display: true,
+                            grid: { color: chartGridColor },
                             ticks: {
+                                color: chartTextColor,
                                 maxTicksLimit: opts.xAxisLimit,
                                 autoSkip: true,
                                 callback: function(value) {
@@ -372,6 +442,9 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
             }
 
             const opts2 = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
 
             widgetCharts[widget.id] = new Chart(ctx, {
                 type: 'line',
@@ -398,7 +471,9 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     scales: {
                         y: {
                             beginAtZero: opts2.beginAtZero,
+                            grid: { color: chartGridColor },
                             ticks: {
+                                color: chartTextColor,
                                 maxTicksLimit: opts2.yAxisLimit,
                                 callback: function(value) {
                                     return value.toLocaleString();
@@ -407,7 +482,9 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                         },
                         x: {
                             display: true,
+                            grid: { color: chartGridColor },
                             ticks: {
+                                color: chartTextColor,
                                 maxTicksLimit: opts2.xAxisLimit,
                                 autoSkip: true,
                                 callback: function(value) {
@@ -533,5 +610,14 @@ async function renderDashboard() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme
+    initTheme();
+
+    // Theme toggle button
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+
     renderDashboard();
 });

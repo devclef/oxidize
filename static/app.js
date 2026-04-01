@@ -9,6 +9,71 @@ const CONFIG = window.OXIDIZE_CONFIG || {
     autoFetchAccounts: false
 };
 
+// Theme management
+const THEME_KEY = 'oxidize_theme';
+
+function initTheme() {
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        showMoonIcon();
+    } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        showSunIcon();
+    }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem(THEME_KEY, newTheme);
+
+    if (newTheme === 'dark') {
+        showMoonIcon();
+    } else {
+        showSunIcon();
+    }
+
+    // Update chart colors if chart exists
+    if (balanceChart) {
+        updateChartTheme(newTheme);
+    }
+}
+
+function showSunIcon() {
+    document.getElementById('theme-icon-sun').style.display = 'block';
+    document.getElementById('theme-icon-moon').style.display = 'none';
+}
+
+function showMoonIcon() {
+    document.getElementById('theme-icon-sun').style.display = 'none';
+    document.getElementById('theme-icon-moon').style.display = 'block';
+}
+
+function updateChartTheme(theme) {
+    const isDark = theme === 'dark';
+    const textColor = isDark ? '#eaeaea' : '#333';
+    const gridColor = isDark ? '#444' : '#ddd';
+
+    if (balanceChart && balanceChart.options && balanceChart.options.scales) {
+        balanceChart.options.scales.x.grid = { color: gridColor };
+        balanceChart.options.scales.x.ticks = { color: textColor };
+        balanceChart.options.scales.y.grid = { color: gridColor };
+        balanceChart.options.scales.y.ticks = { color: textColor };
+
+        // Update legend colors if present
+        if (balanceChart.options.plugins && balanceChart.options.plugins.legend) {
+            balanceChart.options.plugins.legend.labels = { color: textColor };
+        }
+
+        balanceChart.update('none');
+    }
+}
+
 async function fetchAccounts() {
     const app = document.getElementById('app');
     const typeFilter = document.getElementById('type-filter');
@@ -517,6 +582,10 @@ function renderChart(history) {
             dataset.hidden = !datasetVisibility[index];
         });
 
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const chartTextColor = isDark ? '#eaeaea' : '#333';
+        const chartGridColor = isDark ? '#444' : '#ddd';
+
         balanceChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -552,14 +621,18 @@ function renderChart(history) {
                 scales: {
                     y: {
                         beginAtZero: false,
+                        grid: { color: chartGridColor },
                         ticks: {
+                            color: chartTextColor,
                             callback: function(value) {
                                 return value.toLocaleString();
                             }
                         }
                     },
                     x: {
+                        grid: { color: chartGridColor },
                         ticks: {
+                            color: chartTextColor,
                             maxRotation: 45,
                             minRotation: 45
                         }
@@ -616,7 +689,10 @@ function renderChart(history) {
             }
         }
 
-        const color = '#3498db';
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const chartTextColor = isDark ? '#eaeaea' : '#333';
+        const chartGridColor = isDark ? '#444' : '#ddd';
+        const color = isDark ? '#5dade2' : '#3498db';
 
         const chartDatasets = [{
             label: 'Total Balance',
@@ -640,19 +716,24 @@ function renderChart(history) {
                 plugins: {
                     legend: {
                         position: 'bottom',
+                        labels: { color: chartTextColor }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: false,
+                        grid: { color: chartGridColor },
                         ticks: {
+                            color: chartTextColor,
                             callback: function(value) {
                                 return value.toLocaleString();
                             }
                         }
                     },
                     x: {
+                        grid: { color: chartGridColor },
                         ticks: {
+                            color: chartTextColor,
                             maxRotation: 45,
                             minRotation: 45
                         }
@@ -1068,6 +1149,15 @@ async function refreshData() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme
+    initTheme();
+
+    // Theme toggle button
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+
     const fetchAccountsBtn = document.getElementById('fetch-accounts-btn');
     const updateChartBtn = document.getElementById('update-chart-btn');
     const refreshDataBtn = document.getElementById('refresh-data-btn');

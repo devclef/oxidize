@@ -108,3 +108,13 @@ Optional:
 - **serde/serde_json** - JSON serialization
 - **chrono** - Date handling
 - **Chart.js** - Frontend charting (via CDN)
+
+## Editing Guidelines
+
+### CSS Updates
+When updating `static/style.css`, use CSS variables for theming features. After each edit, verify the file was updated before proceeding with subsequent edits to avoid stale content mismatches.
+
+### File Editing
+- Always read the file before editing to ensure you have the latest content
+- If an edit fails with a parameter error, re-read the file and retry with the exact current content
+- For multi-step edits, consider using `replace_all` for repetitive pattern changes
