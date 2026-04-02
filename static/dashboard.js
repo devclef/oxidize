@@ -112,6 +112,7 @@ async function updateWidgetDateRange(widgetId) {
     const startDate = document.getElementById(`${widgetId}-start`).value;
     const endDate = document.getElementById(`${widgetId}-end`).value;
     const interval = document.getElementById(`${widgetId}-interval`).value;
+    const chartMode = document.getElementById(`${widgetId}-chart-mode`).value;
 
     const widgets = await getDashboardWidgets();
     const widgetIndex = widgets.findIndex(w => w.id === widgetId);
@@ -122,6 +123,7 @@ async function updateWidgetDateRange(widgetId) {
     widget.start_date = startDate || null;
     widget.end_date = endDate || null;
     widget.interval = interval || null;
+    widget.chart_mode = chartMode;
     widget.updated_at = new Date().toISOString();
 
     // Update chart options
@@ -718,9 +720,17 @@ async function renderDashboard() {
                                 <option value="1Y" ${interval === '1Y' ? 'selected' : ''}>Year</option>
                             </select>
                         </label>
+                        ${widgetType === 'balance' ? `
+                        <label>Chart Mode:
+                            <select id="${widget.id}-chart-mode">
+                                <option value="combined" ${widget.chart_mode === 'combined' || !widget.chart_mode ? 'selected' : ''}>Combined</option>
+                                <option value="split" ${widget.chart_mode === 'split' ? 'selected' : ''}>Split</option>
+                            </select>
+                        </label>
+                        ` : ''}
                     </div>
                     <div class="widget-settings-section">
-                        <strong>Chart Options</strong>
+                        <strong>Display Options</strong>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
