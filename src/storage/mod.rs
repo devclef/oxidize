@@ -47,6 +47,12 @@ fn init_db(conn: &Connection) {
     )
     .expect("Failed to create widgets table");
 
+    // Migration: Add widget_type column if it doesn't exist (for existing databases)
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN widget_type TEXT DEFAULT 'balance'",
+        [],
+    ); // Ignore error if column already exists
+
     // Create saved_lists table
     conn.execute(
         "CREATE TABLE IF NOT EXISTS saved_lists (
