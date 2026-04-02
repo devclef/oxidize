@@ -38,6 +38,7 @@ fn init_db(conn: &Connection) {
             end_date TEXT,
             interval TEXT,
             chart_mode TEXT,
+            widget_type TEXT,
             chart_options TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -88,7 +89,7 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, start_date, end_date, interval, chart_mode,
-                            chart_options, created_at, updated_at
+                            widget_type, chart_options, created_at, updated_at
                      FROM widgets ORDER BY created_at DESC"
                 )
                 .map_err(|e| e.to_string())?;
@@ -102,9 +103,10 @@ impl Storage {
                     let end_date: Option<String> = row.get(4)?;
                     let interval: Option<String> = row.get(5)?;
                     let chart_mode: Option<String> = row.get(6)?;
-                    let chart_options_json: Option<String> = row.get(7)?;
-                    let created_at: Option<String> = row.get(8)?;
-                    let updated_at: Option<String> = row.get(9)?;
+                    let widget_type: Option<String> = row.get(7)?;
+                    let chart_options_json: Option<String> = row.get(8)?;
+                    let created_at: Option<String> = row.get(9)?;
+                    let updated_at: Option<String> = row.get(10)?;
 
                     let accounts: Vec<String> = serde_json::from_str(&accounts_json).unwrap_or_default();
 
@@ -118,6 +120,7 @@ impl Storage {
                         end_date,
                         interval,
                         chart_mode,
+                        widget_type,
                         chart_options,
                         created_at,
                         updated_at,
@@ -143,8 +146,8 @@ impl Storage {
         with_db(|conn| {
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, start_date, end_date, interval,
-                                      chart_mode, chart_options, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                      chart_mode, widget_type, chart_options, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -153,6 +156,7 @@ impl Storage {
                     &widget.end_date,
                     &widget.interval,
                     &widget.chart_mode,
+                    &widget.widget_type,
                     &chart_options_json,
                     &now,
                     &now
@@ -177,8 +181,8 @@ impl Storage {
             let rows = conn.execute(
                 "UPDATE widgets SET
                     name = ?1, accounts = ?2, start_date = ?3, end_date = ?4,
-                    interval = ?5, chart_mode = ?6, chart_options = ?7, updated_at = ?8
-                 WHERE id = ?9",
+                    interval = ?5, chart_mode = ?6, widget_type = ?7, chart_options = ?8, updated_at = ?9
+                 WHERE id = ?10",
                 params![
                     &widget.name,
                     &accounts_json,
@@ -186,6 +190,7 @@ impl Storage {
                     &widget.end_date,
                     &widget.interval,
                     &widget.chart_mode,
+                    &widget.widget_type,
                     &chart_options_json,
                     &now,
                     &widget.id

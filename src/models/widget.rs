@@ -10,6 +10,8 @@ pub struct Widget {
     pub interval: Option<String>,
     pub chart_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub widget_type: Option<String>, // "balance" (default) or "earned_spent"
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub chart_options: Option<ChartOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,

@@ -1051,10 +1051,12 @@ async function saveGraphAsWidget() {
         return;
     }
 
+    const widgetType = document.getElementById('widget-type-select').value;
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
     const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
-    if (selectedIds.length === 0) {
+    // For earned vs spent widget type, accounts are not required
+    if (widgetType === 'balance' && selectedIds.length === 0) {
         alert('Please select at least one account');
         return;
     }
@@ -1071,7 +1073,8 @@ async function saveGraphAsWidget() {
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
-        chart_mode: chartMode
+        chart_mode: chartMode,
+        widget_type: widgetType
     };
 
     try {

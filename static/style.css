@@ -503,6 +503,24 @@ button:hover {
     text-transform: uppercase;
 }
 
+.widget-type-badge {
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.widget-type-badge.balance {
+    background: var(--accent-color);
+    color: white;
+}
+
+.widget-type-badge.earned-spent {
+    background: linear-gradient(135deg, var(--success-color), var(--error-color));
+    color: white;
+}
+
 .empty-dashboard {
     text-align: center;
     padding: 3rem;

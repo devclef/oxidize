@@ -217,16 +217,150 @@ function getChartOptions(widget) {
     };
 }
 
+async function renderEarnedSpentChart(ctx, widget, labels, history, containerId) {
+    const opts = getChartOptions(widget);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    // Find earned and spent datasets from history
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(null);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(null);
+
+    // Earned is typically positive (income), spent is typically negative (expense)
+    // We'll show earned in green and spent in red
+    const earnedColor = isDark ? '#58d68d' : '#27ae60';
+    const spentColor = isDark ? '#ec7063' : '#e74c3c';
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Earned',
+                    data: earnedData,
+                    borderColor: earnedColor,
+                    backgroundColor: earnedColor + '20',
+                    borderWidth: 2,
+                    tension: opts.tension,
+                    fill: opts.fillArea,
+                    pointRadius: opts.showPoints ? 4 : 0
+                },
+                {
+                    label: 'Spent',
+                    data: spentData,
+                    borderColor: spentColor,
+                    backgroundColor: spentColor + '20',
+                    borderWidth: 2,
+                    tension: opts.tension,
+                    fill: opts.fillArea,
+                    pointRadius: opts.showPoints ? 4 : 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.parsed.y !== null) {
+                                return context.dataset.label + ': ' + Math.abs(context.parsed.y).toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: opts.beginAtZero,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.yAxisLimit,
+                        callback: function(value) {
+                            return Math.abs(value).toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    display: true,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.xAxisLimit,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = new Date(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function extractChartData(entries, length) {
+    if (Array.isArray(entries)) {
+        return entries.map(e => parseFloat(e.value || 0));
+    } else {
+        return Object.values(entries).map(v => {
+            if (typeof v === 'object' && v !== null) {
+                return parseFloat(v.value || 0);
+            }
+            return parseFloat(v);
+        });
+    }
+}
+
 async function renderWidgetChart(widget, containerId, allAccounts) {
     const ctx = document.getElementById(containerId).getContext('2d');
 
     try {
-        const history = await fetchChartData(
-            widget.accounts,
-            widget.start_date,
-            widget.end_date,
-            widget.interval
-        );
+        // Determine widget type (default to "balance" for backwards compatibility)
+        const widgetType = widget.widget_type || 'balance';
+
+        let history;
+        if (widgetType === 'earned_spent') {
+            // For earned vs spent, fetch chart data without specific accounts
+            // Firefly III returns earned/spent data by default
+            const params = new URLSearchParams();
+            if (widget.start_date) params.append('start', widget.start_date);
+            if (widget.end_date) params.append('end', widget.end_date);
+            if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+
+            const url = `/api/accounts/balance-history?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            history = await response.json();
+        } else {
+            // For balance widgets, fetch with specific accounts
+            history = await fetchChartData(
+                widget.accounts,
+                widget.start_date,
+                widget.end_date,
+                widget.interval
+            );
+        }
 
         if (!history || history.length === 0) {
             document.getElementById(`${containerId}-error`).textContent = 'No data available';
@@ -242,6 +376,12 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
             } else {
                 labels = Object.keys(firstDataset.entries);
             }
+        }
+
+        // Handle earned vs spent widget type
+        if (widgetType === 'earned_spent') {
+            await renderEarnedSpentChart(ctx, widget, labels, history, containerId);
+            return;
         }
 
         if (widget.chart_mode === 'combined') {
@@ -528,7 +668,11 @@ async function renderDashboard() {
 
     let html = '<div class="dashboard-grid">';
 
+    // Determine widget type (default to "balance" for backwards compatibility)
+
     widgets.forEach(widget => {
+        const widgetType = widget.widget_type || 'balance';
+
         const accountNames = widget.accounts.map(id => {
             const account = allAccounts.find(a => a.id === id);
             return account ? account.name : 'Unknown';
@@ -539,12 +683,17 @@ async function renderDashboard() {
             return account ? `<span class="widget-account-tag">${account.name}</span>` : '';
         }).join('');
 
-       const startDate = widget.start_date || '';
+        const startDate = widget.start_date || '';
         const endDate = widget.end_date || '';
         const interval = widget.interval || 'auto';
 
         // Get chart options with defaults
         const chartOpts = getChartOptions(widget);
+
+        // Widget type badge
+        const widgetTypeBadge = widgetType === 'earned_spent'
+            ? '<span class="widget-type-badge earned-spent">Earned vs Spent</span>'
+            : '<span class="widget-type-badge balance">Balance</span>';
 
         html += `
             <div class="widget" data-widget-id="${widget.id}">
@@ -587,11 +736,10 @@ async function renderDashboard() {
                         <canvas id="${widget.id}"></canvas>
                     </div>
                     <div class="widget-info">
-                        <div class="widget-accounts">
-                            ${accountTags}
-                        </div>
+                        ${widgetType === 'balance' ? `<div class="widget-accounts">${accountTags}</div>` : ''}
                         <div class="widget-mode">
-                            <span class="widget-mode-badge">${widget.chart_mode}</span>
+                            ${widgetTypeBadge}
+                            ${widgetType === 'balance' ? `<span class="widget-mode-badge">${widget.chart_mode}</span>` : ''}
                         </div>
                     </div>
                 </div>
