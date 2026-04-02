@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::models::{AccountArray, SimpleAccount, ChartLine};
 use crate::cache::DataCache;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, ACCEPT};
-use chrono::{Utc, Duration};
+use chrono::{Utc, Duration, Datelike};
 use log::{error, info, debug};
 use std::sync::Arc;
 
@@ -229,8 +229,12 @@ impl FireflyClient {
         start_date: Option<String>,
         end_date: Option<String>,
         period: Option<String>,
+        account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
-        // Firefly III's expense/revenue chart endpoint returns earned (revenue) and spent (expense) data
+        use crate::models::chart::ChartDataSet;
+
+        // Use transactions API to get actual flow data (earned/spent)
+        // The chart API returns balance data, not flow data
         let mut headers = HeaderMap::new();
         if !self.config.firefly_token.is_empty() {
             headers.insert(
@@ -248,46 +252,200 @@ impl FireflyClient {
 
         let period = period.unwrap_or_else(|| "1D".to_string());
 
-        let url = format!("{}/v1/chart/expense/revenue", self.config.firefly_url);
+        // Fetch all transactions (optionally filtered by account IDs)
+        let all_transactions = self.fetch_all_transactions(&headers, &start, &end, account_ids.as_ref()).await?;
 
-        let query_params = vec![
-            ("start".to_string(), start),
-            ("end".to_string(), end),
-            ("period".to_string(), period),
+        // Filter by transaction type
+        let spent_transactions: Vec<_> = all_transactions.iter()
+            .filter(|tx| {
+                tx.get("attributes")
+                    .and_then(|a| a.get("transactions"))
+                    .and_then(|t| t.as_array())
+                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal")))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        let earned_transactions: Vec<_> = all_transactions.iter()
+            .filter(|tx| {
+                tx.get("attributes")
+                    .and_then(|a| a.get("transactions"))
+                    .and_then(|t| t.as_array())
+                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("deposit")))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        info!("Fetched {} spent (withdrawal) transactions and {} earned (deposit) transactions", spent_transactions.len(), earned_transactions.len());
+
+        // Aggregate by period
+        let (earned_entries, spent_entries, currency_symbol, currency_code) =
+            self.aggregate_transactions_by_period(earned_transactions, spent_transactions, &period).await;
+
+        info!("Aggregated earned entries: {} data points", earned_entries.len());
+        info!("Aggregated spent entries: {} data points", spent_entries.len());
+
+        let earned_json: serde_json::Value = serde_json::to_value(earned_entries).unwrap();
+        let spent_json: serde_json::Value = serde_json::to_value(spent_entries).unwrap();
+
+        let result: ChartLine = vec![
+            ChartDataSet {
+                label: "earned".to_string(),
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: earned_json,
+            },
+            ChartDataSet {
+                label: "spent".to_string(),
+                currency_symbol,
+                currency_code,
+                entries: spent_json,
+            }
         ];
 
-        let response = self.client.get(&url)
-            .headers(headers)
-            .query(&query_params)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to send request: {}", e);
-                e.to_string()
-            })?;
+        Ok(result)
+    }
 
-        let full_url = response.url().to_string();
-        info!("Firefly API request URL: {}", full_url);
+    /// Fetch all transactions in date range, optionally filtered by account IDs
+    async fn fetch_all_transactions(
+        &self,
+        headers: &HeaderMap,
+        start: &str,
+        end: &str,
+        account_ids: Option<&Vec<String>>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let url = format!("{}/v1/transactions", self.config.firefly_url);
+        let mut query_params = vec![
+            ("start".to_string(), start.to_string()),
+            ("end".to_string(), end.to_string()),
+        ];
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            error!("API request failed with status: {}. Body: {}", status, body);
-            return Err(format!("API request failed with status: {}", status));
+        // Add account filter if provided
+        if let Some(ids) = account_ids {
+            for id in ids {
+                query_params.push(("accounts[]".to_string(), id.clone()));
+            }
         }
 
-        let chart_line: ChartLine = response.json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse JSON: {}", e);
-                e.to_string()
-            })?;
+        let mut all_transactions = Vec::new();
+        let mut offset = 0;
+        let page_size = 500;
 
-        info!("Earned/Spent API returned {} datasets", chart_line.len());
-        for ds in &chart_line {
-            info!("  Dataset: {}", ds.label);
+        loop {
+            let mut params_with_offset = query_params.clone();
+            params_with_offset.push(("offset".to_string(), offset.to_string()));
+
+            let response = self.client.get(&url)
+                .headers(headers.clone())
+                .query(&params_with_offset)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("Failed to fetch transactions: {}. Body: {}", status, body);
+                return Err(format!("Failed to fetch transactions: {}", status));
+            }
+
+            let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+            let empty: Vec<serde_json::Value> = Vec::new();
+            let data = json.get("data").and_then(|d| d.as_array()).unwrap_or(&empty);
+
+            if data.is_empty() {
+                break;
+            }
+
+            all_transactions.extend(data.clone());
+            offset += page_size;
+
+            if data.len() < page_size {
+                break;
+            }
         }
 
-        Ok(chart_line)
+        Ok(all_transactions)
+    }
+
+    /// Aggregate transactions by period
+    async fn aggregate_transactions_by_period(
+        &self,
+        earned_transactions: Vec<serde_json::Value>,
+        spent_transactions: Vec<serde_json::Value>,
+        period: &str,
+    ) -> (
+        std::collections::HashMap<String, f64>,
+        std::collections::HashMap<String, f64>,
+        Option<String>,
+        Option<String>,
+    ) {
+        let mut earned_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut spent_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        // Helper to get period key from date
+        let get_period_key = |date_str: &str, period: &str| -> String {
+            if let Ok(date) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00") {
+                match period {
+                    "1M" => date.format("%Y-%m-01T00:00:00+00:00").to_string(),
+                    "1W" => {
+                        let monday = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+                        monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
+                    }
+                    _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
+                }
+            } else {
+                date_str.to_string()
+            }
+        };
+
+        // Process earned transactions (deposits)
+        for tx in &earned_transactions {
+            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+                for t in transactions {
+                    if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
+                        if let Ok(amount) = amount_str.parse::<f64>() {
+                            if let Some(date) = t.get("date").and_then(|d| d.as_str()) {
+                                let period_key = get_period_key(date, period);
+                                *earned_entries.entry(period_key).or_insert(0.0) += amount;
+
+                                if currency_symbol.is_none() {
+                                    currency_symbol = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from);
+                                    currency_code = t.get("currency_code").and_then(|s| s.as_str()).map(String::from);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Process spent transactions (withdrawals)
+        for tx in &spent_transactions {
+            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+                for t in transactions {
+                    if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
+                        if let Ok(amount) = amount_str.parse::<f64>() {
+                            if let Some(date) = t.get("date").and_then(|d| d.as_str()) {
+                                let period_key = get_period_key(date, period);
+                                // Spent is positive in the data, but we want it as positive for display
+                                *spent_entries.entry(period_key).or_insert(0.0) += amount;
+
+                                if currency_symbol.is_none() {
+                                    currency_symbol = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from);
+                                    currency_code = t.get("currency_code").and_then(|s| s.as_str()).map(String::from);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        (earned_entries, spent_entries, currency_symbol, currency_code)
     }
 }

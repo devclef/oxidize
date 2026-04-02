@@ -161,6 +161,9 @@ async function fetchChartData() {
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
     const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
+    // Get widget type
+    const widgetType = document.getElementById('widget-type-select')?.value || 'balance';
+
     // Get date range and interval
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
@@ -168,6 +171,49 @@ async function fetchChartData() {
 
     try {
         const params = new URLSearchParams();
+
+        // For earned_spent widget type, use the dedicated endpoint
+        if (widgetType === 'earned_spent') {
+            // Add selected account IDs to filter earned/spent data
+            selectedIds.forEach(id => params.append('accounts[]', id));
+
+            if (startDate) params.append('start', startDate);
+            if (endDate) params.append('end', endDate);
+            if (interval && interval !== 'auto') params.append('period', interval);
+
+            let url = '/api/earned-spent';
+            if (params.toString()) {
+                url += `?${params.toString()}`;
+            }
+
+            console.log('=== FETCHING EARNED/SPENT DATA ===');
+            console.log('URL:', url);
+            console.log('Selected account IDs:', selectedIds);
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const history = await response.json();
+
+            console.log('=== EARNED/SPENT DATA FETCHED ===');
+            console.log('Received history:', history);
+
+            if (!history || history.length === 0) {
+                console.warn('No earned/spent data returned from API');
+                chartError.innerHTML = '<div class="info">No earned/spent data found for the current date range.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            chartContainer.style.display = 'block';
+            renderChart(history, widgetType);
+            return;
+        }
 
         if (selectedIds.length > 0) {
             selectedIds.forEach(id => params.append('accounts[]', id));
@@ -255,9 +301,139 @@ function generateColors(count) {
     return colors;
 }
 
-function renderChart(history) {
+// Extract chart data from entries (handles both object and array formats)
+function extractChartData(entries, length) {
+    if (Array.isArray(entries)) {
+        return entries.map(e => parseFloat(e.value || 0));
+    } else {
+        return Object.values(entries).map(v => {
+            if (typeof v === 'object' && v !== null) {
+                return parseFloat(v.value || 0);
+            }
+            return parseFloat(v);
+        });
+    }
+}
+
+// Render earned vs spent bar chart
+function renderEarnedSpentChart(ctx, history) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    // Find earned and spent datasets from history
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    // Extract labels from the first dataset that has entries
+    let labels = [];
+    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+
+    if (labels.length === 0) {
+        console.warn('No labels found in earned/spent chart data');
+        return;
+    }
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+
+    // Earned is typically positive (income), spent is typically positive (expense)
+    // We'll show earned in green and spent in red
+    const earnedColor = isDark ? '#58d68d' : '#27ae60';
+    const spentColor = isDark ? '#ec7063' : '#e74c3c';
+
+    // Destroy existing chart to avoid memory leaks
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    balanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Earned',
+                    data: earnedData,
+                    backgroundColor: earnedColor,
+                    borderColor: earnedColor,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Spent',
+                    data: spentData,
+                    backgroundColor: spentColor,
+                    borderColor: spentColor,
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 4,
+                        callback: function(value) {
+                            return Math.abs(value).toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 6,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = new Date(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.parsed.y !== null) {
+                                return context.dataset.label + ': ' + Math.abs(context.parsed.y).toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderChart(history, widgetType = 'balance') {
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+
+    // For earned_spent widget type, render as a bar chart
+    if (widgetType === 'earned_spent') {
+        renderEarnedSpentChart(ctx, history);
+        return;
+    }
 
     // Destroy existing chart to avoid memory leaks
     if (balanceChart) {
@@ -1216,6 +1392,19 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchChartData();
         });
     });
+
+    // Handle widget type change
+    const widgetTypeSelect = document.getElementById('widget-type-select');
+    if (widgetTypeSelect) {
+        widgetTypeSelect.addEventListener('change', () => {
+            const widgetType = widgetTypeSelect.value;
+            const chartTitle = document.getElementById('chart-title');
+            if (chartTitle) {
+                chartTitle.textContent = widgetType === 'earned_spent' ? 'Earned vs Spent' : 'Account Balance History';
+            }
+            fetchChartData();
+        });
+    }
 
     // Load saved lists dropdown
     updateSavedListsDropdown();

@@ -110,6 +110,7 @@ pub async fn get_earned_spent(
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
+    let mut account_ids: Vec<String> = Vec::new();
 
     log::info!("Received earned/spent request with query: {}", query_string);
 
@@ -118,11 +119,14 @@ pub async fn get_earned_spent(
             "start" => start = Some(v),
             "end" => end = Some(v),
             "period" => period = Some(v),
+            "accounts[]" => account_ids.push(v),
             _ => {}
         }
     }
 
-    match client.get_earned_spent(start, end, period).await {
+    log::info!("Filtering by {} accounts", account_ids.len());
+
+    match client.get_earned_spent(start, end, period, Some(account_ids)).await {
         Ok(history) => HttpResponse::Ok().json(history),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
