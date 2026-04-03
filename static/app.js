@@ -3,6 +3,19 @@ let balanceChart = null;
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 
+// UUID polyfill for browsers that don't support crypto.randomUUID
+function generateUUID() {
+    if (crypto.randomUUID) {
+        return generateUUID();
+    }
+    // Fallback implementation
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
 // Get config from server or use defaults
 const CONFIG = window.OXIDIZE_CONFIG || {
     accountTypes: ['asset', 'cash', 'expense', 'revenue', 'liability'],
@@ -1061,7 +1074,7 @@ async function saveCurrentSelection() {
     });
 
     const list = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         name: listName,
         accounts: {
             ids: selectedIds,
@@ -1167,7 +1180,7 @@ async function getDashboardWidgets() {
 }
 
 async function saveWidgetToStorage(widget) {
-    widget.id = widget.id || crypto.randomUUID();
+    widget.id = widget.id || generateUUID();
     widget.updated_at = new Date().toISOString();
 
     try {
@@ -1243,7 +1256,7 @@ async function saveGraphAsWidget() {
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
     const widget = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         name: widgetName,
         accounts: selectedIds,
         start_date: startDate || null,
