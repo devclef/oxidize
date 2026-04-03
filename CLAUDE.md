@@ -61,24 +61,42 @@ docker run -p 8080:8080 --env-file .env oxidize
 - `FireflyClient` wraps reqwest for Firefly III API communication
 - `get_accounts()` - Fetches accounts with optional type filter
 - `get_balance_history()` - Fetches chart data with date range and account filters
+- `get_earned_spent()` - Fetches earned/spent transaction data aggregated by period
 
 **API Handlers**: `src/handlers/`
-- `account.rs` - `/api/accounts` and `/api/accounts/balance-history` endpoints
+- `account.rs` - `/api/accounts`, `/api/accounts/balance-history`, and `/api/earned-spent` endpoints
 - `index.rs` - Serve the main HTML page
+- `dashboard.rs` - Serve the dashboard page
+- `widget.rs` - CRUD endpoints for widgets and saved lists
+
+**Cache Layer**: `src/cache.rs`
+- `DataCache` provides in-memory caching for accounts and balance history
+- Cache keys include account type filter, date range, and period
+
+**Storage Layer**: `src/storage.rs`
+- SQLite-based persistence for widgets and saved account lists
+- Uses `dirs` crate to determine data directory location
 
 **Data Models**: `src/models/`
 - `account.rs` - `AccountArray`, `AccountRead`, `AccountAttributes`, `SimpleAccount`
 - `chart.rs` - `ChartLine` (alias for `Vec<ChartDataSet>`)
+- `widget.rs` - `Widget`, `ChartOptions`, `SavedList`
 
 ### Frontend (Vanilla JS)
 
 **Static Files**: `static/`
 - `index.html` - Main UI with account filter, account list, saved lists, and chart
-- `app.js` - Client-side logic:
+- `dashboard.html` - Dashboard page for viewing saved widgets
+- `app.js` - Client-side logic for main page:
   - `fetchAccounts()` - Calls `/api/accounts` endpoint
   - `fetchChartData()` - Calls `/api/accounts/balance-history` endpoint
   - `renderChart()` - Uses Chart.js to render balance history
-  - Saved account lists stored in localStorage
+  - `saveGraphAsWidget()` - Saves current chart configuration as a widget
+- `dashboard.js` - Client-side logic for dashboard:
+  - `renderDashboard()` - Renders all saved widgets
+  - `renderWidgetChart()` - Renders chart for a specific widget
+  - `updateWidgetDateRange()` - Updates widget settings and re-renders
+- `style.css` - Shared styles with dark mode support via CSS variables
 
 ## Key Design Patterns
 
@@ -102,9 +120,36 @@ Optional:
 
 ## API Endpoints
 
+### Main Page
 - `GET /` - Serves index.html
-- `GET /api/accounts?type=<type>` - Returns list of accounts
+
+### Dashboard
+- `GET /dashboard` - Serves dashboard.html
+
+### Accounts
+- `GET /api/accounts?type=<type>` - Returns list of accounts (optional type filter)
+- `POST /api/accounts/refresh` - Clears accounts cache
+
+### Chart Data
 - `GET /api/accounts/balance-history?accounts[]=&start=&end=&period=` - Returns chart data
+- `POST /api/accounts/balance-history/refresh` - Clears balance history cache
+
+### Earned/Spent
+- `GET /api/earned-spent?start=&end=&period=&accounts[]=` - Returns earned/spent transaction data
+
+### Widgets
+- `GET /api/widgets` - Lists all saved widgets
+- `POST /api/widgets` - Creates a new widget
+- `PUT /api/widgets/{id}` - Updates an existing widget
+- `DELETE /api/widgets/{id}` - Deletes a widget
+
+### Saved Lists
+- `GET /api/saved-lists` - Lists all saved account lists
+- `POST /api/saved-lists` - Creates a new saved list
+- `DELETE /api/saved-lists/{id}` - Deletes a saved list
+
+### Cache
+- `POST /api/refresh` - Clears all caches
 
 ## Dependencies
 
