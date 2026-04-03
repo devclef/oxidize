@@ -402,33 +402,12 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                 });
             });
 
-            // Calculate anchor balance
-            let totalAnchorBalance = 0;
-            widget.accounts.forEach(id => {
-                const account = allAccounts.find(a => a.id === id);
-                if (account) {
-                    totalAnchorBalance += parseFloat(account.balance || 0);
-                }
-            });
+            // The Firefly III chart API returns absolute balance data, not flow data
+            // So we can use the totalFlowData directly without any conversion
+            const absoluteData = totalFlowData;
+            const lastTotalValue = absoluteData[absoluteData.length - 1];
 
-            const lastTotalValue = totalFlowData[totalFlowData.length - 1];
-            const totalDiff = Math.abs(lastTotalValue - totalAnchorBalance);
-            const totalThreshold = Math.abs(lastTotalValue) * 0.5 + 50.0;
-            const isAbsolute = totalDiff < totalThreshold;
-
-            console.log(`[Combined mode] lastTotalValue=${lastTotalValue}, totalAnchorBalance=${totalAnchorBalance}, diff=${totalDiff}, threshold=${totalThreshold}, isAbsolute=${isAbsolute}`);
-
-            let absoluteData;
-            if (isAbsolute) {
-                absoluteData = totalFlowData;
-            } else {
-                absoluteData = new Array(totalFlowData.length);
-                let current = totalAnchorBalance;
-                for (let i = totalFlowData.length - 1; i >= 0; i--) {
-                    absoluteData[i] = current;
-                    current -= totalFlowData[i];
-                }
-            }
+            console.log(`[Combined mode] Using totalFlowData directly as absolute. lastTotalValue=${lastTotalValue}`);
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -550,25 +529,12 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
 
                 const lastValue = flowData[flowData.length - 1];
                 const anchorBalance = parseFloat(info.balance);
-                const diff = Math.abs(lastValue - anchorBalance);
-                const threshold = Math.abs(lastValue) * 0.5 + 50.0;
-                const isAbsolute = diff < threshold;
 
-                console.log(`[Split mode] Account "${info.name}": lastValue=${lastValue}, anchorBalance=${anchorBalance}, diff=${diff}, threshold=${threshold}, isAbsolute=${isAbsolute}`);
-                console.log(`[Split mode] Account "${info.name}": flowData = [${flowData.slice(0, 5).join(', ')}${flowData.length > 5 ? '...' : ''}]`);
+                // The Firefly III chart API returns absolute balance data, not flow data
+                // So we can use the flowData directly without any conversion
+                const absoluteData = flowData;
 
-                let absoluteData;
-                if (isAbsolute) {
-                    absoluteData = flowData;
-                } else {
-                    absoluteData = new Array(flowData.length);
-                    let current = anchorBalance;
-                    for (let i = flowData.length - 1; i >= 0; i--) {
-                        absoluteData[i] = current;
-                        current -= flowData[i];
-                    }
-                }
-                console.log(`[Split mode] Account "${info.name}": absoluteData = [${absoluteData.slice(0, 5).join(', ')}${absoluteData.length > 5 ? '...' : ''}]`);
+                console.log(`[Split mode] Account "${info.name}": Using flowData directly as absolute. lastValue=${lastValue}, anchorBalance=${anchorBalance}`);
 
                 return {
                     label: info.name,
