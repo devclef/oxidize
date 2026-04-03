@@ -412,7 +412,11 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
             });
 
             const lastTotalValue = totalFlowData[totalFlowData.length - 1];
-            const isAbsolute = Math.abs(lastTotalValue - totalAnchorBalance) < (Math.abs(lastTotalValue) * 0.5 + 50.0);
+            const totalDiff = Math.abs(lastTotalValue - totalAnchorBalance);
+            const totalThreshold = Math.abs(lastTotalValue) * 0.5 + 50.0;
+            const isAbsolute = totalDiff < totalThreshold;
+
+            console.log(`[Combined mode] lastTotalValue=${lastTotalValue}, totalAnchorBalance=${totalAnchorBalance}, diff=${totalDiff}, threshold=${totalThreshold}, isAbsolute=${isAbsolute}`);
 
             let absoluteData;
             if (isAbsolute) {
@@ -546,7 +550,11 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
 
                 const lastValue = flowData[flowData.length - 1];
                 const anchorBalance = parseFloat(info.balance);
-                const isAbsolute = Math.abs(lastValue - anchorBalance) < (Math.abs(lastValue) * 0.5 + 50.0);
+                const diff = Math.abs(lastValue - anchorBalance);
+                const threshold = Math.abs(lastValue) * 0.5 + 50.0;
+                const isAbsolute = diff < threshold;
+
+                console.log(`[Split mode] Account "${info.name}": lastValue=${lastValue}, anchorBalance=${anchorBalance}, diff=${diff}, threshold=${threshold}, isAbsolute=${isAbsolute}`);
 
                 let absoluteData;
                 if (isAbsolute) {
