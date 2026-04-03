@@ -555,6 +555,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                 const isAbsolute = diff < threshold;
 
                 console.log(`[Split mode] Account "${info.name}": lastValue=${lastValue}, anchorBalance=${anchorBalance}, diff=${diff}, threshold=${threshold}, isAbsolute=${isAbsolute}`);
+                console.log(`[Split mode] Account "${info.name}": flowData = [${flowData.slice(0, 5).join(', ')}${flowData.length > 5 ? '...' : ''}]`);
 
                 let absoluteData;
                 if (isAbsolute) {
@@ -567,6 +568,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                         current -= flowData[i];
                     }
                 }
+                console.log(`[Split mode] Account "${info.name}": absoluteData = [${absoluteData.slice(0, 5).join(', ')}${absoluteData.length > 5 ? '...' : ''}]`);
 
                 return {
                     label: info.name,
