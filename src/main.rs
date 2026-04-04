@@ -1,13 +1,13 @@
-mod config;
-mod models;
-mod client;
-mod handlers;
 mod cache;
+mod client;
+mod config;
+mod handlers;
+mod models;
 mod storage;
 
-use actix_web::{web, App, HttpServer};
-use crate::config::Config;
 use crate::client::FireflyClient;
+use crate::config::Config;
+use actix_web::{web, App, HttpServer};
 use log::info;
 
 #[actix_web::main]

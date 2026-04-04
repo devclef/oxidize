@@ -1,5 +1,5 @@
-use std::env;
 use dotenv::dotenv;
+use std::env;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -18,10 +18,8 @@ impl Config {
 
         let firefly_url = env::var("FIREFLY_III_URL")
             .unwrap_or_else(|_| "https://demo.firefly-iii.org/api".to_string());
-        let firefly_token = env::var("FIREFLY_III_ACCESS_TOKEN")
-            .unwrap_or_else(|_| "".to_string());
-        let host = env::var("HOST")
-            .unwrap_or_else(|_| "0.0.0.0".to_string());
+        let firefly_token = env::var("FIREFLY_III_ACCESS_TOKEN").unwrap_or_else(|_| "".to_string());
+        let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("PORT")
             .unwrap_or_else(|_| "8080".to_string())
             .parse::<u16>()
@@ -42,12 +40,11 @@ impl Config {
             .unwrap_or(false);
 
         // Parse DATA_DIR: directory for SQLite database storage
-        let data_dir = env::var("DATA_DIR")
-            .unwrap_or_else(|_| {
-                dirs::home_dir()
-                    .map(|h| format!("{}/.oxidize/data", h.display()))
-                    .unwrap_or("./data".to_string())
-            });
+        let data_dir = env::var("DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .map(|h| format!("{}/.oxidize/data", h.display()))
+                .unwrap_or("./data".to_string())
+        });
 
         Self {
             firefly_url,

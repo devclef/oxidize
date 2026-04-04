@@ -15,6 +15,7 @@ pub struct ChartDataSet {
 
 /// Expense aggregated by category
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct CategoryExpense {
     pub name: String,
     pub amount: f64,

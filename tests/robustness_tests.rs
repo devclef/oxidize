@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use chrono::{Utc, Duration, Datelike};
+    use chrono::{Datelike, Duration, Utc};
 
     #[test]
     fn test_date_range_parsing() {
@@ -61,7 +61,9 @@ mod tests {
 
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
         // Verify format
@@ -76,7 +78,11 @@ mod tests {
         let end_parsed = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").unwrap();
         let diff = (end_parsed - start_parsed).num_days();
 
-        assert!(diff >= 29 && diff <= 31, "Date range should be ~30 days, got {}", diff);
+        assert!(
+            diff >= 29 && diff <= 31,
+            "Date range should be ~30 days, got {}",
+            diff
+        );
     }
 
     #[test]
@@ -149,7 +155,8 @@ mod tests {
             serde_json::json!({"id": "3", "name": "Cash", "account_type": "cash"}),
         ];
 
-        let asset_accounts: Vec<_> = accounts.iter()
+        let asset_accounts: Vec<_> = accounts
+            .iter()
             .filter(|a| a["account_type"] == "asset")
             .collect();
 
@@ -163,7 +170,9 @@ mod tests {
         let date_str = "2026-03-15T10:30:00+00:00";
 
         // Daily period - should keep date
-        let daily_key = if let Ok(date) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00") {
+        let daily_key = if let Ok(date) =
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+        {
             date.format("%Y-%m-%dT00:00:00+00:00").to_string()
         } else {
             date_str.to_string()
@@ -171,7 +180,9 @@ mod tests {
         assert_eq!(daily_key, "2026-03-15T00:00:00+00:00");
 
         // Monthly period - should be first day of month
-        let monthly_key = if let Ok(date) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00") {
+        let monthly_key = if let Ok(date) =
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+        {
             date.format("%Y-%m-01T00:00:00+00:00").to_string()
         } else {
             date_str.to_string()
@@ -179,8 +190,11 @@ mod tests {
         assert_eq!(monthly_key, "2026-03-01T00:00:00+00:00");
 
         // Weekly period - should be Monday of that week
-        let weekly_key = if let Ok(date) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00") {
-            let monday = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+        let weekly_key = if let Ok(date) =
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+        {
+            let monday =
+                date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
             monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
         } else {
             date_str.to_string()
@@ -199,11 +213,13 @@ mod tests {
             serde_json::json!({"type": "transfer", "amount": "75.00"}),
         ];
 
-        let deposits: Vec<_> = transactions.iter()
+        let deposits: Vec<_> = transactions
+            .iter()
             .filter(|t| t["type"] == "deposit")
             .collect();
 
-        let withdrawals: Vec<_> = transactions.iter()
+        let withdrawals: Vec<_> = transactions
+            .iter()
             .filter(|t| t["type"] == "withdrawal")
             .collect();
 
@@ -215,7 +231,8 @@ mod tests {
     fn test_empty_query_string_handling() {
         // Test that empty query string is handled correctly
         let query_string = "";
-        let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+        let params: Vec<(String, String)> =
+            serde_urlencoded::from_str(query_string).unwrap_or_default();
 
         assert!(params.is_empty());
     }
@@ -227,7 +244,8 @@ mod tests {
         let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap();
 
         // serde_urlencoded automatically decodes URL-encoded parameters
-        let account_ids: Vec<String> = params.iter()
+        let account_ids: Vec<String> = params
+            .iter()
             .filter(|(k, _)| k == "accounts[]")
             .map(|(_, v)| v.clone())
             .collect();

@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 /// Cache entry with expiration time
 #[derive(Debug, Clone)]
@@ -75,10 +75,7 @@ impl DataCache {
     pub fn set_accounts(&self, type_filter: Option<String>, data: String) {
         let key = Self::account_key(type_filter.as_deref());
         let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
-        let entry = CacheEntry {
-            data,
-            expires_at,
-        };
+        let entry = CacheEntry { data, expires_at };
 
         if let Ok(mut cache) = self.accounts.write() {
             cache.insert(key, entry);
@@ -125,10 +122,7 @@ impl DataCache {
             period.as_deref(),
         );
         let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
-        let entry = CacheEntry {
-            data,
-            expires_at,
-        };
+        let entry = CacheEntry { data, expires_at };
 
         if let Ok(mut cache) = self.balance_history.write() {
             cache.insert(key, entry);

@@ -1,6 +1,6 @@
-use actix_web::{web, HttpResponse, Responder, delete, get, post, put};
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 
-use crate::models::{Widget, SavedList};
+use crate::models::{SavedList, Widget};
 use crate::storage::Storage;
 
 // Widget endpoints

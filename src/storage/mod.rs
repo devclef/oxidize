@@ -1,9 +1,9 @@
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use crate::models::{Widget, SavedList};
 use crate::models::widget::ChartOptions;
+use crate::models::{SavedList, Widget};
 
 static DATA_DIR: OnceLock<String> = OnceLock::new();
 
@@ -24,7 +24,10 @@ pub fn init_data_dir(dir: String) {
 
 fn get_db_path() -> String {
     let dir = DATA_DIR.get().expect("Data directory not initialized");
-    PathBuf::from(dir).join("oxidize.db").to_string_lossy().to_string()
+    PathBuf::from(dir)
+        .join("oxidize.db")
+        .to_string_lossy()
+        .to_string()
 }
 
 fn init_db(conn: &Connection) {
@@ -69,9 +72,9 @@ fn init_db(conn: &Connection) {
 // Helper function to deserialize chart options from JSON string
 fn deserialize_chart_options(json: Option<&str>) -> Result<Option<ChartOptions>, String> {
     match json {
-        Some(s) if !s.is_empty() => {
-            serde_json::from_str(s).map(Some).map_err(|e| format!("Failed to parse chart_options JSON: {}", e))
-        }
+        Some(s) if !s.is_empty() => serde_json::from_str(s)
+            .map(Some)
+            .map_err(|e| format!("Failed to parse chart_options JSON: {}", e)),
         _ => Ok(None),
     }
 }
@@ -96,7 +99,7 @@ impl Storage {
                 .prepare(
                     "SELECT id, name, accounts, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, created_at, updated_at
-                     FROM widgets ORDER BY created_at DESC"
+                     FROM widgets ORDER BY created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -114,9 +117,11 @@ impl Storage {
                     let created_at: Option<String> = row.get(9)?;
                     let updated_at: Option<String> = row.get(10)?;
 
-                    let accounts: Vec<String> = serde_json::from_str(&accounts_json).unwrap_or_default();
+                    let accounts: Vec<String> =
+                        serde_json::from_str(&accounts_json).unwrap_or_default();
 
-                    let chart_options = deserialize_chart_options(chart_options_json.as_deref()).unwrap_or(None);
+                    let chart_options =
+                        deserialize_chart_options(chart_options_json.as_deref()).unwrap_or(None);
 
                     Ok(Widget {
                         id,
@@ -143,9 +148,10 @@ impl Storage {
     pub fn create_widget(widget: &Widget) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
-        let chart_options_json = widget.chart_options
+        let chart_options_json = widget
+            .chart_options
             .as_ref()
-            .map(|c| serde_json::to_string(c))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| e.to_string())?;
 
@@ -177,9 +183,10 @@ impl Storage {
     pub fn update_widget(widget: &Widget) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
-        let chart_options_json = widget.chart_options
+        let chart_options_json = widget
+            .chart_options
             .as_ref()
-            .map(|c| serde_json::to_string(c))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| e.to_string())?;
 
@@ -241,7 +248,8 @@ impl Storage {
                     let accounts_json: String = row.get(2)?;
                     let created_at: String = row.get(3)?;
 
-                    let accounts: serde_json::Value = serde_json::from_str(&accounts_json).unwrap_or(serde_json::Value::Null);
+                    let accounts: serde_json::Value =
+                        serde_json::from_str(&accounts_json).unwrap_or(serde_json::Value::Null);
 
                     Ok(SavedList {
                         id,

@@ -1,5 +1,5 @@
-use actix_web::{web, HttpResponse};
 use crate::config::Config;
+use actix_web::{web, HttpResponse};
 
 pub async fn index(config: web::Data<Config>) -> HttpResponse {
     let html = std::fs::read_to_string("./static/index.html")

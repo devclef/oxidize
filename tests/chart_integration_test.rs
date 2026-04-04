@@ -71,9 +71,14 @@ mod tests {
         }
 
         // Verify filtering worked
-        assert_eq!(filtered_data.len(), 2, "Should have 2 account datasets (not earned/spent)");
+        assert_eq!(
+            filtered_data.len(),
+            2,
+            "Should have 2 account datasets (not earned/spent)"
+        );
 
-        let labels: Vec<String> = filtered_data.iter()
+        let labels: Vec<String> = filtered_data
+            .iter()
             .map(|d| d.get("label").unwrap().as_str().unwrap().to_string())
             .collect();
 
@@ -111,7 +116,9 @@ mod tests {
 
         let chart_line: serde_json::Value = serde_json::from_str(json_response).unwrap();
 
-        let labels: Vec<String> = chart_line.as_array().unwrap()
+        let labels: Vec<String> = chart_line
+            .as_array()
+            .unwrap()
             .iter()
             .map(|d| d.get("label").unwrap().as_str().unwrap().to_string())
             .collect();
@@ -170,7 +177,8 @@ mod tests {
         ];
 
         // Filter out earned/spent
-        let filtered_labels: Vec<String> = dataset_labels.iter()
+        let filtered_labels: Vec<String> = dataset_labels
+            .iter()
             .filter(|l| l != &&"earned".to_string() && l != &&"spent".to_string())
             .cloned()
             .collect();
@@ -245,7 +253,11 @@ mod tests {
         let array = chart_line.as_array().unwrap();
 
         // Should have exactly 2 datasets: earned and spent
-        assert_eq!(array.len(), 2, "Should have exactly 2 datasets (earned and spent)");
+        assert_eq!(
+            array.len(),
+            2,
+            "Should have exactly 2 datasets (earned and spent)"
+        );
 
         // Find earned and spent datasets
         let earned = array.iter().find(|ds| ds["label"] == "earned").unwrap();
@@ -254,21 +266,75 @@ mod tests {
         // Verify earned values are positive (income)
         // Note: Firefly III returns values as strings, so we parse them
         let earned_entries = &earned["entries"];
-        let earned_val1: f64 = earned_entries.get("2026-03-01T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        let earned_val2: f64 = earned_entries.get("2026-03-02T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        let earned_val3: f64 = earned_entries.get("2026-03-03T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        assert!(earned_val1 > 0.0, "Earned values should be positive (income)");
-        assert!(earned_val2 > 0.0, "Earned values should be positive (income)");
-        assert!(earned_val3 > 0.0, "Earned values should be positive (income)");
+        let earned_val1: f64 = earned_entries
+            .get("2026-03-01T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let earned_val2: f64 = earned_entries
+            .get("2026-03-02T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let earned_val3: f64 = earned_entries
+            .get("2026-03-03T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            earned_val1 > 0.0,
+            "Earned values should be positive (income)"
+        );
+        assert!(
+            earned_val2 > 0.0,
+            "Earned values should be positive (income)"
+        );
+        assert!(
+            earned_val3 > 0.0,
+            "Earned values should be positive (income)"
+        );
 
         // Verify spent values are negative (expenses)
         let spent_entries = &spent["entries"];
-        let spent_val1: f64 = spent_entries.get("2026-03-01T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        let spent_val2: f64 = spent_entries.get("2026-03-02T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        let spent_val3: f64 = spent_entries.get("2026-03-03T00:00:00+00:00").unwrap().as_str().unwrap().parse().unwrap();
-        assert!(spent_val1 < 0.0, "Spent values should be negative (expenses)");
-        assert!(spent_val2 < 0.0, "Spent values should be negative (expenses)");
-        assert!(spent_val3 < 0.0, "Spent values should be negative (expenses)");
+        let spent_val1: f64 = spent_entries
+            .get("2026-03-01T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let spent_val2: f64 = spent_entries
+            .get("2026-03-02T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let spent_val3: f64 = spent_entries
+            .get("2026-03-03T00:00:00+00:00")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            spent_val1 < 0.0,
+            "Spent values should be negative (expenses)"
+        );
+        assert!(
+            spent_val2 < 0.0,
+            "Spent values should be negative (expenses)"
+        );
+        assert!(
+            spent_val3 < 0.0,
+            "Spent values should be negative (expenses)"
+        );
 
         // Verify currency information
         assert_eq!(earned["currency_code"], "SEK");
@@ -298,7 +364,10 @@ mod tests {
         assert!(!balance_widget["accounts"].as_array().unwrap().is_empty());
 
         assert_eq!(earned_spent_widget["widget_type"], "earned_spent");
-        assert!(earned_spent_widget["accounts"].as_array().unwrap().is_empty());
+        assert!(earned_spent_widget["accounts"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -321,9 +390,21 @@ mod tests {
             }
         }
 
-        assert_eq!(start, Some("2026-01-01".to_string()), "Start date should be parsed correctly");
-        assert_eq!(end, Some("2026-03-01".to_string()), "End date should be parsed correctly");
-        assert_eq!(period, Some("1M".to_string()), "Period should be parsed correctly");
+        assert_eq!(
+            start,
+            Some("2026-01-01".to_string()),
+            "Start date should be parsed correctly"
+        );
+        assert_eq!(
+            end,
+            Some("2026-03-01".to_string()),
+            "End date should be parsed correctly"
+        );
+        assert_eq!(
+            period,
+            Some("1M".to_string()),
+            "Period should be parsed correctly"
+        );
     }
 
     #[test]
@@ -357,7 +438,7 @@ mod tests {
     #[test]
     fn test_earned_spent_default_date_range() {
         // Test that default date range is calculated correctly when no dates provided
-        use chrono::{Utc, Duration};
+        use chrono::{Duration, Utc};
 
         // Simulate the default date calculation from client/mod.rs
         let end_date: Option<String> = None;
@@ -365,21 +446,33 @@ mod tests {
 
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
         // Verify that dates are in correct format
         assert!(end.len() == 10, "End date should be in YYYY-MM-DD format");
-        assert!(start.len() == 10, "Start date should be in YYYY-MM-DD format");
+        assert!(
+            start.len() == 10,
+            "Start date should be in YYYY-MM-DD format"
+        );
 
         // Verify that start is before end
-        assert!(start <= end, "Start date should be before or equal to end date");
+        assert!(
+            start <= end,
+            "Start date should be before or equal to end date"
+        );
 
         // Verify that the range is approximately 30 days
         let start_parsed = chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d").unwrap();
         let end_parsed = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").unwrap();
         let diff = (end_parsed - start_parsed).num_days();
 
-        assert!(diff >= 29 && diff <= 31, "Date range should be approximately 30 days, got {}", diff);
+        assert!(
+            diff >= 29 && diff <= 31,
+            "Date range should be approximately 30 days, got {}",
+            diff
+        );
     }
 }

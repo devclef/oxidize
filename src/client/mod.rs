@@ -1,9 +1,9 @@
-use crate::config::Config;
-use crate::models::{AccountArray, SimpleAccount, ChartLine, CategoryExpense};
 use crate::cache::DataCache;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, ACCEPT};
-use chrono::{Utc, Duration, Datelike};
-use log::{error, info, debug};
+use crate::config::Config;
+use crate::models::{AccountArray, CategoryExpense, ChartLine, SimpleAccount};
+use chrono::{Datelike, Duration, Utc};
+use log::{debug, error, info};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
 use std::sync::Arc;
 
 pub struct FireflyClient {
@@ -45,7 +45,10 @@ impl FireflyClient {
         info!("Balance history cache cleared");
     }
 
-    pub async fn get_accounts(&self, type_filter: Option<String>) -> Result<Vec<SimpleAccount>, String> {
+    pub async fn get_accounts(
+        &self,
+        type_filter: Option<String>,
+    ) -> Result<Vec<SimpleAccount>, String> {
         // Try to get from cache first
         if let Some(cached_json) = self.cache.get_accounts(type_filter.clone()) {
             debug!("Cache hit for accounts (type: {:?})", type_filter);
@@ -53,13 +56,16 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached accounts: {}", e));
         }
 
-        debug!("Cache miss for accounts (type: {:?}), fetching from Firefly III", type_filter);
+        debug!(
+            "Cache miss for accounts (type: {:?}), fetching from Firefly III",
+            type_filter
+        );
 
         let mut headers = HeaderMap::new();
         if !self.config.firefly_token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
@@ -69,7 +75,9 @@ impl FireflyClient {
             url = format!("{}?type={}", url, t);
         }
 
-        let response = self.client.get(url)
+        let response = self
+            .client
+            .get(url)
             .headers(headers)
             .send()
             .await
@@ -85,22 +93,22 @@ impl FireflyClient {
             return Err(format!("API request failed with status: {}", status));
         }
 
-        let account_array: AccountArray = response.json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse JSON: {}", e);
-                e.to_string()
-            })?;
+        let account_array: AccountArray = response.json().await.map_err(|e| {
+            error!("Failed to parse JSON: {}", e);
+            e.to_string()
+        })?;
 
-        let simple_accounts = account_array.data.into_iter().map(|a| {
-            SimpleAccount {
+        let simple_accounts = account_array
+            .data
+            .into_iter()
+            .map(|a| SimpleAccount {
                 id: a.id,
                 name: a.attributes.name,
                 balance: a.attributes.current_balance,
                 currency: a.attributes.currency_symbol,
                 account_type: a.attributes.account_type,
-            }
-        }).collect();
+            })
+            .collect();
 
         // Cache the result as JSON
         if let Ok(json) = serde_json::to_string(&simple_accounts) {
@@ -135,7 +143,7 @@ impl FireflyClient {
         if !self.config.firefly_token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
@@ -148,7 +156,9 @@ impl FireflyClient {
         // Use provided dates or default to last 30 days
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
         let period = period.unwrap_or_else(|| "1D".to_string());
@@ -178,7 +188,9 @@ impl FireflyClient {
             query_params.push(("preselected".to_string(), "assets".to_string()));
         }
 
-        let response = self.client.get(&url)
+        let response = self
+            .client
+            .get(&url)
             .headers(headers)
             .query(&query_params)
             .send()
@@ -198,12 +210,10 @@ impl FireflyClient {
             return Err(format!("API request failed with status: {}", status));
         }
 
-        let chart_line: ChartLine = response.json()
-            .await
-            .map_err(|e| {
-                error!("Failed to parse chart JSON: {}", e);
-                e.to_string()
-            })?;
+        let chart_line: ChartLine = response.json().await.map_err(|e| {
+            error!("Failed to parse chart JSON: {}", e);
+            e.to_string()
+        })?;
 
         info!("Chart API returned {} datasets", chart_line.len());
         for ds in &chart_line {
@@ -239,7 +249,7 @@ impl FireflyClient {
         if !self.config.firefly_token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
@@ -247,47 +257,78 @@ impl FireflyClient {
         // Use provided dates or default to last 30 days
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
         let period = period.unwrap_or_else(|| "1D".to_string());
 
-        log::info!("Fetching earned/spent data: start={}, end={}, period={}, account_ids={:?}", start, end, period, account_ids);
+        log::info!(
+            "Fetching earned/spent data: start={}, end={}, period={}, account_ids={:?}",
+            start,
+            end,
+            period,
+            account_ids
+        );
 
         // Fetch all transactions (optionally filtered by account IDs)
-        let all_transactions = self.fetch_all_transactions(&headers, &start, &end, account_ids.as_ref()).await?;
+        let all_transactions = self
+            .fetch_all_transactions(&headers, &start, &end, account_ids.as_ref())
+            .await?;
 
         // Filter by transaction type
-        let spent_transactions: Vec<_> = all_transactions.iter()
+        let spent_transactions: Vec<_> = all_transactions
+            .iter()
             .filter(|tx| {
                 tx.get("attributes")
                     .and_then(|a| a.get("transactions"))
                     .and_then(|t| t.as_array())
-                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal")))
+                    .map(|trans| {
+                        trans
+                            .iter()
+                            .any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal"))
+                    })
                     .unwrap_or(false)
             })
             .cloned()
             .collect();
 
-        let earned_transactions: Vec<_> = all_transactions.iter()
+        let earned_transactions: Vec<_> = all_transactions
+            .iter()
             .filter(|tx| {
                 tx.get("attributes")
                     .and_then(|a| a.get("transactions"))
                     .and_then(|t| t.as_array())
-                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("deposit")))
+                    .map(|trans| {
+                        trans
+                            .iter()
+                            .any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("deposit"))
+                    })
                     .unwrap_or(false)
             })
             .cloned()
             .collect();
 
-        info!("Fetched {} spent (withdrawal) transactions and {} earned (deposit) transactions", spent_transactions.len(), earned_transactions.len());
+        info!(
+            "Fetched {} spent (withdrawal) transactions and {} earned (deposit) transactions",
+            spent_transactions.len(),
+            earned_transactions.len()
+        );
 
         // Aggregate by period
-        let (earned_entries, spent_entries, currency_symbol, currency_code) =
-            self.aggregate_transactions_by_period(earned_transactions, spent_transactions, &period).await;
+        let (earned_entries, spent_entries, currency_symbol, currency_code) = self
+            .aggregate_transactions_by_period(earned_transactions, spent_transactions, &period)
+            .await;
 
-        info!("Aggregated earned entries: {} data points", earned_entries.len());
-        info!("Aggregated spent entries: {} data points", spent_entries.len());
+        info!(
+            "Aggregated earned entries: {} data points",
+            earned_entries.len()
+        );
+        info!(
+            "Aggregated spent entries: {} data points",
+            spent_entries.len()
+        );
 
         let earned_json: serde_json::Value = serde_json::to_value(earned_entries).unwrap();
         let spent_json: serde_json::Value = serde_json::to_value(spent_entries).unwrap();
@@ -304,7 +345,7 @@ impl FireflyClient {
                 currency_symbol,
                 currency_code,
                 entries: spent_json,
-            }
+            },
         ];
 
         Ok(result)
@@ -332,7 +373,9 @@ impl FireflyClient {
             let mut params_with_offset = query_params.clone();
             params_with_offset.push(("offset".to_string(), offset.to_string()));
 
-            let response = self.client.get(&url)
+            let response = self
+                .client
+                .get(&url)
                 .headers(headers.clone())
                 .query(&params_with_offset)
                 .send()
@@ -348,7 +391,10 @@ impl FireflyClient {
 
             let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
             let empty: Vec<serde_json::Value> = Vec::new();
-            let data = json.get("data").and_then(|d| d.as_array()).unwrap_or(&empty);
+            let data = json
+                .get("data")
+                .and_then(|d| d.as_array())
+                .unwrap_or(&empty);
 
             if data.is_empty() {
                 break;
@@ -368,11 +414,12 @@ impl FireflyClient {
             if !ids.is_empty() {
                 let id_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
                 let before_count = all_transactions.len();
-                all_transactions.retain(|tx| {
-                    self.transaction_involves_account(tx, &id_set)
-                });
+                all_transactions.retain(|tx| self.transaction_involves_account(tx, &id_set));
                 let after_count = all_transactions.len();
-                info!("Filtered {} transactions to {} based on account IDs", before_count, after_count);
+                info!(
+                    "Filtered {} transactions to {} based on account IDs",
+                    before_count, after_count
+                );
             }
         }
 
@@ -391,13 +438,15 @@ impl FireflyClient {
             .map(|transactions| {
                 transactions.iter().any(|t| {
                     // Check source account
-                    let source_match = t.get("source_id")
+                    let source_match = t
+                        .get("source_id")
                         .and_then(|s| s.as_str())
                         .map(|s| account_ids.contains(s))
                         .unwrap_or(false);
 
                     // Check destination account
-                    let dest_match = t.get("destination_id")
+                    let dest_match = t
+                        .get("destination_id")
                         .and_then(|d| d.as_str())
                         .map(|d| account_ids.contains(d))
                         .unwrap_or(false);
@@ -420,18 +469,23 @@ impl FireflyClient {
         Option<String>,
         Option<String>,
     ) {
-        let mut earned_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-        let mut spent_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut earned_entries: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let mut spent_entries: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
         // Helper to get period key from date
         let get_period_key = |date_str: &str, period: &str| -> String {
-            if let Ok(date) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00") {
+            if let Ok(date) =
+                chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+            {
                 match period {
                     "1M" => date.format("%Y-%m-01T00:00:00+00:00").to_string(),
                     "1W" => {
-                        let monday = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+                        let monday = date
+                            - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
                         monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
                     }
                     _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
@@ -443,7 +497,11 @@ impl FireflyClient {
 
         // Process earned transactions (deposit)
         for tx in &earned_transactions {
-            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+            if let Some(transactions) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
                 for t in transactions {
                     if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
                         if let Ok(amount) = amount_str.parse::<f64>() {
@@ -452,8 +510,14 @@ impl FireflyClient {
                                 *earned_entries.entry(period_key).or_insert(0.0) += amount;
 
                                 if currency_symbol.is_none() {
-                                    currency_symbol = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from);
-                                    currency_code = t.get("currency_code").and_then(|s| s.as_str()).map(String::from);
+                                    currency_symbol = t
+                                        .get("currency_symbol")
+                                        .and_then(|s| s.as_str())
+                                        .map(String::from);
+                                    currency_code = t
+                                        .get("currency_code")
+                                        .and_then(|s| s.as_str())
+                                        .map(String::from);
                                 }
                             }
                         }
@@ -464,7 +528,11 @@ impl FireflyClient {
 
         // Process spent transactions (withdrawal)
         for tx in &spent_transactions {
-            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+            if let Some(transactions) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
                 for t in transactions {
                     if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
                         if let Ok(amount) = amount_str.parse::<f64>() {
@@ -474,8 +542,14 @@ impl FireflyClient {
                                 *spent_entries.entry(period_key).or_insert(0.0) += amount;
 
                                 if currency_symbol.is_none() {
-                                    currency_symbol = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from);
-                                    currency_code = t.get("currency_code").and_then(|s| s.as_str()).map(String::from);
+                                    currency_symbol = t
+                                        .get("currency_symbol")
+                                        .and_then(|s| s.as_str())
+                                        .map(String::from);
+                                    currency_code = t
+                                        .get("currency_code")
+                                        .and_then(|s| s.as_str())
+                                        .map(String::from);
                                 }
                             }
                         }
@@ -484,10 +558,16 @@ impl FireflyClient {
             }
         }
 
-        (earned_entries, spent_entries, currency_symbol, currency_code)
+        (
+            earned_entries,
+            spent_entries,
+            currency_symbol,
+            currency_code,
+        )
     }
 
     /// Get expenses aggregated by category
+    #[allow(dead_code)]
     pub async fn get_expenses_by_category(
         &self,
         start_date: Option<String>,
@@ -500,27 +580,40 @@ impl FireflyClient {
         if !self.config.firefly_token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
 
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(365)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
-        log::info!("Fetching expenses by category: start={}, end={}", start, end);
+        log::info!(
+            "Fetching expenses by category: start={}, end={}",
+            start,
+            end
+        );
 
-        let all_transactions = self.fetch_all_transactions(&headers, &start, &end, account_ids.as_ref()).await?;
+        let all_transactions = self
+            .fetch_all_transactions(&headers, &start, &end, account_ids.as_ref())
+            .await?;
 
         // Filter for withdrawal (expense) transactions
-        let expense_transactions: Vec<_> = all_transactions.iter()
+        let expense_transactions: Vec<_> = all_transactions
+            .iter()
             .filter(|tx| {
                 tx.get("attributes")
                     .and_then(|a| a.get("transactions"))
                     .and_then(|t| t.as_array())
-                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal")))
+                    .map(|trans| {
+                        trans
+                            .iter()
+                            .any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal"))
+                    })
                     .unwrap_or(false)
             })
             .cloned()
@@ -529,25 +622,43 @@ impl FireflyClient {
         log::info!("Found {} expense transactions", expense_transactions.len());
 
         // Aggregate by category
-        let mut category_expenses: std::collections::HashMap<String, (f64, String, String)> = std::collections::HashMap::new();
+        let mut category_expenses: std::collections::HashMap<String, (f64, String, String)> =
+            std::collections::HashMap::new();
 
         for tx in &expense_transactions {
-            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+            if let Some(transactions) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
                 for t in transactions {
                     if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
                         if let Ok(amount) = amount_str.parse::<f64>() {
                             // Get category name
-                            let category_name = t.get("category_name")
+                            let category_name = t
+                                .get("category_name")
                                 .and_then(|c| c.as_str())
                                 .map(String::from)
                                 .unwrap_or_else(|| "Uncategorized".to_string());
 
-                            let entry = category_expenses.entry(category_name).or_insert((0.0, String::new(), String::new()));
+                            let entry = category_expenses.entry(category_name).or_insert((
+                                0.0,
+                                String::new(),
+                                String::new(),
+                            ));
                             entry.0 += amount;
 
                             if entry.1.is_empty() {
-                                entry.1 = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from).unwrap_or_default();
-                                entry.2 = t.get("currency_code").and_then(|s| s.as_str()).map(String::from).unwrap_or_default();
+                                entry.1 = t
+                                    .get("currency_symbol")
+                                    .and_then(|s| s.as_str())
+                                    .map(String::from)
+                                    .unwrap_or_default();
+                                entry.2 = t
+                                    .get("currency_code")
+                                    .and_then(|s| s.as_str())
+                                    .map(String::from)
+                                    .unwrap_or_default();
                             }
                         }
                     }
@@ -556,21 +667,29 @@ impl FireflyClient {
         }
 
         // Convert to vector and sort by amount descending
-        let mut result: Vec<CategoryExpense> = category_expenses.into_iter()
-            .map(|(name, (amount, currency_symbol, currency_code))| CategoryExpense {
-                name,
-                amount,
-                currency_symbol,
-                currency_code,
-            })
+        let mut result: Vec<CategoryExpense> = category_expenses
+            .into_iter()
+            .map(
+                |(name, (amount, currency_symbol, currency_code))| CategoryExpense {
+                    name,
+                    amount,
+                    currency_symbol,
+                    currency_code,
+                },
+            )
             .collect();
 
-        result.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+        result.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(result)
     }
 
     /// Get net worth data (assets - liabilities)
+    #[allow(dead_code)]
     pub async fn get_net_worth(
         &self,
         start_date: Option<String>,
@@ -583,29 +702,38 @@ impl FireflyClient {
         if !self.config.firefly_token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
 
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(365)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
         });
         let period = period.unwrap_or_else(|| "1M".to_string());
 
-        log::info!("Fetching net worth: start={}, end={}, period={}", start, end, period);
+        log::info!(
+            "Fetching net worth: start={}, end={}, period={}",
+            start,
+            end,
+            period
+        );
 
         // Fetch assets balance history
         let url = format!("{}/v1/chart/account/overview", self.config.firefly_url);
-        let mut asset_query = vec![
+        let asset_query = vec![
             ("start".to_string(), start.clone()),
             ("end".to_string(), end.clone()),
             ("period".to_string(), period.clone()),
             ("preselected".to_string(), "assets".to_string()),
         ];
 
-        let asset_response = self.client.get(&url)
+        let asset_response = self
+            .client
+            .get(&url)
             .headers(headers.clone())
             .query(&asset_query)
             .send()
@@ -615,24 +743,28 @@ impl FireflyClient {
         let asset_data: ChartLine = asset_response.json().await.map_err(|e| e.to_string())?;
 
         // Fetch liabilities balance history
-        let mut liability_query = vec![
+        let liability_query = vec![
             ("start".to_string(), start),
             ("end".to_string(), end),
             ("period".to_string(), period),
             ("preselected".to_string(), "liabilities".to_string()),
         ];
 
-        let liability_response = self.client.get(&url)
+        let liability_response = self
+            .client
+            .get(&url)
             .headers(headers)
             .query(&liability_query)
             .send()
             .await
             .map_err(|e| e.to_string())?;
 
-        let liability_data: ChartLine = liability_response.json().await.map_err(|e| e.to_string())?;
+        let liability_data: ChartLine =
+            liability_response.json().await.map_err(|e| e.to_string())?;
 
         // Calculate net worth (assets - liabilities)
-        let mut net_worth_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut net_worth_entries: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
@@ -642,7 +774,7 @@ impl FireflyClient {
                 for entry in entries {
                     if let (Some(date), Some(amount)) = (
                         entry.get("date").and_then(|d| d.as_str()),
-                        entry.get("ba").and_then(|b| b.as_f64())
+                        entry.get("ba").and_then(|b| b.as_f64()),
                     ) {
                         *net_worth_entries.entry(date.to_string()).or_insert(0.0) += amount;
                         if currency_symbol.is_none() {
@@ -660,7 +792,7 @@ impl FireflyClient {
                 for entry in entries {
                     if let (Some(date), Some(amount)) = (
                         entry.get("date").and_then(|d| d.as_str()),
-                        entry.get("ba").and_then(|b| b.as_f64())
+                        entry.get("ba").and_then(|b| b.as_f64()),
                     ) {
                         *net_worth_entries.entry(date.to_string()).or_insert(0.0) -= amount;
                     }
@@ -669,11 +801,14 @@ impl FireflyClient {
         }
 
         // Convert to ChartDataSet format
-        let mut entries_vec: Vec<serde_json::Value> = net_worth_entries.into_iter()
-            .map(|(date, ba)| serde_json::json!({
-                "date": date,
-                "ba": ba
-            }))
+        let mut entries_vec: Vec<serde_json::Value> = net_worth_entries
+            .into_iter()
+            .map(|(date, ba)| {
+                serde_json::json!({
+                    "date": date,
+                    "ba": ba
+                })
+            })
             .collect();
 
         entries_vec.sort_by(|a, b| {

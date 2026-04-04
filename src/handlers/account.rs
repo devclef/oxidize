@@ -1,7 +1,7 @@
-use actix_web::{get, post, web, HttpResponse, Responder, HttpRequest};
 use crate::client::FireflyClient;
-use serde::Deserialize;
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 use log::info;
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct AccountQuery {
@@ -36,14 +36,18 @@ pub async fn get_balance_history(
     req: HttpRequest,
 ) -> impl Responder {
     let query_string = req.query_string();
-    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
 
     let mut account_ids: Vec<String> = Vec::new();
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
 
-    log::info!("Received balance history request with query: {}", query_string);
+    log::info!(
+        "Received balance history request with query: {}",
+        query_string
+    );
 
     for (k, v) in params {
         log::info!("Query param received: {} = {}", k, v);
@@ -51,7 +55,7 @@ pub async fn get_balance_history(
             "accounts[]" | "accounts" => {
                 log::info!("Found account ID: {}", v);
                 account_ids.push(v);
-            },
+            }
             "start" => start = Some(v),
             "end" => end = Some(v),
             "period" => period = Some(v),
@@ -105,7 +109,8 @@ pub async fn get_earned_spent(
     req: HttpRequest,
 ) -> impl Responder {
     let query_string = req.query_string();
-    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -124,9 +129,18 @@ pub async fn get_earned_spent(
         }
     }
 
-    log::info!("Parsed earned/spent params: start={:?}, end={:?}, period={:?}, accounts={}", start, end, period, account_ids.len());
+    log::info!(
+        "Parsed earned/spent params: start={:?}, end={:?}, period={:?}, accounts={}",
+        start,
+        end,
+        period,
+        account_ids.len()
+    );
 
-    match client.get_earned_spent(start, end, period, Some(account_ids)).await {
+    match client
+        .get_earned_spent(start, end, period, Some(account_ids))
+        .await
+    {
         Ok(history) => HttpResponse::Ok().json(history),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
@@ -139,7 +153,8 @@ pub async fn get_expenses_by_category(
     req: HttpRequest,
 ) -> impl Responder {
     let query_string = req.query_string();
-    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -154,7 +169,10 @@ pub async fn get_expenses_by_category(
         }
     }
 
-    match client.get_expenses_by_category(start, end, Some(account_ids)).await {
+    match client
+        .get_expenses_by_category(start, end, Some(account_ids))
+        .await
+    {
         Ok(categories) => HttpResponse::Ok().json(categories),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
@@ -162,12 +180,10 @@ pub async fn get_expenses_by_category(
 
 /// GET endpoint for net worth chart data (assets - liabilities)
 #[get("/api/net-worth")]
-pub async fn get_net_worth(
-    client: web::Data<FireflyClient>,
-    req: HttpRequest,
-) -> impl Responder {
+pub async fn get_net_worth(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {
     let query_string = req.query_string();
-    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;

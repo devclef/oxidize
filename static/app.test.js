@@ -89,6 +89,7 @@ class MockDocument {
 // Setup mocks before each test
 beforeEach(() => {
     vi.clearAllMocks();
+    global.fetch = mockFetch;
     global.document = new MockDocument();
     global.window = {
         matchMedia: vi.fn().mockReturnValue({ matches: false }),

@@ -4,7 +4,7 @@
   "description": "Frontend for Oxidize",
   "type": "module",
   "scripts": {
-    "test": "vite test"
+    "test": "vitest"
   },
   "devDependencies": {
     "vitest": "^1.0.0",
