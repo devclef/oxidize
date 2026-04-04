@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::models::{AccountArray, SimpleAccount, ChartLine};
+use crate::models::{AccountArray, SimpleAccount, ChartLine, CategoryExpense};
 use crate::cache::DataCache;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, ACCEPT};
 use chrono::{Utc, Duration, Datelike};
@@ -485,5 +485,208 @@ impl FireflyClient {
         }
 
         (earned_entries, spent_entries, currency_symbol, currency_code)
+    }
+
+    /// Get expenses aggregated by category
+    pub async fn get_expenses_by_category(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        account_ids: Option<Vec<String>>,
+    ) -> Result<Vec<CategoryExpense>, String> {
+        use crate::models::chart::CategoryExpense;
+
+        let mut headers = HeaderMap::new();
+        if !self.config.firefly_token.is_empty() {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+            );
+        }
+        headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
+
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365)).format("%Y-%m-%d").to_string()
+        });
+
+        log::info!("Fetching expenses by category: start={}, end={}", start, end);
+
+        let all_transactions = self.fetch_all_transactions(&headers, &start, &end, account_ids.as_ref()).await?;
+
+        // Filter for withdrawal (expense) transactions
+        let expense_transactions: Vec<_> = all_transactions.iter()
+            .filter(|tx| {
+                tx.get("attributes")
+                    .and_then(|a| a.get("transactions"))
+                    .and_then(|t| t.as_array())
+                    .map(|trans| trans.iter().any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal")))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        log::info!("Found {} expense transactions", expense_transactions.len());
+
+        // Aggregate by category
+        let mut category_expenses: std::collections::HashMap<String, (f64, String, String)> = std::collections::HashMap::new();
+
+        for tx in &expense_transactions {
+            if let Some(transactions) = tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+                for t in transactions {
+                    if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
+                        if let Ok(amount) = amount_str.parse::<f64>() {
+                            // Get category name
+                            let category_name = t.get("category_name")
+                                .and_then(|c| c.as_str())
+                                .map(String::from)
+                                .unwrap_or_else(|| "Uncategorized".to_string());
+
+                            let entry = category_expenses.entry(category_name).or_insert((0.0, String::new(), String::new()));
+                            entry.0 += amount;
+
+                            if entry.1.is_empty() {
+                                entry.1 = t.get("currency_symbol").and_then(|s| s.as_str()).map(String::from).unwrap_or_default();
+                                entry.2 = t.get("currency_code").and_then(|s| s.as_str()).map(String::from).unwrap_or_default();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert to vector and sort by amount descending
+        let mut result: Vec<CategoryExpense> = category_expenses.into_iter()
+            .map(|(name, (amount, currency_symbol, currency_code))| CategoryExpense {
+                name,
+                amount,
+                currency_symbol,
+                currency_code,
+            })
+            .collect();
+
+        result.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(result)
+    }
+
+    /// Get net worth data (assets - liabilities)
+    pub async fn get_net_worth(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+    ) -> Result<ChartLine, String> {
+        use crate::models::chart::ChartDataSet;
+
+        let mut headers = HeaderMap::new();
+        if !self.config.firefly_token.is_empty() {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap()
+            );
+        }
+        headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
+
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365)).format("%Y-%m-%d").to_string()
+        });
+        let period = period.unwrap_or_else(|| "1M".to_string());
+
+        log::info!("Fetching net worth: start={}, end={}, period={}", start, end, period);
+
+        // Fetch assets balance history
+        let url = format!("{}/v1/chart/account/overview", self.config.firefly_url);
+        let mut asset_query = vec![
+            ("start".to_string(), start.clone()),
+            ("end".to_string(), end.clone()),
+            ("period".to_string(), period.clone()),
+            ("preselected".to_string(), "assets".to_string()),
+        ];
+
+        let asset_response = self.client.get(&url)
+            .headers(headers.clone())
+            .query(&asset_query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let asset_data: ChartLine = asset_response.json().await.map_err(|e| e.to_string())?;
+
+        // Fetch liabilities balance history
+        let mut liability_query = vec![
+            ("start".to_string(), start),
+            ("end".to_string(), end),
+            ("period".to_string(), period),
+            ("preselected".to_string(), "liabilities".to_string()),
+        ];
+
+        let liability_response = self.client.get(&url)
+            .headers(headers)
+            .query(&liability_query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let liability_data: ChartLine = liability_response.json().await.map_err(|e| e.to_string())?;
+
+        // Calculate net worth (assets - liabilities)
+        let mut net_worth_entries: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        // Process assets (add)
+        for dataset in &asset_data {
+            if let Some(entries) = dataset.entries.as_array() {
+                for entry in entries {
+                    if let (Some(date), Some(amount)) = (
+                        entry.get("date").and_then(|d| d.as_str()),
+                        entry.get("ba").and_then(|b| b.as_f64())
+                    ) {
+                        *net_worth_entries.entry(date.to_string()).or_insert(0.0) += amount;
+                        if currency_symbol.is_none() {
+                            currency_symbol = dataset.currency_symbol.clone();
+                            currency_code = dataset.currency_code.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Process liabilities (subtract)
+        for dataset in &liability_data {
+            if let Some(entries) = dataset.entries.as_array() {
+                for entry in entries {
+                    if let (Some(date), Some(amount)) = (
+                        entry.get("date").and_then(|d| d.as_str()),
+                        entry.get("ba").and_then(|b| b.as_f64())
+                    ) {
+                        *net_worth_entries.entry(date.to_string()).or_insert(0.0) -= amount;
+                    }
+                }
+            }
+        }
+
+        // Convert to ChartDataSet format
+        let mut entries_vec: Vec<serde_json::Value> = net_worth_entries.into_iter()
+            .map(|(date, ba)| serde_json::json!({
+                "date": date,
+                "ba": ba
+            }))
+            .collect();
+
+        entries_vec.sort_by(|a, b| {
+            let date_a = a.get("date").and_then(|d| d.as_str()).unwrap_or("");
+            let date_b = b.get("date").and_then(|d| d.as_str()).unwrap_or("");
+            date_a.cmp(date_b)
+        });
+
+        Ok(vec![ChartDataSet {
+            label: "Net Worth".to_string(),
+            currency_symbol,
+            currency_code,
+            entries: serde_json::Value::Array(entries_vec),
+        }])
     }
 }

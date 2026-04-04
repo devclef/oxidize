@@ -131,3 +131,59 @@ pub async fn get_earned_spent(
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+/// GET endpoint for expense by category chart data
+#[get("/api/expenses-by-category")]
+pub async fn get_expenses_by_category(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut account_ids: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "accounts[]" => account_ids.push(v),
+            _ => {}
+        }
+    }
+
+    match client.get_expenses_by_category(start, end, Some(account_ids)).await {
+        Ok(categories) => HttpResponse::Ok().json(categories),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+/// GET endpoint for net worth chart data (assets - liabilities)
+#[get("/api/net-worth")]
+pub async fn get_net_worth(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> = serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut period: Option<String> = None;
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "period" => period = Some(v),
+            _ => {}
+        }
+    }
+
+    match client.get_net_worth(start, end, period).await {
+        Ok(net_worth) => HttpResponse::Ok().json(net_worth),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}

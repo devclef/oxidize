@@ -12,3 +12,12 @@ pub struct ChartDataSet {
     // The spec is confusing, so we use Value for now to be safe.
     pub entries: Value,
 }
+
+/// Expense aggregated by category
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CategoryExpense {
+    pub name: String,
+    pub amount: f64,
+    pub currency_symbol: String,
+    pub currency_code: String,
+}
