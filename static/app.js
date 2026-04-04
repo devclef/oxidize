@@ -1,5 +1,6 @@
 let allAccounts = [];
 let balanceChart = null;
+let enableComparison = false;
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 
@@ -181,6 +182,11 @@ async function fetchChartData() {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
+    const interval = document.getElementById('interval-select').value;
+
+    // Get comparison dates if enabled
+    const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
+    const comparisonEndDate = enableComparison ? document.getElementById('comparison-end-date').value : null;
 
     try {
         const params = new URLSearchParams();
@@ -346,6 +352,31 @@ async function fetchChartData() {
         console.log('URL:', url);
         console.log('Selected account IDs:', selectedIds);
 
+        
+        // If comparison mode is enabled, fetch comparison data
+        let comparisonHistory = null;
+        if (enableComparison && comparisonStartDate && comparisonEndDate) {
+            const compParams = new URLSearchParams();
+            selectedIds.forEach(id => compParams.append('accounts[]', id));
+            compParams.append('start', comparisonStartDate);
+            compParams.append('end', comparisonEndDate);
+            if (interval && interval !== 'auto') compParams.append('period', interval);
+            
+            const compUrl = '/api/accounts/balance-history?' + compParams.toString();
+            console.log('=== FETCHING COMPARISON DATA ===');
+            console.log('URL:', compUrl);
+            
+            try {
+                const compResponse = await fetch(compUrl);
+                if (compResponse.ok) {
+                    comparisonHistory = await compResponse.json();
+                    console.log('Comparison data fetched:', comparisonHistory);
+                }
+            } catch (compErr) {
+                console.warn('Failed to fetch comparison data:', compErr);
+            }
+        }
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Error: ${response.status} ${response.statusText}`);
@@ -368,7 +399,13 @@ async function fetchChartData() {
         }
 
         chartContainer.style.display = 'block';
-        renderChart(history);
+        // Render comparison chart if comparison data is available
+        if (enableComparison && comparisonHistory && comparisonHistory.length > 0) {
+            const ctx = document.getElementById('balanceChart').getContext('2d');
+            renderComparisonChart(ctx, history, comparisonHistory);
+        } else {
+            renderChart(history);
+        }
     } catch (error) {
         console.error('Fetch chart error:', error);
         chartError.innerHTML = `<div class="error">Failed to load chart data: ${error.message}</div>`;
@@ -1551,6 +1588,11 @@ async function saveGraphAsWidget() {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
+    const interval = document.getElementById('interval-select').value;
+
+    // Get comparison dates if enabled
+    const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
+    const comparisonEndDate = enableComparison ? document.getElementById('comparison-end-date').value : null;
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
     const widget = {
@@ -1638,6 +1680,110 @@ async function refreshData() {
 }
 
 // Initialize
+
+// Toggle comparison controls visibility
+function toggleComparisonControls() {
+    const enableComparisonCheckbox = document.getElementById('enable-comparison');
+    const comparisonControls = document.querySelector('.comparison-controls');
+    
+    if (enableComparisonCheckbox && comparisonControls) {
+        if (enableComparisonCheckbox.checked) {
+            comparisonControls.style.display = 'inline-flex';
+            enableComparison = true;
+            
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            const comparisonStartDateInput = document.getElementById('comparison-start-date');
+            const comparisonEndDateInput = document.getElementById('comparison-end-date');
+            
+            if (startDateInput.value && endDateInput.value) {
+                const start = new Date(startDateInput.value);
+                const end = new Date(endDateInput.value);
+                const diff = end - start;
+                const comparisonEnd = new Date(start.getTime() - (diff / 2));
+                const comparisonStart = new Date(comparisonEnd.getTime() - diff);
+                comparisonEndDateInput.valueAsDate = comparisonEnd;
+                comparisonStartDateInput.valueAsDate = comparisonStart;
+            }
+        } else {
+            comparisonControls.style.display = 'none';
+            enableComparison = false;
+        }
+    }
+}
+
+// Render comparison chart with primary and comparison data
+function renderComparisonChart(ctx, primaryData, comparisonData) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+    
+    let labels = [];
+    const firstDataset = primaryData.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+    
+    if (labels.length === 0) {
+        console.warn('No labels found in comparison chart data');
+        return;
+    }
+    
+    const chartDatasets = [];
+    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b'];
+    
+    primaryData.forEach((ds, idx) => {
+        const data = extractChartData(ds.entries, labels);
+        const color = colors[idx % colors.length];
+        chartDatasets.push({
+            label: ds.label,
+            data: data,
+            borderColor: color,
+            backgroundColor: color + '20',
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1
+        });
+    });
+    
+    comparisonData.forEach((ds, idx) => {
+        const data = extractChartData(ds.entries, labels);
+        const color = colors[(idx + primaryData.length) % colors.length];
+        chartDatasets.push({
+            label: ds.label + ' (prev)' ,
+            data: data,
+            borderColor: color,
+            backgroundColor: color + '20',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0.1
+        });
+    });
+    
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+    
+    balanceChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: chartDatasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: false, grid: { color: chartGridColor }, ticks: { color: chartTextColor } },
+                x: { grid: { color: chartGridColor }, ticks: { color: chartTextColor, maxRotation: 45, minRotation: 45 } }
+            },
+            plugins: { legend: { display: true, position: 'bottom', labels: { color: chartTextColor } } }
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize theme
     initTheme();
@@ -1646,6 +1792,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) {
         themeToggle.addEventListener('click', toggleTheme);
+    }
+
+    // Comparison toggle
+    const enableComparisonCheckbox = document.getElementById('enable-comparison');
+    if (enableComparisonCheckbox) {
+        enableComparisonCheckbox.addEventListener('change', toggleComparisonControls);
+    }
     }
 
     const fetchAccountsBtn = document.getElementById('fetch-accounts-btn');

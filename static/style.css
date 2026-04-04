@@ -711,3 +711,61 @@ button:hover {
         height: 20px;
     }
 }
+
+/* Comparison Toggle Styles */
+.comparison-toggle {
+    display: inline-block;
+    margin-left: 1rem;
+    margin-right: 1rem;
+}
+
+.comparison-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.comparison-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.comparison-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: 1rem;
+    margin-right: 1rem;
+}
+
+.comparison-controls label {
+    font-size: 0.9rem;
+}
+
+.comparison-controls input[type="date"] {
+    padding: 0.4rem;
+    font-size: 0.9rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+}
+
+@media (max-width: 768px) {
+    .comparison-toggle {
+        margin-left: 0;
+        margin-right: 0;
+        margin-top: 0.5rem;
+        display: block;
+    }
+
+    .comparison-controls {
+        margin-left: 0;
+        margin-right: 0;
+        margin-top: 0.5rem;
+        flex-wrap: wrap;
+    }
+}
