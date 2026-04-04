@@ -42,7 +42,11 @@ mod tests {
             keys.push(key);
             // Move to next month
             if current.month() == 12 {
-                current = current.with_year(current.year() + 1).unwrap().with_month(1).unwrap();
+                current = current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
             } else {
                 current = current.with_month(current.month() + 1).unwrap();
             }
@@ -88,7 +92,8 @@ mod tests {
         let period = "1M";
 
         // Simulate transaction data that only has entries for Jan and March
-        let mut transaction_data: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut transaction_data: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
         transaction_data.insert("2026-01-01T00:00:00+00:00".to_string(), 1000.0);
         transaction_data.insert("2026-03-01T00:00:00+00:00".to_string(), 2000.0);
         // February is missing
@@ -101,7 +106,11 @@ mod tests {
             period_keys.push(key.clone());
             // Move to next month
             if current.month() == 12 {
-                current = current.with_year(current.year() + 1).unwrap().with_month(1).unwrap();
+                current = current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
             } else {
                 current = current.with_month(current.month() + 1).unwrap();
             }
@@ -116,9 +125,19 @@ mod tests {
 
         // Verify all periods are present
         assert_eq!(transaction_data.len(), 3, "Should have 3 period entries");
-        assert_eq!(transaction_data.get("2026-01-01T00:00:00+00:00").unwrap(), &1000.0);
-        assert_eq!(transaction_data.get("2026-02-01T00:00:00+00:00").unwrap(), &0.0, "February should be filled with 0");
-        assert_eq!(transaction_data.get("2026-03-01T00:00:00+00:00").unwrap(), &2000.0);
+        assert_eq!(
+            transaction_data.get("2026-01-01T00:00:00+00:00").unwrap(),
+            &1000.0
+        );
+        assert_eq!(
+            transaction_data.get("2026-02-01T00:00:00+00:00").unwrap(),
+            &0.0,
+            "February should be filled with 0"
+        );
+        assert_eq!(
+            transaction_data.get("2026-03-01T00:00:00+00:00").unwrap(),
+            &2000.0
+        );
     }
 
     #[test]
@@ -135,13 +154,21 @@ mod tests {
             keys.push(key);
             // Move to next month
             if current.month() == 12 {
-                current = current.with_year(current.year() + 1).unwrap().with_month(1).unwrap();
+                current = current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
             } else {
                 current = current.with_month(current.month() + 1).unwrap();
             }
         }
 
-        assert_eq!(keys.len(), 13, "Should generate 13 monthly keys for a year range");
+        assert_eq!(
+            keys.len(),
+            13,
+            "Should generate 13 monthly keys for a year range"
+        );
         assert_eq!(keys[0], "2025-01-01T00:00:00+00:00");
         assert_eq!(keys[12], "2026-01-01T00:00:00+00:00");
     }
@@ -181,11 +208,17 @@ mod tests {
         // Verify all 3 months are present including the zero-value February
         let earned_entries = &earned["entries"];
         assert_eq!(earned_entries.as_object().unwrap().len(), 3);
-        assert_eq!(earned_entries.get("2026-02-01T00:00:00+00:00").unwrap(), &0.0);
+        assert_eq!(
+            earned_entries.get("2026-02-01T00:00:00+00:00").unwrap(),
+            &0.0
+        );
 
         let spent_entries = &spent["entries"];
         assert_eq!(spent_entries.as_object().unwrap().len(), 3);
-        assert_eq!(spent_entries.get("2026-02-01T00:00:00+00:00").unwrap(), &0.0);
+        assert_eq!(
+            spent_entries.get("2026-02-01T00:00:00+00:00").unwrap(),
+            &0.0
+        );
     }
 
     #[test]
@@ -199,7 +232,8 @@ mod tests {
         let end = NaiveDate::parse_from_str("2025-12-31", "%Y-%m-%d").unwrap();
 
         // Simulate transaction data with only a few months having transactions
-        let mut earned_data: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut earned_data: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
         earned_data.insert("2025-03-01T00:00:00+00:00".to_string(), 5000.0);
         earned_data.insert("2025-07-01T00:00:00+00:00".to_string(), 6000.0);
         earned_data.insert("2025-11-01T00:00:00+00:00".to_string(), 5500.0);
@@ -213,7 +247,11 @@ mod tests {
             }
             // Move to next month
             if current.month() == 12 {
-                current = current.with_year(current.year() + 1).unwrap().with_month(1).unwrap();
+                current = current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
             } else {
                 current = current.with_month(current.month() + 1).unwrap();
             }
@@ -223,9 +261,18 @@ mod tests {
         assert_eq!(earned_data.len(), 12, "Should have all 12 months");
 
         // Verify months with transactions have correct values
-        assert_eq!(earned_data.get("2025-03-01T00:00:00+00:00").unwrap(), &5000.0);
-        assert_eq!(earned_data.get("2025-07-01T00:00:00+00:00").unwrap(), &6000.0);
-        assert_eq!(earned_data.get("2025-11-01T00:00:00+00:00").unwrap(), &5500.0);
+        assert_eq!(
+            earned_data.get("2025-03-01T00:00:00+00:00").unwrap(),
+            &5000.0
+        );
+        assert_eq!(
+            earned_data.get("2025-07-01T00:00:00+00:00").unwrap(),
+            &6000.0
+        );
+        assert_eq!(
+            earned_data.get("2025-11-01T00:00:00+00:00").unwrap(),
+            &5500.0
+        );
 
         // Verify months without transactions have 0
         assert_eq!(earned_data.get("2025-01-01T00:00:00+00:00").unwrap(), &0.0);
