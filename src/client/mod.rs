@@ -318,7 +318,13 @@ impl FireflyClient {
 
         // Aggregate by period
         let (earned_entries, spent_entries, currency_symbol, currency_code) = self
-            .aggregate_transactions_by_period(earned_transactions, spent_transactions, &period)
+            .aggregate_transactions_by_period(
+                earned_transactions,
+                spent_transactions,
+                &period,
+                &start,
+                &end,
+            )
             .await;
 
         info!(
@@ -457,12 +463,78 @@ impl FireflyClient {
             .unwrap_or(false)
     }
 
+    /// Generate all period keys for a date range
+    fn generate_period_keys(
+        start_date: &str,
+        end_date: &str,
+        period: &str,
+    ) -> Result<Vec<String>, String> {
+        use chrono::Datelike;
+
+        let start = chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+            .map_err(|e| format!("Failed to parse start date: {}", e))?;
+        let end = chrono::NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+            .map_err(|e| format!("Failed to parse end date: {}", e))?;
+
+        let mut keys = Vec::new();
+        let mut current = start;
+
+        while current <= end {
+            let key = match period {
+                "1M" => {
+                    // First day of the month
+                    current.format("%Y-%m-01T00:00:00+00:00").to_string()
+                }
+                "1W" => {
+                    // Monday of the week containing current date
+                    let monday = current
+                        - chrono::Duration::days(current.weekday().num_days_from_monday() as i64);
+                    monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
+                }
+                _ => {
+                    // Daily (1D) or default
+                    current.format("%Y-%m-%dT00:00:00+00:00").to_string()
+                }
+            };
+
+            keys.push(key);
+
+            // Move to next period
+            match period {
+                "1M" => {
+                    // Move to first day of next month
+                    if current.month() == 12 {
+                        current = current
+                            .with_year(current.year() + 1)
+                            .unwrap()
+                            .with_month(1)
+                            .unwrap();
+                    } else {
+                        current = current.with_month(current.month() + 1).unwrap();
+                    }
+                }
+                "1W" => {
+                    // Move to next Monday
+                    current += chrono::Duration::days(7);
+                }
+                _ => {
+                    // Move to next day
+                    current += chrono::Duration::days(1);
+                }
+            }
+        }
+
+        Ok(keys)
+    }
+
     /// Aggregate transactions by period
     async fn aggregate_transactions_by_period(
         &self,
         earned_transactions: Vec<serde_json::Value>,
         spent_transactions: Vec<serde_json::Value>,
         period: &str,
+        start_date: &str,
+        end_date: &str,
     ) -> (
         std::collections::HashMap<String, f64>,
         std::collections::HashMap<String, f64>,
@@ -475,6 +547,14 @@ impl FireflyClient {
             std::collections::HashMap::new();
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
+
+        // Generate all period keys for the date range and initialize with 0
+        if let Ok(period_keys) = Self::generate_period_keys(start_date, end_date, period) {
+            for key in period_keys {
+                earned_entries.insert(key.clone(), 0.0);
+                spent_entries.insert(key, 0.0);
+            }
+        }
 
         // Helper to get period key from date
         let get_period_key = |date_str: &str, period: &str| -> String {
