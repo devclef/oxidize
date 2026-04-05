@@ -1,6 +1,6 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::{AccountArray, CategoryExpense, ChartLine, SimpleAccount};
+use crate::models::{AccountArray, CategoryExpense, ChartLine, MonthlySummary, SimpleAccount};
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -903,5 +903,176 @@ impl FireflyClient {
             currency_code,
             entries: serde_json::Value::Array(entries_vec),
         }])
+    }
+
+    /// Get monthly summary data (income, expenses, savings)
+    pub async fn get_monthly_summary(
+        &self,
+        month: u32,
+        year: i32,
+    ) -> Result<MonthlySummary, String> {
+
+        // Calculate start and end dates for the month
+        let start_date = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .ok_or_else(|| format!("Invalid date for month {} year {}", month, year))?;
+
+        let end_date = if month == 12 {
+            chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+                .map(|d| d.pred_opt().unwrap().format("%Y-%m-%d").to_string())
+                .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
+        } else {
+            chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+                .map(|d| d.pred_opt().unwrap().format("%Y-%m-%d").to_string())
+                .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
+        };
+
+        let mut headers = HeaderMap::new();
+        if !self.config.firefly_token.is_empty() {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
+            );
+        }
+        headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
+
+        // Fetch income (withdrawals with negative amount = income in Firefly III)
+        let url = format!("{}/v1/transactions", self.config.firefly_url);
+        let income_query = vec![
+            ("start".to_string(), start_date.clone()),
+            ("end".to_string(), end_date.clone()),
+            ("type".to_string(), "withdrawal".to_string()), // withdrawals = income
+        ];
+
+        let income_response = self
+            .client
+            .get(&url)
+            .headers(headers.clone())
+            .query(&income_query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !income_response.status().is_success() {
+            return Err(format!(
+                "Failed to fetch income data: {}",
+                income_response.status()
+            ));
+        }
+
+        let income_data: serde_json::Value = income_response.json().await.map_err(|e| e.to_string())?;
+
+        // Fetch expenses (deposits in Firefly III = expenses going out)
+        let expense_query = vec![
+            ("start".to_string(), start_date.clone()),
+            ("end".to_string(), end_date.clone()),
+            ("type".to_string(), "deposit".to_string()), // deposits = expenses
+        ];
+
+        let expense_response = self
+            .client
+            .get(&url)
+            .headers(headers.clone())
+            .query(&expense_query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !expense_response.status().is_success() {
+            return Err(format!(
+                "Failed to fetch expense data: {}",
+                expense_response.status()
+            ));
+        }
+
+        let expense_data: serde_json::Value = expense_response.json().await.map_err(|e| e.to_string())?;
+
+        // Calculate totals
+        let total_income = Self::sum_transaction_amounts(&income_data);
+        let total_expenses = Self::sum_transaction_amounts(&expense_data);
+        let savings = total_income - total_expenses;
+        let savings_rate = if total_income > 0.0 {
+            (savings / total_income) * 100.0
+        } else {
+            0.0
+        };
+
+        // Get currency info from first transaction
+        let (currency_symbol, currency_code) =
+            Self::get_currency_from_transactions(&income_data, &expense_data);
+
+
+        // Format month name
+        let month_name = match month {
+            1 => "January",
+            2 => "February",
+            3 => "March",
+            4 => "April",
+            5 => "May",
+            6 => "June",
+            7 => "July",
+            8 => "August",
+            9 => "September",
+            10 => "October",
+            11 => "November",
+            12 => "December",
+            _ => "Unknown",
+        };
+        Ok(MonthlySummary {
+            month: month_name.to_string(),
+            year,
+            total_income,
+            total_expenses,
+            savings,
+            savings_rate,
+            currency_symbol,
+            currency_code,
+        })
+    }
+
+    fn sum_transaction_amounts(data: &serde_json::Value) -> f64 {
+        data.get("data")
+            .and_then(|d| d.as_array())
+            .map(|transactions| {
+                transactions
+                    .iter()
+                    .filter_map(|t| t.get("attributes"))
+                    .filter_map(|attr| attr.get("amount"))
+                    .filter_map(|amt| amt.as_f64())
+                    .sum::<f64>()
+            })
+            .unwrap_or(0.0)
+    }
+
+    fn get_currency_from_transactions(
+        income_data: &serde_json::Value,
+        expense_data: &serde_json::Value,
+    ) -> (Option<String>, Option<String>) {
+        // Try income data first
+        let currency = Self::extract_currency(income_data);
+        if currency.0.is_some() || currency.1.is_some() {
+            return currency;
+        }
+        // Fall back to expense data
+        Self::extract_currency(expense_data)
+    }
+
+    fn extract_currency(data: &serde_json::Value) -> (Option<String>, Option<String>) {
+        data.get("data")
+            .and_then(|d| d.as_array())
+            .and_then(|transactions| transactions.first())
+            .and_then(|t| t.get("attributes"))
+            .map(|attr| {
+                let symbol = attr
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                let code = attr
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                (symbol, code)
+            })
+            .unwrap_or((None, None))
     }
 }
