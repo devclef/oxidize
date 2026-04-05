@@ -936,12 +936,12 @@ impl FireflyClient {
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
 
-        // Fetch income (withdrawals with negative amount = income in Firefly III)
+        // Fetch income (deposits = money coming in)
         let url = format!("{}/v1/transactions", self.config.firefly_url);
         let income_query = vec![
             ("start".to_string(), start_date.clone()),
             ("end".to_string(), end_date.clone()),
-            ("type".to_string(), "withdrawal".to_string()), // withdrawals = income
+            ("type".to_string(), "deposit".to_string()), // deposits = income
         ];
 
         let income_response = self
@@ -962,11 +962,11 @@ impl FireflyClient {
 
         let income_data: serde_json::Value = income_response.json().await.map_err(|e| e.to_string())?;
 
-        // Fetch expenses (deposits in Firefly III = expenses going out)
+        // Fetch expenses (withdrawals = money going out)
         let expense_query = vec![
             ("start".to_string(), start_date.clone()),
             ("end".to_string(), end_date.clone()),
-            ("type".to_string(), "deposit".to_string()), // deposits = expenses
+            ("type".to_string(), "withdrawal".to_string()), // withdrawals = expenses
         ];
 
         let expense_response = self
@@ -1037,9 +1037,13 @@ impl FireflyClient {
                 transactions
                     .iter()
                     .filter_map(|t| t.get("attributes"))
-                    .filter_map(|attr| attr.get("amount"))
-                    .filter_map(|amt| amt.as_f64())
-                    .sum::<f64>()
+                    .filter_map(|attr| attr.get("transactions"))
+                    .filter_map(|trans_array| trans_array.as_array())
+                    .flatten()
+                    .filter_map(|trans| trans.get("amount"))
+                    .filter_map(|amt| amt.as_str())
+                    .filter_map(|amt_str| amt_str.parse::<f64>().ok())
+                    .sum()
             })
             .unwrap_or(0.0)
     }
@@ -1062,12 +1066,15 @@ impl FireflyClient {
             .and_then(|d| d.as_array())
             .and_then(|transactions| transactions.first())
             .and_then(|t| t.get("attributes"))
-            .map(|attr| {
-                let symbol = attr
+            .and_then(|attr| attr.get("transactions"))
+            .and_then(|trans_array| trans_array.as_array())
+            .and_then(|trans| trans.first())
+            .map(|trans| {
+                let symbol = trans
                     .get("currency_symbol")
                     .and_then(|s| s.as_str())
                     .map(String::from);
-                let code = attr
+                let code = trans
                     .get("currency_code")
                     .and_then(|s| s.as_str())
                     .map(String::from);
