@@ -172,6 +172,10 @@ async function fetchAccounts() {
 
 async function fetchChartData(accountIds, startDate, endDate, interval) {
     const params = new URLSearchParams();
+            // Add account IDs if specified
+            if (widget.accounts && Array.isArray(widget.accounts)) {
+                widget.accounts.forEach(id => params.append('accounts[]', id));
+            }
 
     accountIds.forEach(id => params.append('accounts[]', id));
     if (startDate) params.append('start', startDate);
@@ -336,6 +340,10 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
         if (widgetType === 'earned_spent') {
             // For earned vs spent, use the dedicated earned-spent endpoint
             const params = new URLSearchParams();
+            // Add account IDs if specified
+            if (widget.accounts && Array.isArray(widget.accounts)) {
+                widget.accounts.forEach(id => params.append('accounts[]', id));
+            }
             if (widget.start_date) params.append('start', widget.start_date);
             if (widget.end_date) params.append('end', widget.end_date);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
