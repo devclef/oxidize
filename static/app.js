@@ -1587,7 +1587,6 @@ async function saveGraphAsWidget() {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
-    const interval = document.getElementById('interval-select').value;
 
     // Get comparison dates if enabled
     const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
