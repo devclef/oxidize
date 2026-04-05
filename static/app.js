@@ -182,7 +182,7 @@ async function fetchChartData() {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
-    const interval = document.getElementById('interval-select').value;
+    
 
     // Get comparison dates if enabled
     const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
@@ -1588,7 +1588,7 @@ async function saveGraphAsWidget() {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
-    const interval = document.getElementById('interval-select').value;
+    
 
     // Get comparison dates if enabled
     const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
@@ -1798,7 +1798,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const enableComparisonCheckbox = document.getElementById('enable-comparison');
     if (enableComparisonCheckbox) {
         enableComparisonCheckbox.addEventListener('change', toggleComparisonControls);
-    }
     }
 
     const fetchAccountsBtn = document.getElementById('fetch-accounts-btn');
