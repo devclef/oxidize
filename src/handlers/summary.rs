@@ -8,6 +8,7 @@ use crate::client::FireflyClient;
 pub struct SummaryQuery {
     month: Option<u32>,
     year: Option<i32>,
+    account_ids: Option<String>,
 }
 
 /// GET endpoint for monthly summary data
@@ -20,8 +21,16 @@ pub async fn get_monthly_summary(
     let now = chrono::Utc::now();
     let month = query.month.unwrap_or(now.month());
     let year = query.year.unwrap_or(now.year());
+    
+    // Parse account IDs if provided
+    let account_ids = query.account_ids.as_ref().map(|ids| {
+        ids.split(',')
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    });
 
-    match client.get_monthly_summary(month, year).await {
+    match client.get_monthly_summary(month, year, account_ids).await {
         Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }

@@ -15,11 +15,12 @@
             display: flex;
             gap: 20px;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             padding: 20px;
             background: var(--card-bg);
             border-radius: 8px;
             box-shadow: var(--card-shadow);
+            flex-wrap: wrap;
         }
         .month-selector label {
             font-weight: 600;
@@ -32,6 +33,50 @@
             border-radius: 4px;
             background: var(--bg-color);
             color: var(--text-color);
+        }
+        .account-selector {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+        }
+        .account-selector h3 {
+            margin: 0 0 12px 0;
+            font-size: 1em;
+            color: var(--text-muted);
+        }
+        .account-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+            background: var(--bg-color);
+        }
+        .account-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .account-item:hover {
+            background: var(--card-bg);
+            border-radius: 4px;
+        }
+        .account-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        .account-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .account-actions button {
+            padding: 6px 12px;
+            font-size: 0.9em;
+            cursor: pointer;
         }
         .summary-cards {
             display: grid;
@@ -141,6 +186,17 @@
             <select id="year-select">
             </select>
         </div>
+
+        <div class="account-selector">
+            <h3>Select Accounts (leave empty for all)</h3>
+            <div class="account-list" id="account-list">
+                <div class="loading">Loading accounts...</div>
+            </div>
+            <div class="account-actions">
+                <button id="select-all-accounts">Select All</button>
+                <button id="deselect-all-accounts">Deselect All</button>
+            </div>
+        </div>
         
         <div id="error-container"></div>
         
@@ -216,16 +272,61 @@
             return `${symbol}${amount.toFixed(2)}`;
         }
         
+        // Fetch accounts
+        async function fetchAccounts() {
+            try {
+                const response = await fetch('/api/accounts');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const accounts = await response.json();
+                return accounts;
+            } catch (error) {
+                console.error('Failed to fetch accounts:', error);
+                return [];
+            }
+        }
+        
+        // Render account list
+        async function renderAccountList() {
+            const accountList = document.getElementById('account-list');
+            const accounts = await fetchAccounts();
+            
+            if (accounts.length === 0) {
+                accountList.innerHTML = '<div class="loading">No accounts found</div>';
+                return;
+            }
+            
+            accountList.innerHTML = accounts.map(account => `
+                <div class="account-item">
+                    <input type="checkbox" id="account-${account.id}" value="${account.id}" data-name="${account.name}">
+                    <label for="account-${account.id}">${account.name}</label>
+                </div>
+            `).join('');
+        }
+        
+        // Get selected account IDs
+        function getSelectedAccountIds() {
+            const checkboxes = document.querySelectorAll('#account-list input[type="checkbox"]:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+        
         // Fetch and display summary
         async function fetchSummary() {
             const month = monthSelect.value;
             const year = yearSelect.value;
+            const accountIds = getSelectedAccountIds();
             const errorContainer = document.getElementById('error-container');
             
             errorContainer.innerHTML = '';
             
+            let url = `/api/summary/monthly?month=${month}&year=${year}`;
+            if (accountIds.length > 0) {
+                url += `&account_ids=${accountIds.join(',')}`;
+            }
+            
             try {
-                const response = await fetch(`/api/summary/monthly?month=${month}&year=${year}`);
+                const response = await fetch(url);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -251,8 +352,27 @@
         monthSelect.addEventListener('change', fetchSummary);
         yearSelect.addEventListener('change', fetchSummary);
         
-        // Initial fetch
-        fetchSummary();
+        document.getElementById('select-all-accounts').addEventListener('click', () => {
+            document.querySelectorAll('#account-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+            fetchSummary();
+        });
+        
+        document.getElementById('deselect-all-accounts').addEventListener('click', () => {
+            document.querySelectorAll('#account-list input[type="checkbox"]').forEach(cb => cb.checked = false);
+            fetchSummary();
+        });
+        
+        // Account checkbox changes
+        document.getElementById('account-list').addEventListener('change', (e) => {
+            if (e.target.type === 'checkbox') {
+                fetchSummary();
+            }
+        });
+        
+        // Initialize
+        renderAccountList().then(() => {
+            fetchSummary();
+        });
     </script>
 </body>
 </html>

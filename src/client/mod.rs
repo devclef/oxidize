@@ -910,6 +910,7 @@ impl FireflyClient {
         &self,
         month: u32,
         year: i32,
+        account_ids: Option<Vec<String>>,
     ) -> Result<MonthlySummary, String> {
 
         // Calculate start and end dates for the month
@@ -936,13 +937,30 @@ impl FireflyClient {
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
 
-        // Fetch income (deposits = money coming in)
-        let url = format!("{}/v1/transactions", self.config.firefly_url);
-        let income_query = vec![
+        // Build base query params
+        let mut income_query = vec![
             ("start".to_string(), start_date.clone()),
             ("end".to_string(), end_date.clone()),
             ("type".to_string(), "deposit".to_string()), // deposits = income
         ];
+
+        let mut expense_query = vec![
+            ("start".to_string(), start_date.clone()),
+            ("end".to_string(), end_date.clone()),
+            ("type".to_string(), "withdrawal".to_string()), // withdrawals = expenses
+        ];
+
+        // Add account filters if specified
+        if let Some(ref ids) = account_ids {
+            if !ids.is_empty() {
+                // For deposits (income): filter by destination account
+                income_query.push(("destination_id".to_string(), ids.join(",")));
+                // For withdrawals (expenses): filter by source account
+                expense_query.push(("source_id".to_string(), ids.join(",")));
+            }
+        }
+
+        let url = format!("{}/v1/transactions", self.config.firefly_url);
 
         let income_response = self
             .client
@@ -961,13 +979,6 @@ impl FireflyClient {
         }
 
         let income_data: serde_json::Value = income_response.json().await.map_err(|e| e.to_string())?;
-
-        // Fetch expenses (withdrawals = money going out)
-        let expense_query = vec![
-            ("start".to_string(), start_date.clone()),
-            ("end".to_string(), end_date.clone()),
-            ("type".to_string(), "withdrawal".to_string()), // withdrawals = expenses
-        ];
 
         let expense_response = self
             .client
