@@ -7,7 +7,7 @@ const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 // UUID polyfill for browsers that don't support crypto.randomUUID
 function generateUUID() {
     if (crypto.randomUUID) {
-        return generateUUID();
+        return crypto.randomUUID();
     }
     // Fallback implementation
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
