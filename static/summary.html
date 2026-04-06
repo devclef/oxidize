@@ -188,7 +188,11 @@
         </div>
 
         <div class="account-selector">
-            <h3>Select Accounts (leave empty for all)</h3>
+            <h3>Account Type Filter</h3>
+            <select id="account-type-filter">
+                <option value="all" selected>All</option>
+            </select>
+            <h3 style="margin-top: 16px;">Select Accounts (leave empty for all)</h3>
             <div class="account-list" id="account-list">
                 <div class="loading">Loading accounts...</div>
             </div>
@@ -264,6 +268,21 @@
         
         // Set current month
         const monthSelect = document.getElementById('month-select');
+
+        // Populate account type filter from CONFIG
+        const typeFilterSelect = document.getElementById("account-type-filter");
+        const config = window.OXIDIZE_CONFIG || { accountTypes: ["asset", "cash", "expense", "revenue", "liability"] };
+        config.accountTypes.forEach(type => {
+            const option = document.createElement("option");
+            option.value = type;
+            option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            typeFilterSelect.appendChild(option);
+        });
+        
+        // Add change listener for type filter
+        typeFilterSelect.addEventListener("change", () => {
+            renderAccountList();
+        });
         monthSelect.value = new Date().getMonth() + 1;
         
         // Format currency
@@ -273,9 +292,10 @@
         }
         
         // Fetch accounts
-        async function fetchAccounts() {
+        async function fetchAccounts(typeFilter = "all") {
             try {
-                const response = await fetch('/api/accounts');
+                const url = typeFilter === 'all' ? '/api/accounts' : `${'/api/accounts'}?type=${typeFilter}`;
+                const response = await fetch(url);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -289,8 +309,9 @@
         
         // Render account list
         async function renderAccountList() {
+            const typeFilter = document.getElementById("account-type-filter").value;
             const accountList = document.getElementById('account-list');
-            const accounts = await fetchAccounts();
+            const accounts = await fetchAccounts(typeFilter);
             
             if (accounts.length === 0) {
                 accountList.innerHTML = '<div class="loading">No accounts found</div>';

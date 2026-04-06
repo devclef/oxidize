@@ -1,8 +1,9 @@
-use actix_web::{get, web, HttpResponse, Responder};
+use actix_web::{get, web, HttpResponse};
 use chrono::Datelike;
 use serde::Deserialize;
 
 use crate::client::FireflyClient;
+use crate::config::Config;
 
 #[derive(Deserialize)]
 pub struct SummaryQuery {
@@ -16,7 +17,7 @@ pub struct SummaryQuery {
 pub async fn get_monthly_summary(
     client: web::Data<FireflyClient>,
     query: web::Query<SummaryQuery>,
-) -> impl Responder {
+) -> HttpResponse {
     // Default to current month/year if not provided
     let now = chrono::Utc::now();
     let month = query.month.unwrap_or(now.month());
@@ -38,8 +39,25 @@ pub async fn get_monthly_summary(
 
 /// GET endpoint for the summary page
 #[get("/summary")]
-pub async fn summary() -> impl Responder {
+pub async fn summary(config: web::Data<Config>) -> HttpResponse {
+    let html = std::fs::read_to_string("./static/summary.html")
+        .unwrap_or_else(|_| "<h1>Error loading page</h1>".to_string());
+
+    // Inject config as a script tag before the closing head tag
+    let config_script = format!(
+        r#"
+    <script>
+        window.OXIDIZE_CONFIG = {{
+            accountTypes: {}
+        }};
+    </script>
+    "#,
+        serde_json::to_string(&config.account_types).unwrap_or_else(|_| "[]".to_string())
+    );
+
+    let html = html.replace("</head>", &format!("{} </head>", config_script));
+
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
-        .body(include_str!("../../static/summary.html").to_string())
+        .body(html)
 }
