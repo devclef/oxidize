@@ -13,7 +13,6 @@ mod tests {
         // Test that daily period keys are generated correctly for a date range
         let start = NaiveDate::parse_from_str("2026-01-01", "%Y-%m-%d").unwrap();
         let end = NaiveDate::parse_from_str("2026-01-05", "%Y-%m-%d").unwrap();
-        
 
         let mut keys = Vec::new();
         let mut current = start;
@@ -33,7 +32,6 @@ mod tests {
         // Test that monthly period keys are generated correctly for a date range
         let start = NaiveDate::parse_from_str("2026-01-01", "%Y-%m-%d").unwrap();
         let end = NaiveDate::parse_from_str("2026-04-01", "%Y-%m-%d").unwrap();
-        
 
         let mut keys = Vec::new();
         let mut current = start;
@@ -65,7 +63,6 @@ mod tests {
         // Jan 5, 2026 is a Monday
         let start = NaiveDate::parse_from_str("2026-01-05", "%Y-%m-%d").unwrap(); // Monday
         let end = NaiveDate::parse_from_str("2026-01-19", "%Y-%m-%d").unwrap(); // Monday
-        
 
         let mut keys = Vec::new();
         let mut current = start;
@@ -89,7 +86,6 @@ mod tests {
         // Test that missing periods are filled with 0 values
         let start = NaiveDate::parse_from_str("2026-01-01", "%Y-%m-%d").unwrap();
         let end = NaiveDate::parse_from_str("2026-03-01", "%Y-%m-%d").unwrap();
-        
 
         // Simulate transaction data that only has entries for Jan and March
         let mut transaction_data: std::collections::HashMap<String, f64> =
@@ -145,7 +141,6 @@ mod tests {
         // Test a date range over a year with monthly periods
         let start = NaiveDate::parse_from_str("2025-01-01", "%Y-%m-%d").unwrap();
         let end = NaiveDate::parse_from_str("2026-01-01", "%Y-%m-%d").unwrap();
-        
 
         let mut keys = Vec::new();
         let mut current = start;

@@ -28,4 +28,3 @@ pub struct ChartOptions {
     pub tension: f64,
     pub begin_at_zero: bool,
 }
-

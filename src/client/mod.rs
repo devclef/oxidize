@@ -454,7 +454,6 @@ impl FireflyClient {
         }])
     }
 
-    
     pub async fn get_monthly_summary(
         &self,
         month: u32,
@@ -549,8 +548,10 @@ impl FireflyClient {
         let expense_data: serde_json::Value =
             expense_response.json().await.map_err(|e| e.to_string())?;
 
-        let total_income = Self::sum_filtered_transaction_amounts(&income_data, &selected_account_ids, true);
-        let total_expenses = Self::sum_filtered_transaction_amounts(&expense_data, &selected_account_ids, false);
+        let total_income =
+            Self::sum_filtered_transaction_amounts(&income_data, &selected_account_ids, true);
+        let total_expenses =
+            Self::sum_filtered_transaction_amounts(&expense_data, &selected_account_ids, false);
         let savings = total_income - total_expenses;
         let savings_rate = if total_income > 0.0 {
             (savings / total_income) * 100.0
@@ -813,7 +814,6 @@ impl FireflyClient {
         Ok(keys)
     }
 
-
     fn sum_filtered_transaction_amounts(
         data: &serde_json::Value,
         selected_account_ids: &std::collections::HashSet<String>,
@@ -851,7 +851,6 @@ impl FireflyClient {
             })
             .unwrap_or(0.0)
     }
-
 
     fn get_currency_from_transactions(
         income_data: &serde_json::Value,

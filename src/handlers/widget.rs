@@ -48,4 +48,3 @@ pub async fn delete_widget(path: web::Path<String>) -> impl Responder {
         Err(e) => HttpResponse::NotFound().body(e),
     }
 }
-
