@@ -32,9 +32,7 @@ pub async fn get_monthly_summary(
             .collect()
     });
 
-    match client
-        .get_monthly_summary(month, year, account_ids, query.account_type.clone())
-        .await
+    match client.get_monthly_summary(month, year, account_ids, query.account_type.clone()).await
     {
         Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => HttpResponse::InternalServerError().body(e),

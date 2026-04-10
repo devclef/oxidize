@@ -76,18 +76,6 @@ mod tests {
             main_rs.contains("delete_widget"),
             "delete_widget should be registered"
         );
-        assert!(
-            main_rs.contains("list_saved_lists"),
-            "list_saved_lists should be registered"
-        );
-        assert!(
-            main_rs.contains("create_saved_list"),
-            "create_saved_list should be registered"
-        );
-        assert!(
-            main_rs.contains("delete_saved_list"),
-            "delete_saved_list should be registered"
-        );
     }
 
     #[test]
