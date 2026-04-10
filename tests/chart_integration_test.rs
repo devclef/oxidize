@@ -442,7 +442,9 @@ mod tests {
 
         // Simulate the default date calculation from client/mod.rs
         let end = Utc::now().format("%Y-%m-%d").to_string();
-        let start = (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string();
+        let start = (Utc::now() - Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
 
         // Verify that dates are in correct format
         assert!(end.len() == 10, "End date should be in YYYY-MM-DD format");

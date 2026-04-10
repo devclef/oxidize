@@ -57,7 +57,9 @@ mod tests {
     fn test_default_date_range_calculation() {
         // Test that default date range is calculated correctly
         let end = Utc::now().format("%Y-%m-%d").to_string();
-        let start = (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string();
+        let start = (Utc::now() - Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
 
         // Verify format
         assert_eq!(end.len(), 10);
