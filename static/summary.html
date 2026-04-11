@@ -109,16 +109,16 @@
             margin: 0;
         }
         .summary-card.income .amount {
-            color: #4caf50;
+            color: var(--success-color);
         }
         .summary-card.expenses .amount {
-            color: #f44336;
+            color: var(--error-color);
         }
         .summary-card.savings .amount {
-            color: #2196f3;
+            color: var(--accent-color);
         }
         .summary-card.savings-rate .amount {
-            color: #9c27b0;
+            color: var(--warning-color);
             font-size: 1.5em;
         }
         .loading {
@@ -135,7 +135,7 @@
             margin-bottom: 20px;
             border-left: 4px solid #c62828;
         }
-        .dark .error {
+        [data-theme="dark"] .error {
             background: #421818;
             color: #ef9a9a;
         }
@@ -207,202 +207,7 @@
             </div>
         </div>
     </div>
-<script>
-    const THEME_KEY = 'oxidize_theme';
 
-    function showSunIcon() {
-        const sunIcon = document.getElementById('theme-icon-sun');
-        const moonIcon = document.getElementById('theme-icon-moon');
-        if (sunIcon) sunIcon.style.display = 'block';
-        if (moonIcon) moonIcon.style.display = 'none';
-    }
-
-    function showMoonIcon() {
-        const sunIcon = document.getElementById('theme-icon-sun');
-        const moonIcon = document.getElementById('theme-icon-moon');
-        if (sunIcon) sunIcon.style.display = 'none';
-        if (moonIcon) moonIcon.style.display = 'block';
-    }
-
-    function initTheme() {
-        const savedTheme = localStorage.getItem(THEME_KEY);
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            showMoonIcon();
-        } else {
-            document.documentElement.setAttribute('data-theme', 'light');
-            showSunIcon();
-        }
-    }
-
-    function toggleTheme() {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem(THEME_KEY, newTheme);
-
-        if (newTheme === 'dark') {
-            showMoonIcon();
-        } else {
-            showSunIcon();
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        initTheme();
-        const themeToggle = document.getElementById('theme-toggle');
-        if (themeToggle) {
-            themeToggle.addEventListener('click', toggleTheme);
-        }
-    });
-
-    (async () => {
-        const monthSelect = document.getElementById('month-select');
-        const yearSelect = document.getElementById('year-select');
-        const typeFilterSelect = document.getElementById("account-type-filter");
-        const errorContainer = document.getElementById('error-container');
-        
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth() + 1;
-
-        // Populate year select
-        for (let i = currentYear - 5; i <= currentYear + 5; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = i;
-            if (i === currentYear) option.selected = true;
-            yearSelect.appendChild(option);
-        }
-
-        // Populate month select
-        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        for (let i = 1; i <= 12; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = months[i-1];
-            if (i === currentMonth) option.selected = true;
-            monthSelect.appendChild(option);
-        }
-
-        // Populate account type filter from CONFIG
-        const config = window.OXIDIZE_CONFIG || { accountTypes: ["asset", "cash", "expense", "revenue", "liability"] };
-        config.accountTypes.forEach(type => {
-            const option = document.createElement("option");
-            option.value = type;
-            option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-            typeFilterSelect.appendChild(option);
-        });
-
-        // Format currency
-        function formatCurrency(amount, currencySymbol, currencyCode) {
-            const symbol = currencySymbol || currencyCode || '$';
-            return `${symbol}${amount.toFixed(2)}`;
-        }
-
-        // Fetch accounts
-        async function fetchAccounts(types) {
-            try {
-                let url = '/api/accounts';
-                if (types.length > 0 && !types.includes('all')) {
-                    url += '?type=' + types.join(',');
-                }
-                const response = await fetch(url);
-                if (!response.ok) throw new Error();
-                return await response.json();
-            } catch (error) {
-                console.error('Failed to fetch accounts:', error);
-                return [];
-            }
-        }
-
-        // Render account list
-        async function renderAccountList() {
-            const selectedTypes = Array.from(typeFilterSelect.selectedOptions).map(opt => opt.value);
-            const accountList = document.getElementById('account-list');
-            accountList.innerHTML = '<div class="loading">Loading accounts...</div>';
-            
-            const accounts = await fetchAccounts(selectedTypes);
-            
-            if (accounts.length === 0) {
-                accountList.innerHTML = '<div class="loading">No accounts found</div>';
-                return;
-            }
-            
-            accountList.innerHTML = accounts.map(account => `
-                <div class="account-item">
-                    <input type="checkbox" value="${account.id}" id="acc-${account.id}" class="account-checkbox">
-                    <label for="acc-${account.id}">${account.name} (${account.account_type})</label>
-                </div>
-            `).join('');
-
-            // Attach event listeners to new checkboxes
-            document.querySelectorAll('.account-checkbox').forEach(cb => {
-                cb.addEventListener('change', fetchChartData);
-            });
-        }
-
-        // Get selected account IDs
-        function getSelectedAccountIds() {
-            const checkboxes = document.querySelectorAll('#account-list input[type="checkbox"]:checked');
-            return Array.from(checkboxes).map(cb => cb.value);
-        }
-
-        // Fetch and render summary data
-        async function fetchChartData() {
-            const month = monthSelect.value;
-            const year = yearSelect.value;
-            const accountIds = getSelectedAccountIds();
-            const selectedType = typeFilterSelect.value;
-            
-            const accountIdsParam = accountIds.length > 0 ? accountIds.join(',') : '';
-            const accountTypeParam = selectedType && selectedType !== 'all' ? `&account_type=${selectedType}` : '';
-
-            try {
-                const url = `/api/summary/monthly?month=${month}&year=${year}${accountIdsParam ? '&account_ids=' + accountIdsParam : ''}${accountTypeParam}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error();
-                const data = await response.json();
-                
-                updateSummaryUI(data);
-            } catch (error) {
-                console.error('Failed to fetch summary:', error);
-                errorContainer.textContent = 'Failed to fetch summary data.';
-            }
-        }
-
-        function updateSummaryUI(data) {
-            const currencySymbol = data.currency_symbol;
-            const currencyCode = data.currency_code;
-
-            document.getElementById('total-income').textContent = formatCurrency(data.total_income, currencySymbol, currencyCode);
-            document.getElementById('total-expenses').textContent = formatCurrency(data.total_expenses, currencySymbol, currencyCode);
-            document.getElementById('savings').textContent = formatCurrency(data.savings, currencySymbol, currencyCode);
-            document.getElementById('savings-rate').textContent = (data.savings_rate * 100).toFixed(1) + '%';
-        }
-
-        // Event Listeners
-        monthSelect.addEventListener('change', fetchChartData);
-        yearSelect.addEventListener('change', fetchChartData);
-        typeFilterSelect.addEventListener('change', renderAccountList);
-
-        document.getElementById('select-all-accounts').addEventListener('click', () => {
-            document.querySelectorAll('.account-checkbox').forEach(cb => cb.checked = true);
-            fetchChartData();
-        });
-
-        document.getElementById('deselect-all-accounts').addEventListener('click', () => {
-            document.querySelectorAll('.account-checkbox').forEach(cb => cb.checked = false);
-            fetchChartData();
-        });
-
-        // Initial load
-        await renderAccountList();
-        fetchChartData();
-    })();
-</script>
+<script src="/static/theme.js"></script>
 </body>
 </html>

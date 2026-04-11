@@ -1,6 +1,5 @@
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
-const THEME_KEY = 'oxidize_theme';
 let widgetCharts = {};
 
 // Get config from server or use defaults
@@ -10,50 +9,7 @@ const CONFIG = window.OXIDIZE_CONFIG || {
 };
 
 // Theme management
-function initTheme() {
-    const savedTheme = localStorage.getItem(THEME_KEY);
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        showMoonIcon();
-    } else {
-        document.documentElement.setAttribute('data-theme', 'light');
-        showSunIcon();
-    }
-}
-
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem(THEME_KEY, newTheme);
-
-    if (newTheme === 'dark') {
-        showMoonIcon();
-    } else {
-        showSunIcon();
-    }
-
-    // Update all widget charts
-    updateWidgetChartsTheme(newTheme);
-}
-
-function showSunIcon() {
-    const sunIcon = document.getElementById('theme-icon-sun');
-    const moonIcon = document.getElementById('theme-icon-moon');
-    if (sunIcon) sunIcon.style.display = 'block';
-    if (moonIcon) moonIcon.style.display = 'none';
-}
-
-function showMoonIcon() {
-    const sunIcon = document.getElementById('theme-icon-sun');
-    const moonIcon = document.getElementById('theme-icon-moon');
-    if (sunIcon) sunIcon.style.display = 'none';
-    if (moonIcon) moonIcon.style.display = 'block';
-}
-
+window.addEventListener("themeChanged", (e) => { updateWidgetChartsTheme(e.detail); });
 function updateWidgetChartsTheme(theme) {
     const isDark = theme === 'dark';
     const textColor = isDark ? '#eaeaea' : '#333';

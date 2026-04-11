@@ -22,47 +22,7 @@ const CONFIG = window.OXIDIZE_CONFIG || {
     autoFetchAccounts: false
 };
 
-// Theme management
-const THEME_KEY = 'oxidize_theme';
-
-function initTheme() {
-    const savedTheme = localStorage.getItem(THEME_KEY);
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        showMoonIcon();
-    } else {
-        document.documentElement.setAttribute('data-theme', 'light');
-        showSunIcon();
-    }
-}
-
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem(THEME_KEY, newTheme);
-
-    if (newTheme === 'dark') {
-        showMoonIcon();
-    } else {
-        showSunIcon();
-    }
-
-    // Update chart colors if chart exists
-    if (balanceChart) {
-        updateChartTheme(newTheme);
-    }
-}
-
-function showSunIcon() {
-    document.getElementById('theme-icon-sun').style.display = 'block';
-    document.getElementById('theme-icon-moon').style.display = 'none';
-}
-
-function showMoonIcon() {
+window.addEventListener("themeChanged", (e) => { updateChartTheme(e.detail); });
     document.getElementById('theme-icon-sun').style.display = 'none';
     document.getElementById('theme-icon-moon').style.display = 'block';
 }
