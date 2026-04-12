@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use mockito::Server;
     use oxidize::client::FireflyClient;
     use oxidize::config::Config;
-    use mockito::Server;
     use serde_json::json;
 
     #[tokio::test]
@@ -11,33 +11,41 @@ mod tests {
         let url = server.url();
 
         // Mock for /v1/accounts?type=all - might return empty list
-        let _m_all = server.mock("GET", "/v1/accounts")
+        let _m_all = server
+            .mock("GET", "/v1/accounts")
             .match_query(mockito::Matcher::UrlEncoded("type".into(), "all".into()))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(json!({
-                "data": []
-            }).to_string())
+            .with_body(
+                json!({
+                    "data": []
+                })
+                .to_string(),
+            )
             .create_async()
             .await;
 
         // Mock for /v1/accounts (no params) - should return 1 account
-        let _m_none = server.mock("GET", "/v1/accounts")
+        let _m_none = server
+            .mock("GET", "/v1/accounts")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(json!({
-                "data": [
-                    {
-                        "id": "acc1",
-                        "attributes": {
-                            "name": "Test Account",
-                            "type": "asset",
-                            "current_balance": "100.00",
-                            "currency_symbol": "$"
+            .with_body(
+                json!({
+                    "data": [
+                        {
+                            "id": "acc1",
+                            "attributes": {
+                                "name": "Test Account",
+                                "type": "asset",
+                                "current_balance": "100.00",
+                                "currency_symbol": "$"
+                            }
                         }
-                    }
-                ]
-            }).to_string())
+                    ]
+                })
+                .to_string(),
+            )
             .create_async()
             .await;
 
@@ -54,15 +62,25 @@ mod tests {
         let client = FireflyClient::new(config);
 
         // Test None
-        let accounts_none: Vec<oxidize::models::SimpleAccount> = client.get_accounts(None).await.unwrap();
-        assert_eq!(accounts_none.len(), 1, "get_accounts(None) should return 1 account");
+        let accounts_none: Vec<oxidize::models::SimpleAccount> =
+            client.get_accounts(None).await.unwrap();
+        assert_eq!(
+            accounts_none.len(),
+            1,
+            "get_accounts(None) should return 1 account"
+        );
 
         // Clear cache to ensure the next call doesn't hit the cache
         client.clear_accounts_cache();
 
         // Test Some("all") - this is expected to fail currently because it calls ?type=all
-        let accounts_all: Vec<oxidize::models::SimpleAccount> = client.get_accounts(Some("all".to_string())).await.unwrap();
+        let accounts_all: Vec<oxidize::models::SimpleAccount> =
+            client.get_accounts(Some("all".to_string())).await.unwrap();
         println!("accounts_all len: {}", accounts_all.len());
-        assert_eq!(accounts_all.len(), 1, "get_accounts(Some('all')) should behave like get_accounts(None) and return 1 account");
+        assert_eq!(
+            accounts_all.len(),
+            1,
+            "get_accounts(Some('all')) should behave like get_accounts(None) and return 1 account"
+        );
     }
 }

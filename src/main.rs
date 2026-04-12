@@ -1,9 +1,9 @@
+use actix_web::{web, App, HttpServer};
+use log::info;
 use oxidize::client::FireflyClient;
 use oxidize::config::Config;
 use oxidize::handlers;
 use oxidize::storage;
-use actix_web::{web, App, HttpServer};
-use log::info;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
