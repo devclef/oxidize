@@ -49,6 +49,12 @@ impl FireflyClient {
         &self,
         type_filter: Option<String>,
     ) -> Result<Vec<SimpleAccount>, String> {
+        let type_filter = if type_filter.as_deref() == Some("all") {
+            None
+        } else {
+            type_filter
+        };
+
         if let Some(cached_json) = self.cache.get_accounts(type_filter.clone()) {
             debug!("Cache hit for accounts (type: {:?})", type_filter);
             return serde_json::from_str(&cached_json)

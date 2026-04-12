@@ -1,12 +1,7 @@
-mod cache;
-mod client;
-mod config;
-mod handlers;
-mod models;
-mod storage;
-
-use crate::client::FireflyClient;
-use crate::config::Config;
+use oxidize::client::FireflyClient;
+use oxidize::config::Config;
+use oxidize::handlers;
+use oxidize::storage;
 use actix_web::{web, App, HttpServer};
 use log::info;
 
