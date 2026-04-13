@@ -8,6 +8,6 @@
   },
   "devDependencies": {
     "vitest": "^1.0.0",
-    "jsdom": "^22.0.0"
+    "jsdom": "^29.0.2"
   }
 }
