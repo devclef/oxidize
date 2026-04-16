@@ -607,55 +607,108 @@ impl FireflyClient {
         headers
     }
 
+    fn chunk_date_range(start: &str, end: &str) -> Result<Vec<(String, String)>, String> {
+        let start =
+            chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").map_err(|e| e.to_string())?;
+        let end = chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d").map_err(|e| e.to_string())?;
+
+        let mut chunks = Vec::new();
+        let mut current = start;
+
+        while current <= end {
+            let chunk_start = current;
+            // Find the first day of the next month
+            let mut next_month = current.with_day(1).unwrap();
+            if next_month.month() == 12 {
+                next_month = next_month
+                    .with_year(next_month.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
+            } else {
+                next_month = next_month.with_month(next_month.month() + 1).unwrap();
+            }
+            // Last day of current month = day before first day of next month
+            let chunk_end = next_month.pred_opt().unwrap();
+
+            // Clamp chunk_end to the overall end date
+            let actual_end = if chunk_end > end { end } else { chunk_end };
+
+            chunks.push((
+                chunk_start.format("%Y-%m-%d").to_string(),
+                actual_end.format("%Y-%m-%d").to_string(),
+            ));
+
+            // Move to the first day of the next month, or past end to stop
+            current = if next_month > end {
+                end + chrono::Duration::days(1)
+            } else {
+                next_month
+            };
+        }
+
+        Ok(chunks)
+    }
+
     async fn fetch_all_transactions(
         &self,
         start: &str,
         end: &str,
         account_ids: Option<&Vec<String>>,
     ) -> Result<Vec<serde_json::Value>, String> {
-        let url = format!("{}/v1/transactions", self.config.firefly_url);
-        let mut all_transactions = Vec::new();
-        let mut offset = 0;
-        let page_size = 500;
+        let chunks = Self::chunk_date_range(start, end)?;
+        let mut all_transactions = std::collections::HashMap::new();
 
-        loop {
-            let params = vec![
-                ("start".to_string(), start.to_string()),
-                ("end".to_string(), end.to_string()),
-                ("offset".to_string(), offset.to_string()),
-            ];
+        for (chunk_start, chunk_end) in &chunks {
+            let url = format!("{}/v1/transactions", self.config.firefly_url);
+            let mut offset = 0;
+            let page_size = 500;
 
-            let response = self
-                .client
-                .get(&url)
-                .headers(self.get_headers())
-                .query(&params)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?;
-            if !response.status().is_success() {
-                return Err(format!(
-                    "Failed to fetch transactions: {}",
-                    response.status()
-                ));
-            }
+            loop {
+                let params = vec![
+                    ("start".to_string(), chunk_start.clone()),
+                    ("end".to_string(), chunk_end.clone()),
+                    ("offset".to_string(), offset.to_string()),
+                ];
 
-            let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-            let data = json
-                .get("data")
-                .and_then(|d| d.as_array())
-                .cloned()
-                .unwrap_or_default();
+                let response = self
+                    .client
+                    .get(&url)
+                    .headers(self.get_headers())
+                    .query(&params)
+                    .send()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if !response.status().is_success() {
+                    return Err(format!(
+                        "Failed to fetch transactions: {}",
+                        response.status()
+                    ));
+                }
 
-            if data.is_empty() {
-                break;
-            }
-            all_transactions.extend(data.clone());
-            offset += page_size;
-            if data.len() < page_size {
-                break;
+                let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+                let data = json
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                if data.is_empty() {
+                    break;
+                }
+                for tx in &data {
+                    if let Some(id) = tx.get("id").and_then(|i| i.as_str()) {
+                        all_transactions.insert(id.to_string(), tx.clone());
+                    }
+                }
+                offset += page_size;
+                if data.len() < page_size {
+                    break;
+                }
             }
         }
+
+        let mut all_transactions: Vec<serde_json::Value> = all_transactions.into_values().collect();
 
         if let Some(ids) = account_ids {
             if !ids.is_empty() {
