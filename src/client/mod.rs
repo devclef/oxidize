@@ -721,8 +721,12 @@ impl FireflyClient {
             // Try multiple ISO 8601 formats that Firefly III might return
             chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
                 .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00"))
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ"))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
+                })
                 .or_else(|_| {
                     // Try parsing just the date portion and default to midnight UTC
                     chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")

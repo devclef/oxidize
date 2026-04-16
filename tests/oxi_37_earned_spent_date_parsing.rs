@@ -10,7 +10,9 @@ mod tests {
     fn parse_transaction_date(date_str: &str) -> Option<NaiveDateTime> {
         chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00"))
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
+            })
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ"))
             .or_else(|_| {
                 chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
@@ -25,8 +27,8 @@ mod tests {
             match period {
                 "1M" => date.format("%Y-%m-01T00:00:00+00:00").to_string(),
                 "1W" => {
-                    let monday = date
-                        - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+                    let monday =
+                        date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
                     monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
                 _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
@@ -100,7 +102,11 @@ mod tests {
             let key = current.format("%Y-%m-01T00:00:00+00:00").to_string();
             generated_keys.push(key.clone());
             if current.month() == 12 {
-                current = current.with_year(current.year() + 1).unwrap().with_month(1).unwrap();
+                current = current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap();
             } else {
                 current = current.with_month(current.month() + 1).unwrap();
             }
@@ -134,7 +140,11 @@ mod tests {
 
         for (input, expected) in transaction_dates {
             let key = get_period_key(input, "1D");
-            assert_eq!(key, expected, "Daily period key for {} should be {}", input, expected);
+            assert_eq!(
+                key, expected,
+                "Daily period key for {} should be {}",
+                input, expected
+            );
         }
     }
 
@@ -148,7 +158,11 @@ mod tests {
 
         for (input, expected) in transaction_dates {
             let key = get_period_key(input, "1W");
-            assert_eq!(key, expected, "Weekly period key for {} should be {}", input, expected);
+            assert_eq!(
+                key, expected,
+                "Weekly period key for {} should be {}",
+                input, expected
+            );
         }
     }
 
