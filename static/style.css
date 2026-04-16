@@ -344,6 +344,30 @@ button:hover {
     transform: rotate(-90deg);
 }
 
+.legend-controls {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.legend-control-btn {
+    flex: 1;
+    padding: 0.4rem 0.75rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.legend-control-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
 /* Navigation */
 .nav {
     display: flex;

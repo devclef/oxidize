@@ -155,6 +155,56 @@ function generateColors(count) {
     return colors;
 }
 
+function selectAllDatasets(widgetId) {
+    if (!widgetDatasetVisibility[widgetId]) {
+        widgetDatasetVisibility[widgetId] = {};
+    }
+
+    const legendItems = document.getElementById(`${widgetId}-legend-items`);
+    if (!legendItems) return;
+
+    const items = legendItems.querySelectorAll('.legend-item');
+    items.forEach((item) => {
+        const index = parseInt(item.dataset.accountIndex, 10);
+        widgetDatasetVisibility[widgetId][index] = true;
+        item.classList.remove('hidden');
+        item.classList.add('active');
+    });
+
+    if (widgetCharts[widgetId]) {
+        items.forEach((item) => {
+            const index = parseInt(item.dataset.accountIndex, 10);
+            widgetCharts[widgetId].data.datasets[index].hidden = false;
+        });
+        widgetCharts[widgetId].update();
+    }
+}
+
+function deselectAllDatasets(widgetId) {
+    if (!widgetDatasetVisibility[widgetId]) {
+        widgetDatasetVisibility[widgetId] = {};
+    }
+
+    const legendItems = document.getElementById(`${widgetId}-legend-items`);
+    if (!legendItems) return;
+
+    const items = legendItems.querySelectorAll('.legend-item');
+    items.forEach((item) => {
+        const index = parseInt(item.dataset.accountIndex, 10);
+        widgetDatasetVisibility[widgetId][index] = false;
+        item.classList.remove('active');
+        item.classList.add('hidden');
+    });
+
+    if (widgetCharts[widgetId]) {
+        items.forEach((item) => {
+            const index = parseInt(item.dataset.accountIndex, 10);
+            widgetCharts[widgetId].data.datasets[index].hidden = true;
+        });
+        widgetCharts[widgetId].update();
+    }
+}
+
 function renderSplitLegend(widgetId, accountInfo, datasets) {
     const legendContainer = document.getElementById(`${widgetId}-legend`);
     const legendItems = document.getElementById(`${widgetId}-legend-items`);
@@ -169,13 +219,43 @@ function renderSplitLegend(widgetId, accountInfo, datasets) {
 
     legendContainer.style.display = 'block';
 
-    // Initialize visibility for this widget if not already present
-    if (!widgetDatasetVisibility[widgetId]) {
-        widgetDatasetVisibility[widgetId] = {};
-        accountInfo.forEach((_, index) => {
-            widgetDatasetVisibility[widgetId][index] = true;
+    // Reset visibility to all datasets (select all) on each render
+    widgetDatasetVisibility[widgetId] = {};
+    accountInfo.forEach((_, index) => {
+        widgetDatasetVisibility[widgetId][index] = true;
+    });
+
+    // Reset chart dataset visibility if chart exists
+    if (widgetCharts[widgetId]) {
+        widgetCharts[widgetId].data.datasets.forEach((ds) => {
+            ds.hidden = false;
         });
+        widgetCharts[widgetId].update();
     }
+
+    // Add Select All / Deselect All buttons
+    const controlRow = document.createElement('div');
+    controlRow.className = 'legend-controls';
+
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.className = 'legend-control-btn';
+    selectAllBtn.textContent = 'Select All';
+    selectAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectAllDatasets(widgetId);
+    });
+
+    const deselectAllBtn = document.createElement('button');
+    deselectAllBtn.className = 'legend-control-btn';
+    deselectAllBtn.textContent = 'Deselect All';
+    deselectAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deselectAllDatasets(widgetId);
+    });
+
+    controlRow.appendChild(selectAllBtn);
+    controlRow.appendChild(deselectAllBtn);
+    legendItems.prepend(controlRow);
 
     // Create legend item for each account
     accountInfo.forEach((info, index) => {
@@ -206,7 +286,9 @@ function renderSplitLegend(widgetId, accountInfo, datasets) {
         item.addEventListener('click', () => {
             // Toggle visibility
             widgetDatasetVisibility[widgetId][index] = !widgetDatasetVisibility[widgetId][index];
-            dataset.hidden = !widgetDatasetVisibility[widgetId][index];
+            if (widgetCharts[widgetId]) {
+                widgetCharts[widgetId].data.datasets[index].hidden = !widgetDatasetVisibility[widgetId][index];
+            }
             item.classList.toggle('active');
             item.classList.toggle('hidden');
 
