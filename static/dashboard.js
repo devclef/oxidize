@@ -2,6 +2,7 @@ const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 let widgetCharts = {};
 let widgetDatasetVisibility = {};
+let widgetsCache = [];
 
 // Percentage change settings (per-widget, stored in chart_options)
 const PCT_ENABLED_KEY = 'show_pct';
@@ -864,6 +865,8 @@ async function renderDashboard() {
         return;
     }
 
+    widgetsCache = widgets;
+
     // Fetch all accounts once
     const allAccounts = await fetchAccounts();
 
@@ -904,7 +907,7 @@ async function renderDashboard() {
             : '<span class="widget-type-badge balance">Balance</span>';
 
         html += `
-            <div class="widget" data-widget-id="${widget.id}">
+            <div class="widget" data-widget-id="${widget.id}" data-cols="${widget.width || 12}">
                 <div class="widget-header">
                     <span class="widget-title">${widget.name}</span>
                     <div class="widget-actions">
@@ -951,7 +954,20 @@ async function renderDashboard() {
                         <label>Y-Axis Ticks: <input type="number" id="${widget.id}-y-limit" value="${chartOpts.yAxisLimit}" min="1" max="10" style="width: 60px;"></label>
                         <label>Line Smoothness: <input type="range" id="${widget.id}-tension" value="${chartOpts.tension}" min="0" max="1" step="0.1" style="width: 100px;"></label>
                     </div>
-                    <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
+                        <div class="widget-settings-section" style="border-bottom: none; padding-bottom: 0;">
+                            <strong>Width</strong>
+                            <label>
+                                <select id="${widget.id}-width" style="width: 120px;">
+                                    <option value="12" ${widget.width === undefined || widget.width === 12 ? 'selected' : ''}>Full (12)</option>
+                                    <option value="6" ${widget.width === 6 ? 'selected' : ''}>Half (6)</option>
+                                    <option value="4" ${widget.width === 4 ? 'selected' : ''}>Third (4)</option>
+                                    <option value="3" ${widget.width === 3 ? 'selected' : ''}>Quarter (3)</option>
+                                    <option value="2" ${widget.width === 2 ? 'selected' : ''}>Half Third (2)</option>
+                                    <option value="1" ${widget.width === 1 ? 'selected' : ''}>Narrow (1)</option>
+                                </select>
+                            </label>
+                        </div>
+                        <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
                 </div>
                 <div class="widget-body">
                     <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>
@@ -1009,6 +1025,34 @@ async function renderDashboard() {
                     widgetCharts[widget.id].update();
                 }
                 await persistPctSettings(widget.id, widgetCharts[widget.id].__pctOpts.enabled, pctModeSelect.value);
+            });
+        }
+    });
+
+    // Wire up width selector for each widget
+    widgets.forEach(widget => {
+        const widthSelect = document.getElementById(`${widget.id}-width`);
+        if (widthSelect) {
+            widthSelect.addEventListener('change', async () => {
+                const cols = parseInt(widthSelect.value, 10);
+                const widgetCard = document.querySelector(`.widget[data-widget-id="${widget.id}"]`);
+                if (widgetCard) {
+                    widgetCard.setAttribute('data-cols', String(cols));
+                }
+                const w = widgetsCache.find(w => w.id === widget.id);
+                if (w) {
+                    w.width = cols;
+                    w.updated_at = new Date().toISOString();
+                    try {
+                        await fetch(`/api/widgets/${widget.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(w)
+                        });
+                    } catch (e) {
+                        console.error('Failed to save widget width:', e);
+                    }
+                }
             });
         }
     });
