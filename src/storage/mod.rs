@@ -43,6 +43,9 @@ fn init_db(conn: &Connection) {
             chart_mode TEXT,
             widget_type TEXT,
             chart_options TEXT,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 12,
+            chart_height INTEGER NOT NULL DEFAULT 300,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )",
@@ -55,6 +58,24 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN widget_type TEXT DEFAULT 'balance'",
         [],
     ); // Ignore error if column already exists
+
+    // Migration: Add display_order column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
+    // Migration: Add width column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN width INTEGER NOT NULL DEFAULT 12",
+        [],
+    );
+
+    // Migration: Add chart_height column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN chart_height INTEGER NOT NULL DEFAULT 300",
+        [],
+    );
 }
 
 // Helper function to deserialize chart options from JSON string
@@ -86,8 +107,8 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, start_date, end_date, interval, chart_mode,
-                            widget_type, chart_options, created_at, updated_at
-                     FROM widgets ORDER BY created_at DESC",
+                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at
+                     FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -101,9 +122,12 @@ impl Storage {
                     let interval: Option<String> = row.get(5)?;
                     let chart_mode: Option<String> = row.get(6)?;
                     let widget_type: Option<String> = row.get(7)?;
-                    let chart_options_json: Option<String> = row.get(8)?;
-                    let created_at: Option<String> = row.get(9)?;
-                    let updated_at: Option<String> = row.get(10)?;
+                            let chart_options_json: Option<String> = row.get(8)?;
+                    let display_order: i32 = row.get(9)?;
+                    let width: i32 = row.get(10)?;
+                    let chart_height: i32 = row.get(11)?;
+                    let created_at: Option<String> = row.get(12)?;
+                    let updated_at: Option<String> = row.get(13)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -121,6 +145,9 @@ impl Storage {
                         chart_mode,
                         widget_type,
                         chart_options,
+                        display_order,
+                        width,
+                        chart_height,
                         created_at,
                         updated_at,
                     })
@@ -144,10 +171,10 @@ impl Storage {
             .map_err(|e| e.to_string())?;
 
         with_db(|conn| {
-            conn.execute(
+     conn.execute(
                 "INSERT INTO widgets (id, name, accounts, start_date, end_date, interval,
-                                      chart_mode, widget_type, chart_options, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                      chart_mode, widget_type, chart_options, display_order, width, chart_height, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -158,6 +185,9 @@ impl Storage {
                     &widget.chart_mode,
                     &widget.widget_type,
                     &chart_options_json,
+                    &widget.display_order,
+                    &widget.width,
+                    &widget.chart_height,
                     &now,
                     &now
                 ],
@@ -182,8 +212,9 @@ impl Storage {
             let rows = conn.execute(
                 "UPDATE widgets SET
                     name = ?1, accounts = ?2, start_date = ?3, end_date = ?4,
-                    interval = ?5, chart_mode = ?6, widget_type = ?7, chart_options = ?8, updated_at = ?9
-                 WHERE id = ?10",
+                    interval = ?5, chart_mode = ?6, widget_type = ?7, chart_options = ?8,
+                    display_order = ?9, width = ?10, chart_height = ?11, updated_at = ?12
+                 WHERE id = ?13",
                 params![
                     &widget.name,
                     &accounts_json,
@@ -193,6 +224,9 @@ impl Storage {
                     &widget.chart_mode,
                     &widget.widget_type,
                     &chart_options_json,
+                    &widget.display_order,
+                    &widget.width,
+                    &widget.chart_height,
                     &now,
                     &widget.id
                 ],

@@ -13,6 +13,12 @@ pub struct Widget {
     pub widget_type: Option<String>, // "balance" (default) or "earned_spent"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chart_options: Option<ChartOptions>,
+    #[serde(default = "default_display_order")]
+    pub display_order: i32,
+    #[serde(default = "default_width")]
+    pub width: i32,
+    #[serde(default = "default_chart_height")]
+    pub chart_height: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,4 +41,16 @@ pub struct ChartOptions {
 
 fn default_pct_mode() -> String {
     "from_previous".to_string()
+}
+
+fn default_display_order() -> i32 {
+    0
+}
+
+fn default_width() -> i32 {
+    12
+}
+
+fn default_chart_height() -> i32 {
+    300
 }
