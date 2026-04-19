@@ -414,6 +414,11 @@ button:hover {
 .dashboard-grid .widget[data-cols="6"]  { grid-column: span 6; }
 .dashboard-grid .widget[data-cols="12"] { grid-column: span 12; }
 
+/* Stack widgets to 1 per row on mobile */
+@media (max-width: 900px) {
+    .dashboard-grid .widget[data-cols="6"] { grid-column: span 12; }
+}
+
 .widget {
     background: var(--card-bg);
     border-radius: 8px;
