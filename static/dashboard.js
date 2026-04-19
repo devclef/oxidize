@@ -16,6 +16,14 @@ function loadPctMode() {
     }
 }
 
+function savePctMode() {
+    try {
+        localStorage.setItem(PCT_MODE_KEY, pctMode);
+    } catch {
+        // ignore
+    }
+}
+
 function computePercentChange(data, mode) {
     const labels = new Array(data.length).fill(null);
 
@@ -909,6 +917,13 @@ async function renderDashboard() {
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-pct" ${pctEnabled ? 'checked' : ''}> Show % Change</label>
+                        <label>Percentage Mode:
+                            <select id="${widget.id}-pct-mode">
+                                <option value="from_previous" ${pctMode === 'from_previous' ? 'selected' : ''}>From Previous</option>
+                                <option value="from_first" ${pctMode === 'from_first' ? 'selected' : ''}>From First Point</option>
+                            </select>
+                        </label>
                         <label>X-Axis Ticks: <input type="number" id="${widget.id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
                         <label>Y-Axis Ticks: <input type="number" id="${widget.id}-y-limit" value="${chartOpts.yAxisLimit}" min="1" max="10" style="width: 60px;"></label>
                         <label>Line Smoothness: <input type="range" id="${widget.id}-tension" value="${chartOpts.tension}" min="0" max="1" step="0.1" style="width: 100px;"></label>
@@ -942,6 +957,31 @@ async function renderDashboard() {
     for (const widget of widgets) {
         await renderWidgetChart(widget, widget.id, allAccounts);
     }
+
+    // Wire up percentage change controls for each widget
+    widgets.forEach(widget => {
+        const showPctCheckbox = document.getElementById(`${widget.id}-show-pct`);
+        const pctModeSelect = document.getElementById(`${widget.id}-pct-mode`);
+
+        if (showPctCheckbox) {
+            showPctCheckbox.addEventListener('change', () => {
+                pctEnabled = showPctCheckbox.checked;
+                if (widgetCharts[widget.id]) {
+                    widgetCharts[widget.id].update();
+                }
+            });
+        }
+
+        if (pctModeSelect) {
+            pctModeSelect.addEventListener('change', () => {
+                pctMode = pctModeSelect.value;
+                savePctMode();
+                if (widgetCharts[widget.id]) {
+                    widgetCharts[widget.id].update();
+                }
+            });
+        }
+    });
 }
 
 // Initialize
