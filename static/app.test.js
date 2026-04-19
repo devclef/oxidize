@@ -618,3 +618,150 @@ describe('Period Comparison Feature', () => {
         expect(data[0].label).toBe('Account 1');
     });
 });
+
+describe('Percentage Change Feature', () => {
+    describe('computePercentChange', () => {
+        it('should calculate percentage change from previous point', () => {
+            const data = [100, 110, 105, 120];
+            const mode = 'from_previous';
+
+            const labels = new Array(data.length).fill(null);
+            for (let i = 1; i < data.length; i++) {
+                const previous = data[i - 1];
+                if (previous !== 0) {
+                    labels[i] = ((data[i] - previous) / Math.abs(previous)) * 100;
+                }
+            }
+
+            expect(labels[0]).toBe(null);
+            expect(labels[1]).toBe(10);       // +10%
+            expect(labels[2]).toBe(-5 / 110 * 100); // ~-4.5% (105-110)/110*100
+            expect(labels[3]).toBe(15 / 105 * 100); // ~+14.3% (120-105)/105*100
+        });
+
+        it('should calculate percentage change from first point', () => {
+            const data = [100, 110, 90, 150];
+            const mode = 'from_first';
+
+            const labels = new Array(data.length).fill(null);
+            const first = data[0];
+            for (let i = 1; i < data.length; i++) {
+                if (first !== 0) {
+                    labels[i] = ((data[i] - first) / Math.abs(first)) * 100;
+                }
+            }
+
+            expect(labels[0]).toBe(null);
+            expect(labels[1]).toBe(10);     // +10%
+            expect(labels[2]).toBe(-10);    // -10%
+            expect(labels[3]).toBe(50);     // +50%
+        });
+
+        it('should handle zero first point gracefully', () => {
+            const data = [0, 100, 200];
+            const mode = 'from_first';
+
+            const labels = new Array(data.length).fill(null);
+            const first = data[0];
+            for (let i = 1; i < data.length; i++) {
+                if (first !== 0) {
+                    labels[i] = ((data[i] - first) / Math.abs(first)) * 100;
+                }
+            }
+
+            expect(labels[0]).toBe(null);
+            expect(labels[1]).toBe(null);   // Division by zero
+            expect(labels[2]).toBe(null);   // Division by zero
+        });
+
+        it('should handle null/undefined values', () => {
+            const data = [100, null, 120, undefined, 130];
+            const mode = 'from_previous';
+
+            const labels = new Array(data.length).fill(null);
+            for (let i = 1; i < data.length; i++) {
+                const current = data[i];
+                if (current === null || current === undefined || isNaN(current)) continue;
+                const previous = data[i - 1];
+                if (previous === null || previous === undefined || isNaN(previous) || previous === 0) {
+                    continue;
+                }
+                labels[i] = ((current - previous) / Math.abs(previous)) * 100;
+            }
+
+            expect(labels[0]).toBe(null);
+            expect(labels[1]).toBe(null);   // null data
+            expect(labels[2]).toBe(null);   // previous is null
+            expect(labels[3]).toBe(null);   // undefined data
+            expect(labels[4]).toBe(null);   // previous (i=3) is undefined, so skipped
+        });
+
+        it('should handle negative values', () => {
+            const data = [-100, -80, -120];
+            const mode = 'from_previous';
+
+            const labels = new Array(data.length).fill(null);
+            for (let i = 1; i < data.length; i++) {
+                const previous = data[i - 1];
+                if (previous !== 0) {
+                    labels[i] = ((data[i] - previous) / Math.abs(previous)) * 100;
+                }
+            }
+
+            // -80 is +20% change from -100 (using abs of -100 = 100)
+            expect(labels[1]).toBe(20);
+            // -120 is -50% change from -80 (using abs of -80 = 80)
+            expect(labels[2]).toBe(-50);
+        });
+    });
+
+    describe('formatPct', () => {
+        it('should format positive percentages with + sign', () => {
+            expect((5.2).toFixed(1)).toBe('5.2');
+            expect((-3.1).toFixed(1)).toBe('-3.1');
+        });
+
+        it('should format zero as 0.0%', () => {
+            const result = '0.0%';
+            expect(result).toBe('0.0%');
+        });
+
+        it('should handle negative percentages', () => {
+            const value = -12.345;
+            const sign = value >= 0 ? '+' : '';
+            const formatted = sign + value.toFixed(1) + '%';
+            expect(formatted).toBe('-12.3%');
+        });
+
+        it('should handle positive percentages', () => {
+            const value = 15.67;
+            const sign = value >= 0 ? '+' : '';
+            const formatted = sign + value.toFixed(1) + '%';
+            expect(formatted).toBe('+15.7%');
+        });
+    });
+
+    describe('localStorage persistence', () => {
+        it('should use default mode when nothing stored', () => {
+            const mockLocalStorage = {
+                getItem: vi.fn(() => null),
+                setItem: vi.fn()
+            };
+            global.window.localStorage = mockLocalStorage;
+
+            const mode = mockLocalStorage.getItem('oxidize_chart_pct_mode') || 'from_previous';
+            expect(mode).toBe('from_previous');
+        });
+
+        it('should restore saved mode from localStorage', () => {
+            const mockLocalStorage = {
+                getItem: vi.fn(() => 'from_first'),
+                setItem: vi.fn()
+            };
+            global.window.localStorage = mockLocalStorage;
+
+            const mode = mockLocalStorage.getItem('oxidize_chart_pct_mode') || 'from_previous';
+            expect(mode).toBe('from_first');
+        });
+    });
+});

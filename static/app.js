@@ -368,6 +368,116 @@ async function fetchChartData() {
     }
 }
 
+// Percentage change settings
+const PCT_MODE_KEY = 'oxidize_chart_pct_mode';
+let pctEnabled = false;
+let pctMode = 'from_previous'; // 'from_previous' or 'from_first'
+
+function loadPctMode() {
+    try {
+        pctMode = localStorage.getItem(PCT_MODE_KEY) || 'from_previous';
+    } catch {
+        pctMode = 'from_previous';
+    }
+}
+
+function savePctMode() {
+    try {
+        localStorage.setItem(PCT_MODE_KEY, pctMode);
+    } catch {
+        // ignore
+    }
+}
+
+function computePercentChange(data, mode) {
+    const labels = new Array(data.length).fill(null);
+
+    for (let i = 1; i < data.length; i++) {
+        const current = data[i];
+        if (current === null || current === undefined || isNaN(current)) continue;
+
+        if (mode === 'from_first') {
+            const first = data[0];
+            if (first === null || first === undefined || isNaN(first) || first === 0) {
+                labels[i] = null;
+            } else {
+                labels[i] = ((current - first) / Math.abs(first)) * 100;
+            }
+        } else {
+            // from_previous
+            const previous = data[i - 1];
+            if (previous === null || previous === undefined || isNaN(previous) || previous === 0) {
+                labels[i] = null;
+            } else {
+                labels[i] = ((current - previous) / Math.abs(previous)) * 100;
+            }
+        }
+    }
+
+    return labels;
+}
+
+function formatPct(value) {
+    if (value === null || value === undefined) return null;
+    const sign = value >= 0 ? '+' : '';
+    return sign + value.toFixed(1) + '%';
+}
+
+// Chart.js plugin for percentage change labels
+const pctLabelPlugin = {
+    id: 'percentLabels',
+    afterDatasetsDraw(chart) {
+        if (!pctEnabled) return;
+
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+
+        // Respect theme for label colors
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDark ? '#b0b0b0' : '#666';
+
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            if (!dataset.data || dataset.hidden) return;
+
+            const data = dataset.data;
+            if (data.length === 0) return;
+
+            // Get absolute data values (not flow) - use the stored absoluteData if available
+            let absoluteData = dataset.absoluteData || data;
+            if (!Array.isArray(absoluteData)) {
+                absoluteData = data;
+            }
+
+            const pctLabels = computePercentChange(absoluteData, pctMode);
+
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (!meta || !meta.data) return;
+
+            ctx.save();
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+
+            meta.data.forEach((point, pointIndex) => {
+                const pctLabel = pctLabels[pointIndex];
+                if (pctLabel === null) return;
+
+                const formatted = formatPct(pctLabel);
+                if (!formatted) return;
+
+                const x = point.x;
+                const y = point.y;
+
+                // Draw label slightly above the point
+                ctx.fillStyle = textColor;
+                ctx.fillText(formatted, x, y - 8);
+            });
+
+            ctx.restore();
+        });
+    }
+};
+
 // Track visibility of each dataset in split mode by index
 let datasetVisibility = {};
 let accountColors = [];
@@ -1048,6 +1158,7 @@ function renderChart(history, widgetType = 'balance') {
                 return {
                     label: info.name,
                     data: absoluteData,
+                    absoluteData: absoluteData,
                     borderColor: accountColors[index].border,
                     backgroundColor: accountColors[index].background,
                     borderWidth: 2,
@@ -1119,6 +1230,8 @@ function renderChart(history, widgetType = 'balance') {
                     }
                 }
             }
+        },
+            plugins: [pctLabelPlugin]
         });
 
         // Render the legend after chart is created
@@ -1177,6 +1290,7 @@ function renderChart(history, widgetType = 'balance') {
         const chartDatasets = [{
             label: 'Total Balance',
             data: absoluteData,
+            absoluteData: absoluteData,
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 2,
@@ -1220,6 +1334,8 @@ function renderChart(history, widgetType = 'balance') {
                     }
                 }
             }
+        },
+            plugins: [pctLabelPlugin]
         });
     }
 }
@@ -1568,6 +1684,14 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Register percentage labels plugin
+    if (typeof Chart !== 'undefined') {
+        Chart.register(pctLabelPlugin);
+    }
+
+    // Load saved percentage mode
+    loadPctMode();
+
     // Initialize theme
     initTheme();
 
@@ -1666,5 +1790,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveGraphBtn = document.getElementById('save-graph-btn');
     if (saveGraphBtn) {
         saveGraphBtn.addEventListener('click', saveGraphAsWidget);
+    }
+
+    // Percentage change toggle
+    const showPctToggle = document.getElementById('show-pct-toggle');
+    const pctModeSelect = document.getElementById('pct-mode-select');
+
+    if (showPctToggle) {
+        showPctToggle.addEventListener('change', () => {
+            pctEnabled = showPctToggle.checked;
+            if (pctModeSelect) {
+                pctModeSelect.style.display = pctEnabled ? 'inline-block' : 'none';
+            }
+            if (balanceChart) {
+                balanceChart.update();
+            }
+        });
+    }
+
+    if (pctModeSelect) {
+        pctModeSelect.addEventListener('change', () => {
+            pctMode = pctModeSelect.value;
+            savePctMode();
+            if (balanceChart) {
+                balanceChart.update();
+            }
+        });
+        // Restore saved mode
+        pctModeSelect.value = pctMode;
     }
 });

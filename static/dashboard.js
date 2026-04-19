@@ -3,6 +3,99 @@ const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 let widgetCharts = {};
 let widgetDatasetVisibility = {};
 
+// Percentage change settings (shared with app.js)
+const PCT_MODE_KEY = 'oxidize_chart_pct_mode';
+let pctEnabled = false;
+let pctMode = 'from_previous';
+
+function loadPctMode() {
+    try {
+        pctMode = localStorage.getItem(PCT_MODE_KEY) || 'from_previous';
+    } catch {
+        pctMode = 'from_previous';
+    }
+}
+
+function computePercentChange(data, mode) {
+    const labels = new Array(data.length).fill(null);
+
+    for (let i = 1; i < data.length; i++) {
+        const current = data[i];
+        if (current === null || current === undefined || isNaN(current)) continue;
+
+        if (mode === 'from_first') {
+            const first = data[0];
+            if (first === null || first === undefined || isNaN(first) || first === 0) {
+                labels[i] = null;
+            } else {
+                labels[i] = ((current - first) / Math.abs(first)) * 100;
+            }
+        } else {
+            const previous = data[i - 1];
+            if (previous === null || previous === undefined || isNaN(previous) || previous === 0) {
+                labels[i] = null;
+            } else {
+                labels[i] = ((current - previous) / Math.abs(previous)) * 100;
+            }
+        }
+    }
+
+    return labels;
+}
+
+function formatPct(value) {
+    if (value === null || value === undefined) return null;
+    const sign = value >= 0 ? '+' : '';
+    return sign + value.toFixed(1) + '%';
+}
+
+// Chart.js plugin for percentage change labels
+const pctLabelPlugin = {
+    id: 'percentLabels',
+    afterDatasetsDraw(chart) {
+        if (!pctEnabled) return;
+
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDark ? '#b0b0b0' : '#666';
+
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            if (!dataset.data || dataset.hidden) return;
+
+            let absoluteData = dataset.absoluteData || dataset.data;
+            if (!Array.isArray(absoluteData)) return;
+
+            const pctLabels = computePercentChange(absoluteData, pctMode);
+
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (!meta || !meta.data) return;
+
+            ctx.save();
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+
+            meta.data.forEach((point, pointIndex) => {
+                const pctLabel = pctLabels[pointIndex];
+                if (pctLabel === null) return;
+
+                const formatted = formatPct(pctLabel);
+                if (!formatted) return;
+
+                const x = point.x;
+                const y = point.y;
+
+                ctx.fillStyle = textColor;
+                ctx.fillText(formatted, x, y - 8);
+            });
+
+            ctx.restore();
+        });
+    }
+};
+
 // Get config from server or use defaults
 const CONFIG = window.OXIDIZE_CONFIG || {
     accountTypes: ['asset', 'cash', 'expense', 'revenue', 'liability'],
@@ -534,6 +627,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     datasets: [{
                         label: 'Total Balance',
                         data: absoluteData,
+                        absoluteData: absoluteData,
                         borderColor: chartColor,
                         backgroundColor: chartColor + '20',
                         borderWidth: 2,
@@ -587,7 +681,8 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                             }
                         }
                     }
-                }
+                },
+                plugins: [pctLabelPlugin]
             });
         } else {
             // Split mode - multiple lines
@@ -615,6 +710,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     return {
                         label: info.name,
                         data: new Array(labels.length).fill(null),
+                        absoluteData: new Array(labels.length).fill(null),
                         borderColor: colors[index],
                         borderWidth: 2,
                         tension: opts.tension,
@@ -647,6 +743,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                 return {
                     label: info.name,
                     data: absoluteData,
+                    absoluteData: absoluteData,
                     borderColor: colors[index],
                     borderWidth: 2,
                     tension: opts.tension,
@@ -716,6 +813,8 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                         }
                     }
                 }
+            },
+                plugins: [pctLabelPlugin]
             });
 
             // Render the legend after chart is created
@@ -850,6 +949,14 @@ async function renderDashboard() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Register percentage labels plugin
+    if (typeof Chart !== 'undefined') {
+        Chart.register(pctLabelPlugin);
+    }
+
+    // Load saved percentage mode
+    loadPctMode();
+
     // Initialize theme
     initTheme();
 
