@@ -988,8 +988,9 @@ async function renderDashboard() {
                 </div>
                 <div class="widget-body">
                     <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>
-                    <div class="widget-chart">
+                    <div class="widget-chart" style="height: ${widget.chart_height || 300}px;">
                         <canvas id="${widget.id}"></canvas>
+                        <div class="widget-chart-resize-handle"></div>
                     </div>
                     <div class="chart-legend" id="${widget.id}-legend" style="display: none;">
                         <div class="legend-container" id="${widget.id}-legend-items"></div>
@@ -1097,6 +1098,52 @@ async function renderDashboard() {
                     updateWidgetOrder(newOrder);
                 }
             }
+        });
+    }
+
+    // Initialize interact.js resize handles on chart containers
+    if (typeof interact !== 'undefined') {
+        widgets.forEach(widget => {
+            const chartContainer = document.querySelector(`.widget[data-widget-id="${widget.id}"] .widget-chart`);
+            if (!chartContainer) return;
+
+            interact(chartContainer).resizable({
+                edges: { bottom: true, left: false, right: false, top: false },
+                listeners: {
+                    move: function(event) {
+                        const newHeight = Math.round(event.rect.height);
+                        const clampedHeight = Math.max(150, Math.min(800, newHeight));
+                        event.target.style.height = clampedHeight + 'px';
+                        const canvas = chartContainer.querySelector('canvas');
+                        if (canvas) {
+                            canvas.style.height = clampedHeight + 'px';
+                        }
+                    }
+                },
+                modifiers: [
+                    interact.modifiers.restrictSize({
+                        min: { width: 0, height: 150 },
+                        max: { width: 0, height: 800 }
+                    })
+                ],
+                inertia: false,
+                onend: function(event) {
+                    const newHeight = Math.round(event.target.getBoundingClientRect().height);
+                    const clampedHeight = Math.max(150, Math.min(800, newHeight));
+                    event.target.style.height = clampedHeight + 'px';
+
+                    const w = widgetsCache.find(w => w.id === widget.id);
+                    if (w) {
+                        w.chart_height = clampedHeight;
+                        w.updated_at = new Date().toISOString();
+                        fetch(`/api/widgets/${widget.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(w)
+                        }).catch(e => console.error('Failed to save chart height:', e));
+                    }
+                }
+            });
         });
     }
 }
