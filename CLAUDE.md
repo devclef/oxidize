@@ -195,3 +195,9 @@ When updating `static/style.css`, use CSS variables for theming features. After 
 - **Frontend**: Use `npm test`.
 - Verify that all tests pass before completing a task.
 - Follow Test Driven Development (TDD) where possible.
+
+### Commit and Push Discipline
+- After completing any task or fix, commit the changes with a clear, descriptive message.
+- Push the commit to the remote branch unless the user explicitly asks to hold.
+- Use conventional commit style: `fix:`, `feat:`, `refactor:`, `test:`, `chore:`.
+- Always include `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>` in the commit message.
