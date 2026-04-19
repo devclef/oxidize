@@ -40,6 +40,26 @@ function formatPct(value) {
     return sign + value.toFixed(1) + '%';
 }
 
+// Persist pct settings for a widget to the server
+async function persistPctSettings(widgetId, showPct, pctMode) {
+    try {
+        const widgets = await getDashboardWidgets();
+        const w = widgets.find(w => w.id === widgetId);
+        if (!w) return;
+        if (w.chart_options === undefined) w.chart_options = {};
+        w.chart_options[PCT_ENABLED_KEY] = showPct;
+        w.chart_options[PCT_MODE_KEY] = pctMode;
+        w.updated_at = new Date().toISOString();
+        await fetch(`/api/widgets/${widgetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(w)
+        });
+    } catch (e) {
+        console.error('Failed to persist % settings:', e);
+    }
+}
+
 // Chart.js plugin for percentage change labels
 const pctLabelPlugin = {
     id: 'percentLabels',
@@ -956,7 +976,7 @@ async function renderDashboard() {
         const pctModeSelect = document.getElementById(`${widget.id}-pct-mode`);
 
         if (showPctCheckbox) {
-            showPctCheckbox.addEventListener('change', () => {
+            showPctCheckbox.addEventListener('change', async () => {
                 if (widgetCharts[widget.id]) {
                     widgetCharts[widget.id].__pctOpts = {
                         enabled: showPctCheckbox.checked,
@@ -964,11 +984,12 @@ async function renderDashboard() {
                     };
                     widgetCharts[widget.id].update();
                 }
+                await persistPctSettings(widget.id, showPctCheckbox.checked, widgetCharts[widget.id].__pctOpts.mode);
             });
         }
 
         if (pctModeSelect) {
-            pctModeSelect.addEventListener('change', () => {
+            pctModeSelect.addEventListener('change', async () => {
                 if (widgetCharts[widget.id]) {
                     widgetCharts[widget.id].__pctOpts = {
                         enabled: widgetCharts[widget.id].__pctOpts?.enabled ?? false,
@@ -976,6 +997,7 @@ async function renderDashboard() {
                     };
                     widgetCharts[widget.id].update();
                 }
+                await persistPctSettings(widget.id, widgetCharts[widget.id].__pctOpts.enabled, pctModeSelect.value);
             });
         }
     });
