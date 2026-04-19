@@ -3,26 +3,9 @@ const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 let widgetCharts = {};
 let widgetDatasetVisibility = {};
 
-// Percentage change settings (shared with app.js)
-const PCT_MODE_KEY = 'oxidize_chart_pct_mode';
-let pctEnabled = false;
-let pctMode = 'from_previous';
-
-function loadPctMode() {
-    try {
-        pctMode = localStorage.getItem(PCT_MODE_KEY) || 'from_previous';
-    } catch {
-        pctMode = 'from_previous';
-    }
-}
-
-function savePctMode() {
-    try {
-        localStorage.setItem(PCT_MODE_KEY, pctMode);
-    } catch {
-        // ignore
-    }
-}
+// Percentage change settings (per-widget, stored in chart_options)
+const PCT_ENABLED_KEY = 'show_pct';
+const PCT_MODE_KEY = 'pct_mode';
 
 function computePercentChange(data, mode) {
     const labels = new Array(data.length).fill(null);
@@ -61,7 +44,8 @@ function formatPct(value) {
 const pctLabelPlugin = {
     id: 'percentLabels',
     afterDatasetsDraw(chart) {
-        if (!pctEnabled) return;
+        const opts = chart.__pctOpts;
+        if (!opts || !opts.enabled) return;
 
         const { ctx, chartArea } = chart;
         if (!chartArea) return;
@@ -75,7 +59,7 @@ const pctLabelPlugin = {
             let absoluteData = dataset.absoluteData || dataset.data;
             if (!Array.isArray(absoluteData)) return;
 
-            const pctLabels = computePercentChange(absoluteData, pctMode);
+            const pctLabels = computePercentChange(absoluteData, opts.mode);
 
             const meta = chart.getDatasetMeta(datasetIndex);
             if (!meta || !meta.data) return;
@@ -194,6 +178,8 @@ async function updateWidgetDateRange(widgetId) {
     widget.chart_options.fill_area = document.getElementById(`${widgetId}-fill-area`).checked;
     widget.chart_options.tension = parseFloat(document.getElementById(`${widgetId}-tension`).value);
     widget.chart_options.begin_at_zero = document.getElementById(`${widgetId}-begin-zero`).checked;
+    widget.chart_options[PCT_ENABLED_KEY] = document.getElementById(`${widgetId}-show-pct`).checked;
+    widget.chart_options[PCT_MODE_KEY] = document.getElementById(`${widgetId}-pct-mode`).value;
 
     try {
         await fetch(`/api/widgets/${widgetId}`, {
@@ -411,7 +397,9 @@ function getChartOptions(widget) {
         yAxisLimit: 4,
         fillArea: true,
         tension: 0.1,
-        beginAtZero: false
+        beginAtZero: false,
+        showPct: false,
+        pctMode: 'from_previous'
     };
     const opts = widget.chart_options || {};
     return {
@@ -420,7 +408,9 @@ function getChartOptions(widget) {
         yAxisLimit: opts.y_axis_limit ?? defaults.yAxisLimit,
         fillArea: opts.fill_area ?? defaults.fillArea,
         tension: opts.tension ?? defaults.tension,
-        beginAtZero: opts.begin_at_zero ?? defaults.beginAtZero
+        beginAtZero: opts.begin_at_zero ?? defaults.beginAtZero,
+        showPct: opts[PCT_ENABLED_KEY] ?? defaults.showPct,
+        pctMode: opts[PCT_MODE_KEY] ?? defaults.pctMode
     };
 }
 
@@ -691,6 +681,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     }
                 }
             });
+            widgetCharts[widget.id].__pctOpts = { enabled: opts.showPct, mode: opts.pctMode };
         } else {
             // Split mode - multiple lines
             const filteredHistory = history.filter(ds => ds.label !== 'earned' && ds.label !== 'spent');
@@ -821,6 +812,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                     }
                 }
             });
+            widgetCharts[widget.id].__pctOpts = { enabled: opts2.showPct, mode: opts2.pctMode };
 
             // Render the legend after chart is created
             renderSplitLegend(widget.id, accountInfo, datasets);
@@ -917,11 +909,11 @@ async function renderDashboard() {
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-pct" ${pctEnabled ? 'checked' : ''}> Show % Change</label>
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-pct" ${chartOpts.showPct ? 'checked' : ''}> Show % Change</label>
                         <label>Percentage Mode:
                             <select id="${widget.id}-pct-mode">
-                                <option value="from_previous" ${pctMode === 'from_previous' ? 'selected' : ''}>From Previous</option>
-                                <option value="from_first" ${pctMode === 'from_first' ? 'selected' : ''}>From First Point</option>
+                                <option value="from_previous" ${chartOpts.pctMode === 'from_previous' ? 'selected' : ''}>From Previous</option>
+                                <option value="from_first" ${chartOpts.pctMode === 'from_first' ? 'selected' : ''}>From First Point</option>
                             </select>
                         </label>
                         <label>X-Axis Ticks: <input type="number" id="${widget.id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
@@ -965,8 +957,11 @@ async function renderDashboard() {
 
         if (showPctCheckbox) {
             showPctCheckbox.addEventListener('change', () => {
-                pctEnabled = showPctCheckbox.checked;
                 if (widgetCharts[widget.id]) {
+                    widgetCharts[widget.id].__pctOpts = {
+                        enabled: showPctCheckbox.checked,
+                        mode: widgetCharts[widget.id].__pctOpts?.mode || 'from_previous'
+                    };
                     widgetCharts[widget.id].update();
                 }
             });
@@ -974,9 +969,11 @@ async function renderDashboard() {
 
         if (pctModeSelect) {
             pctModeSelect.addEventListener('change', () => {
-                pctMode = pctModeSelect.value;
-                savePctMode();
                 if (widgetCharts[widget.id]) {
+                    widgetCharts[widget.id].__pctOpts = {
+                        enabled: widgetCharts[widget.id].__pctOpts?.enabled ?? false,
+                        mode: pctModeSelect.value
+                    };
                     widgetCharts[widget.id].update();
                 }
             });
@@ -990,9 +987,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof Chart !== 'undefined') {
         Chart.register(pctLabelPlugin);
     }
-
-    // Load saved percentage mode
-    loadPctMode();
 
     // Initialize theme
     initTheme();
