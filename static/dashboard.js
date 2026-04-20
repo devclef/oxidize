@@ -237,11 +237,16 @@ async function updateWidgetDateRange(widgetId) {
     widget.chart_options[PCT_MODE_KEY] = document.getElementById(`${widgetId}-pct-mode`).value;
 
     try {
-        await fetch(`/api/widgets/${widgetId}`, {
+        const response = await fetch(`/api/widgets/${widgetId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(widget)
         });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `HTTP ${response.status}`);
+        }
 
         // Close settings panel
         document.getElementById(`${widgetId}-settings`).style.display = 'none';
@@ -1064,11 +1069,15 @@ async function renderDashboard() {
                     w.width = cols;
                     w.updated_at = new Date().toISOString();
                     try {
-                        await fetch(`/api/widgets/${widget.id}`, {
+                        const response = await fetch(`/api/widgets/${widget.id}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(w)
                         });
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('Failed to save widget width:', errorText);
+                        }
                     } catch (e) {
                         console.error('Failed to save widget width:', e);
                     }
