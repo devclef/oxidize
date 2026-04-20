@@ -56,15 +56,9 @@ impl FireflyClient {
         };
 
         if let Some(cached_json) = self.cache.get_accounts(type_filter.clone()) {
-            debug!("Cache hit for accounts (type: {:?})", type_filter);
             return serde_json::from_str(&cached_json)
                 .map_err(|e| format!("Failed to deserialize cached accounts: {}", e));
         }
-
-        debug!(
-            "Cache miss for accounts (type: {:?}), fetching from Firefly III",
-            type_filter
-        );
 
         let headers = self.get_headers();
         let mut url = format!("{}/v1/accounts", self.config.firefly_url);
