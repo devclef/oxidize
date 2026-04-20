@@ -50,7 +50,7 @@ mod tests {
             .await;
 
         let config = Config {
-            firefly_url: url,
+            firefly_url: oxidize::config::FireflyUrl::validate(url).unwrap(),
             firefly_token: "test_token".to_string(),
             host: "127.0.0.1".to_string(),
             port: 8080,
@@ -78,7 +78,7 @@ mod tests {
             client.get_accounts(Some("all".to_string())).await.unwrap();
         println!("all_accounts count: {}", all_accounts.len());
         assert_eq!(
-            accounts_all.len(),
+            all_accounts.len(),
             1,
             "get_accounts(Some('all')) should behave like get_accounts(None) and return 1 account"
         );

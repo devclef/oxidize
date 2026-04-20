@@ -61,7 +61,7 @@ impl FireflyClient {
         }
 
         let headers = self.get_headers();
-        let mut url = format!("{}/v1/accounts", self.config.firefly_url);
+        let mut url = format!("{}/v1/accounts", self.config.firefly_url.as_str());
         if let Some(ref t) = type_filter {
             url = format!("{}?type={}", url, t);
         }
@@ -145,7 +145,10 @@ impl FireflyClient {
             query_params.push(("preselected".to_string(), "assets".to_string()));
         }
 
-        let url = format!("{}/v1/chart/account/overview", self.config.firefly_url);
+        let url = format!(
+            "{}/v1/chart/account/overview",
+            self.config.firefly_url.as_str()
+        );
         let response = self
             .client
             .get(&url)
@@ -365,7 +368,10 @@ impl FireflyClient {
         });
         let period_val = period.unwrap_or_else(|| "1M".to_string());
 
-        let url = format!("{}/v1/chart/account/overview", self.config.firefly_url);
+        let url = format!(
+            "{}/v1/chart/account/overview",
+            self.config.firefly_url.as_str()
+        );
 
         let asset_query = vec![
             ("start".to_string(), start.clone()),
@@ -525,7 +531,7 @@ impl FireflyClient {
             }
         }
 
-        let url = format!("{}/v1/transactions", self.config.firefly_url);
+        let url = format!("{}/v1/transactions", self.config.firefly_url.as_str());
         let income_response = self
             .client
             .get(&url)
@@ -654,7 +660,7 @@ impl FireflyClient {
         let mut all_transactions = std::collections::HashMap::new();
 
         for (chunk_start, chunk_end) in &chunks {
-            let url = format!("{}/v1/transactions", self.config.firefly_url);
+            let url = format!("{}/v1/transactions", self.config.firefly_url.as_str());
             let mut offset = 0;
             let page_size = 500;
 

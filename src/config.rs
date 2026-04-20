@@ -1,9 +1,31 @@
 use dotenv::dotenv;
 use std::env;
 
+/// A validated Firefly III URL. Only http/https URLs are allowed.
+/// This type guarantees the URL has been validated to prevent SSRF.
+#[derive(Clone, Debug)]
+pub struct FireflyUrl(String);
+
+impl FireflyUrl {
+    pub fn validate(raw: String) -> Result<Self, String> {
+        if raw.starts_with("http://") || raw.starts_with("https://") {
+            Ok(Self(raw))
+        } else {
+            Err(format!(
+                "FIREFLY_III_URL must be a valid HTTP/HTTPS URL. Got: {}",
+                raw
+            ))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub firefly_url: String,
+    pub firefly_url: FireflyUrl,
     pub firefly_token: String,
     pub host: String,
     pub port: u16,
@@ -18,13 +40,7 @@ impl Config {
 
         let firefly_url = env::var("FIREFLY_III_URL")
             .unwrap_or_else(|_| "https://demo.firefly-iii.org/api".to_string());
-        // Validate URL scheme to prevent SSRF (only allow http/https)
-        if !firefly_url.starts_with("http://") && !firefly_url.starts_with("https://") {
-            panic!(
-                "FIREFLY_III_URL must be a valid HTTP/HTTPS URL. Got: {}",
-                firefly_url
-            );
-        }
+        let firefly_url = FireflyUrl::validate(firefly_url).expect("Invalid FIREFLY_III_URL");
         let firefly_token = env::var("FIREFLY_III_ACCESS_TOKEN").unwrap_or_else(|_| "".to_string());
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("PORT")
