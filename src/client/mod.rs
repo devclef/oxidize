@@ -889,7 +889,11 @@ impl FireflyClient {
                         10..=12 => 10,
                         _ => 1,
                     };
-                    current.with_month(quarter_month).unwrap().format("%Y-%m-%dT00:00:00+00:00").to_string()
+                    current
+                        .with_month(quarter_month)
+                        .unwrap()
+                        .format("%Y-%m-%dT00:00:00+00:00")
+                        .to_string()
                 }
                 "1W" => {
                     let monday = current
