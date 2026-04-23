@@ -3,6 +3,7 @@ let balanceChart = null;
 let enableComparison = false;
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 let selectedTypes = new Set(['all']);
+let chartErrorEl = null;
 
 // Parse a chart label that may be a date string or quarterly format like "2025-Q1"
 function parseChartLabel(label) {
@@ -127,11 +128,11 @@ async function fetchAccounts() {
 
 async function fetchChartData() {
     const chartContainer = document.querySelector('.chart-wrapper');
-    const chartError = document.getElementById('chart-error');
+    chartErrorEl = document.getElementById('chart-error');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
     // Clear previous errors
-    chartError.innerHTML = '';
+    if (chartErrorEl) chartErrorEl.innerHTML = '';
 
     // Ensure we have accounts for the anchor balances
     if (allAccounts.length === 0) {
@@ -873,14 +874,17 @@ function renderChart(history, widgetType = 'balance') {
 
     // Extract labels from the first dataset that has entries
     let labels = [];
-    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries || {}).length > 0));
     if (firstDataset) {
+        console.log('First dataset entries type:', Array.isArray(firstDataset.entries) ? 'array' : 'object');
+        console.log('First dataset entries:', JSON.stringify(firstDataset.entries));
         if (Array.isArray(firstDataset.entries)) {
             labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
         } else {
             labels = Object.keys(firstDataset.entries);
         }
     }
+    console.log('Extracted labels:', labels);
 
     if (labels.length === 0) {
         console.warn('No labels found in chart data');
@@ -1356,7 +1360,6 @@ function renderChart(history, widgetType = 'balance') {
 function renderSplitLegend(accountInfo, datasets) {
     const legendContainer = document.getElementById('split-legend');
     const legendItems = document.getElementById('legend-items');
-    const chartError = document.getElementById('chart-error');
 
     // Clear previous legend
     legendItems.innerHTML = '';
