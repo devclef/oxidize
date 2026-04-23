@@ -1021,23 +1021,28 @@ impl FireflyClient {
 }
 
 /// Aggregate monthly chart data into quarterly buckets.
-/// Expects entries with monthly date keys like "2025-01-01T00:00:00+00:00".
+/// For balance data, takes the last value of each quarter (end-of-quarter balance).
 fn aggregate_monthly_to_quarterly(mut chart_line: ChartLine) -> ChartLine {
     for dataset in chart_line.iter_mut() {
         if let Some(entries_obj) = dataset.entries.as_object() {
-            let mut quarterly: std::collections::HashMap<String, f64> =
-                std::collections::HashMap::new();
+            // Parse all entries into (date, quarter_key, value) tuples and sort by date
+            let mut sorted: Vec<(chrono::NaiveDate, String, f64)> = entries_obj
+                .iter()
+                .filter_map(|(key, value)| {
+                    let date_part = key.split('T').next()?;
+                    let date = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d").ok()?;
+                    let quarter = ((date.month() - 1) / 3) + 1;
+                    let q_key = format!("{}-Q{}", date.year(), quarter);
+                    value.as_f64().map(|v| (date, q_key, v))
+                })
+                .collect();
+            sorted.sort_by_key(|(date, _, _)| *date);
 
-            for (key, value) in entries_obj {
-                if let Some(date_part) = key.split('T').next() {
-                    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
-                        let quarter = ((date.month() - 1) / 3) + 1;
-                        let q_key = format!("{}-Q{}", date.year(), quarter);
-                        *quarterly.entry(q_key).or_default() += value.as_f64().unwrap_or(0.0);
-                    } else {
-                        quarterly.insert(key.clone(), value.as_f64().unwrap_or(0.0));
-                    }
-                }
+            // Take the last value per quarter (end-of-quarter balance), preserving order
+            let mut quarterly: std::collections::BTreeMap<String, f64> =
+                std::collections::BTreeMap::new();
+            for (_date, q_key, value) in sorted {
+                quarterly.insert(q_key, value);
             }
 
             dataset.entries = serde_json::Value::Object(

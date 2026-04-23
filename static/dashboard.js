@@ -734,8 +734,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                                 callback: function(value) {
                                     // value is an index into labels array
                                     const label = this.getLabelForValue(value);
-                                    // label is ISO date string like "2024-01-15T00:00:00Z"
-                                    const date = new Date(label);
+                                    const date = parseChartLabel(label);
                                     return date.toLocaleDateString();
                                 }
                             }
@@ -865,8 +864,7 @@ async function renderWidgetChart(widget, containerId, allAccounts) {
                                 callback: function(value) {
                                     // value is an index into labels array
                                     const label = this.getLabelForValue(value);
-                                    // label is ISO date string like "2024-01-15T00:00:00Z"
-                                    const date = new Date(label);
+                                    const date = parseChartLabel(label);
                                     return date.toLocaleDateString();
                                 }
                             }
