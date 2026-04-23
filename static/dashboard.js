@@ -950,6 +950,7 @@ async function renderDashboard() {
                                 <option value="1D" ${interval === '1D' ? 'selected' : ''}>Day</option>
                                 <option value="1W" ${interval === '1W' ? 'selected' : ''}>Week</option>
                                 <option value="1M" ${interval === '1M' ? 'selected' : ''}>Month</option>
+                                <option value="1Q" ${interval === '1Q' ? 'selected' : ''}>Quarter</option>
                                 <option value="1Y" ${interval === '1Y' ? 'selected' : ''}>Year</option>
                             </select>
                         </label>

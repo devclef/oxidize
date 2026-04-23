@@ -792,6 +792,19 @@ impl FireflyClient {
             if let Some(date) = parse_transaction_date(date_str) {
                 match period {
                     "1M" => date.format("%Y-%m-01T00:00:00+00:00").to_string(),
+                    "1Q" => {
+                        let quarter_month = match date.month() {
+                            1..=3 => 1,
+                            4..=6 => 4,
+                            7..=9 => 7,
+                            10..=12 => 10,
+                            _ => 1,
+                        };
+                        date.with_month(quarter_month)
+                            .unwrap()
+                            .format("%Y-%m-%dT00:00:00+00:00")
+                            .to_string()
+                    }
                     "1W" => {
                         let monday = date
                             - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
@@ -868,6 +881,16 @@ impl FireflyClient {
         while current <= end {
             let key = match period {
                 "1M" => current.format("%Y-%m-01T00:00:00+00:00").to_string(),
+                "1Q" => {
+                    let quarter_month = match current.month() {
+                        1..=3 => 1,
+                        4..=6 => 4,
+                        7..=9 => 7,
+                        10..=12 => 10,
+                        _ => 1,
+                    };
+                    current.with_month(quarter_month).unwrap().format("%Y-%m-%dT00:00:00+00:00").to_string()
+                }
                 "1W" => {
                     let monday = current
                         - chrono::Duration::days(current.weekday().num_days_from_monday() as i64);
@@ -886,6 +909,19 @@ impl FireflyClient {
                             .unwrap();
                     } else {
                         current = current.with_month(current.month() + 1).unwrap();
+                    }
+                }
+                "1Q" => {
+                    let current_quarter = ((current.month() - 1) / 3) + 1;
+                    let next_quarter_start = current_quarter * 3 + 1;
+                    if next_quarter_start > 12 {
+                        current = current
+                            .with_year(current.year() + 1)
+                            .unwrap()
+                            .with_month(1)
+                            .unwrap();
+                    } else {
+                        current = current.with_month(next_quarter_start).unwrap();
                     }
                 }
                 "1W" => current += chrono::Duration::days(7),
