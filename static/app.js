@@ -888,7 +888,8 @@ function renderChart(history, widgetType = 'balance') {
 
     if (labels.length === 0) {
         console.warn('No labels found in chart data');
-        chartError.innerHTML = '<div class="error">No data points found for the selected date range.</div>';
+        console.warn('History:', JSON.stringify(history.slice(0, 2)));
+        if (chartErrorEl) chartErrorEl.innerHTML = '<div class="error">No data points found for the selected date range.</div>';
         return;
     }
 
