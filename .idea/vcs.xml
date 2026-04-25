@@ -4,7 +4,7 @@
     <option name="links">
       <list>
         <IssueNavigationLink>
-          <option name="issueRegexp" value="(?x)\b(OXI|PRI|WOR)-\d+\b#YouTrack" />
+          <option name="issueRegexp" value="(?x)\b(DUM|OXI|PRI|SHO|TES|WOR)-\d+\b#YouTrack" />
           <option name="linkRegexp" value="https://youtrack.devclef.se/issue/$0" />
         </IssueNavigationLink>
       </list>
