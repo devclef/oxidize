@@ -1088,3 +1088,169 @@ button:hover {
 .dashboard-grid .sortable-drag {
     opacity: 0.9;
 }
+
+/* Group section styles */
+.groups-section {
+    margin-bottom: 1rem;
+}
+
+.groups-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.groups-section-header h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.groups-section-header button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+.group-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 4px;
+    background: var(--bg-secondary, #2d2d2d);
+}
+
+.group-item input[type="checkbox"] {
+    margin: 0;
+}
+
+.group-info {
+    flex: 1;
+}
+
+.group-name {
+    font-weight: 500;
+}
+
+.group-account-count {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.group-actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.group-actions button {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--text-color, #eaeaea);
+}
+
+.group-actions button:hover {
+    background: var(--bg-tertiary, #3d3d3d);
+}
+
+/* Modal styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    background: var(--bg-secondary, #2d2d2d);
+    border-radius: 8px;
+    padding: 1.5rem;
+    min-width: 400px;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-color, #eaeaea);
+}
+
+.modal-body label {
+    display: block;
+    margin-top: 0.75rem;
+    font-weight: 500;
+}
+
+.modal-body input[type="text"] {
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.25rem;
+    box-sizing: border-box;
+}
+
+#group-accounts-list {
+    margin-top: 0.5rem;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.group-account-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.modal-footer button {
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#group-modal-cancel {
+    background: transparent;
+    border: 1px solid var(--border-color, #444);
+    color: var(--text-color, #eaeaea);
+}
+
+#group-modal-save {
+    background: var(--accent-color, #3498db);
+    border: none;
+    color: white;
+}
