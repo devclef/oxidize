@@ -7,6 +7,7 @@ let chartErrorEl = null;
 let groups = [];
 let editingGroupId = null;
 const GROUPS_STORAGE_KEY = 'oxidize_groups';
+let groupsLoadedPromise = null;
 
 // Parse a chart label that may be a date string or quarterly format like "2025-Q1"
 function parseChartLabel(label) {
@@ -201,6 +202,11 @@ async function fetchChartData() {
 
     // Clear previous errors
     if (chartErrorEl) chartErrorEl.innerHTML = '';
+
+    // Wait for groups to load so split-mode legend has group data
+    if (groupsLoadedPromise) {
+        await groupsLoadedPromise;
+    }
 
     // Ensure we have accounts for the anchor balances
     if (allAccounts.length === 0) {
@@ -2255,7 +2261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load and render groups
     loadGroups();
-    fetchGroups().then(backendGroups => {
+    groupsLoadedPromise = fetchGroups().then(backendGroups => {
         if (backendGroups.length > 0) {
             groups = backendGroups.map(bg => {
                 const existing = groups.find(g => g.id === bg.id);
