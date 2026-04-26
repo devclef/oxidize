@@ -268,7 +268,7 @@ async function fetchChartData() {
 
             if (!history || history.length === 0) {
                 console.warn('No earned/spent data returned from API');
-                chartError.innerHTML = '<div class="info">No earned/spent data found for the current date range.</div>';
+                chartErrorEl.innerHTML = '<div class="info">No earned/spent data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
                     balanceChart.destroy();
@@ -308,7 +308,7 @@ async function fetchChartData() {
 
             if (!categories || categories.length === 0) {
                 console.warn('No expenses by category data returned from API');
-                chartError.innerHTML = '<div class="info">No expenses by category data found for the current date range.</div>';
+                chartErrorEl.innerHTML = '<div class="info">No expenses by category data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
                     balanceChart.destroy();
@@ -347,7 +347,7 @@ async function fetchChartData() {
 
             if (!netWorth || netWorth.length === 0) {
                 console.warn('No net worth data returned from API');
-                chartError.innerHTML = '<div class="info">No net worth data found for the current date range.</div>';
+                chartErrorEl.innerHTML = '<div class="info">No net worth data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
                     balanceChart.destroy();
@@ -437,7 +437,7 @@ async function fetchChartData() {
 
         if (!history || history.length === 0) {
             console.warn('No history data returned from API');
-            chartError.innerHTML = '<div class="info">No balance history data found for the current selection and date range.</div>';
+            chartErrorEl.innerHTML = '<div class="info">No balance history data found for the current selection and date range.</div>';
             chartContainer.style.display = 'block';
             if (balanceChart) {
                 balanceChart.destroy();
@@ -456,7 +456,7 @@ async function fetchChartData() {
         }
     } catch (error) {
         console.error('Fetch chart error:', error);
-        chartError.innerHTML = `<div class="error">Failed to load chart data: ${error.message}</div>`;
+        chartErrorEl.innerHTML = `<div class="error">Failed to load chart data: ${error.message}</div>`;
     }
 }
 
@@ -1800,7 +1800,7 @@ function renderSplitLegend(accountInfo, datasets) {
     }
 
     legendContainer.style.display = 'block';
-    chartError.style.display = 'none';
+    chartErrorEl.style.display = 'none';
 
     // Create legend item for each account
     accountInfo.forEach((info, index) => {
