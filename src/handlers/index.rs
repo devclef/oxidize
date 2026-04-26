@@ -25,3 +25,10 @@ pub async fn index(config: web::Data<Config>) -> HttpResponse {
         .content_type("text/html; charset=utf-8")
         .body(html)
 }
+
+pub async fn manifest() -> HttpResponse {
+    let content = std::fs::read_to_string("./static/manifest.json").unwrap_or_default();
+    HttpResponse::Ok()
+        .content_type("application/manifest+json")
+        .body(content)
+}

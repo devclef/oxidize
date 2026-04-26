@@ -46,6 +46,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::group::update_group)
             .service(handlers::group::delete_group)
             .route("/", web::get().to(handlers::index::index))
+            .route("/api/manifest", web::get().to(handlers::index::manifest))
             .service(actix_files::Files::new("/static", "./static"))
     })
     .bind((host, port))?
