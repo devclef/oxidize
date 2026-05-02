@@ -11,12 +11,16 @@ pub async fn index(config: web::Data<Config>) -> HttpResponse {
     <script>
         window.OXIDIZE_CONFIG = {{
             accountTypes: {},
-            autoFetchAccounts: {}
+            autoFetchAccounts: {},
+            timeRanges: {},
+            defaultTimeRange: "{}"
         }};
     </script>
     "#,
         serde_json::to_string(&config.account_types).unwrap_or_else(|_| "[]".to_string()),
-        config.auto_fetch_accounts
+        config.auto_fetch_accounts,
+        serde_json::to_string(&config.time_ranges).unwrap_or_else(|_| "[]".to_string()),
+        config.default_time_range
     );
 
     let html = html.replace("</head>", &format!("{} </head>", config_script));
