@@ -114,5 +114,3 @@ if (typeof window !== 'undefined') {
     window.roundEndDate = roundEndDate;
     window.applyDateRange = applyDateRange;
 }
-
-export { calculateRelativeDates, calculateRelativeDatesFromCustom, roundEndDate, applyDateRange };

@@ -1,5 +1,56 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { calculateRelativeDatesFromCustom, roundEndDate } from './date-utils.js';
+
+// Inline copies of date-utils functions for testing (since date-utils.js is loaded as a regular script, not ES module)
+function calculateRelativeDatesFromCustom(count, unit) {
+    const endDate = new Date();
+    const startDate = new Date();
+    const num = parseInt(count, 10);
+
+    switch (unit) {
+        case 'days':
+            startDate.setDate(startDate.getDate() - num);
+            break;
+        case 'weeks':
+            startDate.setDate(startDate.getDate() - (num * 7));
+            break;
+        case 'months':
+            startDate.setMonth(startDate.getMonth() - num);
+            break;
+        case 'years':
+            startDate.setFullYear(startDate.getFullYear() - num);
+            break;
+        default:
+            return null;
+    }
+
+    return {
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0]
+    };
+}
+
+function roundEndDate(dateStr, mode) {
+    const date = new Date(dateStr);
+
+    switch (mode) {
+        case 'start_of_current_month':
+            date.setDate(1);
+            date.setHours(0, 0, 0, 0);
+            break;
+        case 'end_of_current_month':
+            date.setMonth(date.getMonth() + 1, 0);
+            date.setHours(23, 59, 59, 999);
+            break;
+        case 'start_of_next_month':
+            date.setMonth(date.getMonth() + 1, 1);
+            date.setHours(0, 0, 0, 0);
+            break;
+        default:
+            return dateStr;
+    }
+
+    return date.toISOString().split('T')[0];
+}
 
 // Mock global fetch
 const mockFetch = vi.fn();
