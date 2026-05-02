@@ -1163,6 +1163,32 @@ async function renderDashboard() {
                 <div class="widget-settings" id="${widget.id}-settings" style="display: none;">
                     <div class="widget-settings-section">
                         <strong>Date Range</strong>
+                        <label>Time Range:
+                            <select id="${widget.id}-time-range">
+                                <option value="__none__">Custom</option>
+                            </select>
+                        </label>
+                        <button id="${widget.id}-apply-time-range" style="margin-bottom: 0.5rem;">Apply</button>
+                        <div id="${widget.id}-custom-range" style="display: none; margin-bottom: 0.5rem;">
+                            <label>Last
+                                <input type="number" id="${widget.id}-custom-count" value="1" min="1" max="999" style="width:60px">
+                                <select id="${widget.id}-custom-unit">
+                                    <option value="days">days</option>
+                                    <option value="weeks">weeks</option>
+                                    <option value="months" selected>months</option>
+                                    <option value="years">years</option>
+                                </select>
+                            </label>
+                            <button id="${widget.id}-apply-custom-range">Apply</button>
+                        </div>
+                        <label style="display: block; margin-bottom: 0.5rem;">
+                            <input type="checkbox" id="${widget.id}-round-end"> Round end date to month boundary
+                            <select id="${widget.id}-round-end-mode" style="display: none; margin-left: 0.5rem;">
+                                <option value="start_of_current_month">Start of current month</option>
+                                <option value="end_of_current_month" selected>End of current month</option>
+                                <option value="start_of_next_month">Start of next month</option>
+                            </select>
+                        </label>
                         <label>Start: <input type="date" id="${widget.id}-start" value="${startDate}"></label>
                         <label>End: <input type="date" id="${widget.id}-end" value="${endDate}"></label>
                         <label>Interval:
@@ -1307,6 +1333,119 @@ async function renderDashboard() {
                     } catch (e) {
                         console.error('Failed to save widget width:', e);
                     }
+                }
+            });
+        }
+    });
+
+    // Wire up time range controls for each widget
+    const timeRanges = CONFIG.timeRanges || ['7d', '30d', '3m', '6m', '1y', 'ytd'];
+    const defaultTimeRange = CONFIG.defaultTimeRange || '30d';
+
+    widgets.forEach(widget => {
+        const timeRangeSelect = document.getElementById(`${widget.id}-time-range`);
+        const applyTimeRangeBtn = document.getElementById(`${widget.id}-apply-time-range`);
+        const customRangeDiv = document.getElementById(`${widget.id}-custom-range`);
+        const customCount = document.getElementById(`${widget.id}-custom-count`);
+        const customUnit = document.getElementById(`${widget.id}-custom-unit`);
+        const applyCustomRangeBtn = document.getElementById(`${widget.id}-apply-custom-range`);
+        const roundEndCheckbox = document.getElementById(`${widget.id}-round-end`);
+        const roundEndMode = document.getElementById(`${widget.id}-round-end-mode`);
+        const ROLL_END_KEY = `oxidize_widget_${widget.id}_round_end`;
+
+        // Build time range dropdown
+        timeRanges.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            const match = key.match(/^(\d+)([dmwy])$/);
+            if (match) {
+                const num = match[1];
+                const unit = match[2];
+                const unitLabels = { d: 'Days', w: 'Weeks', m: 'Months', y: 'Years' };
+                option.textContent = `${num} ${unitLabels[unit]}`;
+            } else {
+                option.textContent = key.toUpperCase();
+            }
+            if (key === defaultTimeRange) option.selected = true;
+            timeRangeSelect.appendChild(option);
+        });
+
+        // Apply preset time range to widget
+        function applyPreset(key) {
+            const dates = calculateRelativeDates(key);
+            if (!dates) return;
+            const startEl = document.getElementById(`${widget.id}-start`);
+            const endEl = document.getElementById(`${widget.id}-end`);
+            startEl.value = dates.start;
+            endEl.value = dates.end;
+            if (roundEndCheckbox && roundEndCheckbox.checked) {
+                endEl.value = roundEndDate(dates.end, roundEndMode.value);
+            }
+        }
+
+        // Apply custom range to widget
+        function applyCustom() {
+            const count = parseInt(customCount.value, 10) || 1;
+            const unit = customUnit.value;
+            const dates = calculateRelativeDatesFromCustom(count, unit);
+            if (!dates) return;
+            const startEl = document.getElementById(`${widget.id}-start`);
+            const endEl = document.getElementById(`${widget.id}-end`);
+            startEl.value = dates.start;
+            endEl.value = dates.end;
+            if (roundEndCheckbox && roundEndCheckbox.checked) {
+                endEl.value = roundEndDate(dates.end, roundEndMode.value);
+            }
+        }
+
+        // Time range select handler
+        timeRangeSelect.addEventListener('change', () => {
+            const value = timeRangeSelect.value;
+            if (value === '__none__') {
+                customRangeDiv.style.display = 'block';
+                applyTimeRangeBtn.style.display = 'none';
+            } else {
+                customRangeDiv.style.display = 'none';
+                applyTimeRangeBtn.style.display = 'inline-block';
+                applyPreset(value);
+            }
+        });
+
+        // Apply button for preset
+        if (applyTimeRangeBtn) {
+            applyTimeRangeBtn.addEventListener('click', () => applyPreset(timeRangeSelect.value));
+        }
+
+        // Apply button for custom range
+        if (applyCustomRangeBtn) {
+            applyCustomRangeBtn.addEventListener('click', applyCustom);
+        }
+
+        // Round end checkbox handler
+        if (roundEndCheckbox) {
+            const savedMode = localStorage.getItem(ROLL_END_KEY) || 'end_of_current_month';
+            roundEndMode.value = savedMode;
+
+            roundEndCheckbox.addEventListener('change', () => {
+                roundEndMode.style.display = roundEndCheckbox.checked ? 'inline-block' : 'none';
+                const currentValue = timeRangeSelect.value;
+                if (currentValue !== '__none__') {
+                    applyPreset(currentValue);
+                } else {
+                    applyCustom();
+                }
+            });
+        }
+
+        // Round end mode change handler
+        if (roundEndMode) {
+            roundEndMode.addEventListener('change', () => {
+                localStorage.setItem(ROLL_END_KEY, roundEndMode.value);
+                const currentValue = timeRangeSelect.value;
+                if (currentValue !== '__none__') {
+                    applyPreset(currentValue);
+                } else {
+                    applyCustom();
                 }
             });
         }

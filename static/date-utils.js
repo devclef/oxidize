@@ -1,9 +1,9 @@
 // Date utility functions for relative date range calculations
 
-export function calculateRelativeDates(range) {
+function calculateRelativeDates(range) {
     const endDate = new Date();
     const startDate = new Date();
-    
+
     switch (range) {
         case '7d':
             startDate.setDate(startDate.getDate() - 7);
@@ -30,14 +30,14 @@ export function calculateRelativeDates(range) {
         default:
             return null;
     }
-    
+
     return {
         start: startDate.toISOString().split('T')[0],
         end: endDate.toISOString().split('T')[0]
     };
 }
 
-export function calculateRelativeDatesFromCustom(count, unit) {
+function calculateRelativeDatesFromCustom(count, unit) {
     const endDate = new Date();
     const startDate = new Date();
     const num = parseInt(count, 10);
@@ -65,7 +65,7 @@ export function calculateRelativeDatesFromCustom(count, unit) {
     };
 }
 
-export function roundEndDate(dateStr, mode) {
+function roundEndDate(dateStr, mode) {
     const date = new Date(dateStr);
     const now = new Date();
 
@@ -89,20 +89,30 @@ export function roundEndDate(dateStr, mode) {
     return date.toISOString().split('T')[0];
 }
 
-export function applyDateRange(range) {
+function applyDateRange(range) {
     const dates = calculateRelativeDates(range);
     if (dates) {
         document.getElementById('start-date').value = dates.start;
         document.getElementById('end-date').value = dates.end;
-        
+
         // Also update comparison dates if comparison is enabled
         if (typeof enableComparison !== 'undefined' && enableComparison) {
             const durationMs = new Date(dates.end) - new Date(dates.start);
             const comparisonEndDate = new Date(new Date(dates.start).getTime() - durationMs);
             const comparisonStart = new Date(comparisonEndDate.getTime() - durationMs);
-            
+
             document.getElementById('comparison-start-date').value = comparisonStart.toISOString().split('T')[0];
             document.getElementById('comparison-end-date').value = comparisonEndDate.toISOString().split('T')[0];
         }
     }
 }
+
+// Attach to window for regular script loading
+if (typeof window !== 'undefined') {
+    window.calculateRelativeDates = calculateRelativeDates;
+    window.calculateRelativeDatesFromCustom = calculateRelativeDatesFromCustom;
+    window.roundEndDate = roundEndDate;
+    window.applyDateRange = applyDateRange;
+}
+
+export { calculateRelativeDates, calculateRelativeDatesFromCustom, roundEndDate, applyDateRange };
