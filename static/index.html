@@ -75,10 +75,51 @@
 
         <!-- Primary chart controls -->
         <div class="chart-controls">
-            <label for="start-date">Start:</label>
-            <input type="date" id="start-date">
-            <label for="end-date">End:</label>
-            <input type="date" id="end-date">
+            <!-- Time range presets -->
+            <div class="time-range-controls">
+                <label for="time-range-select">Time Range:</label>
+                <select id="time-range-select">
+                    <option value="__none__">Custom</option>
+                </select>
+                <button id="apply-time-range-btn">Apply</button>
+            </div>
+
+            <!-- Custom relative range inputs (hidden by default) -->
+            <div id="custom-range-controls" class="custom-range-controls" style="display: none;">
+                <label for="custom-range-count">Last</label>
+                <input type="number" id="custom-range-count" value="1" min="1" max="999" style="width:60px">
+                <label for="custom-range-unit">
+                    <select id="custom-range-unit">
+                        <option value="days">days</option>
+                        <option value="weeks">weeks</option>
+                        <option value="months" selected>months</option>
+                        <option value="years">years</option>
+                    </select>
+                </label>
+                <button id="apply-custom-range-btn">Apply</button>
+            </div>
+
+            <!-- Round end date controls (hidden by default) -->
+            <div id="round-end-controls" class="round-end-controls" style="display: none;">
+                <label>
+                    <input type="checkbox" id="round-end-checkbox">
+                    Round end date to month boundary
+                </label>
+                <select id="round-end-mode" style="display: none;">
+                    <option value="start_of_current_month">Start of current month</option>
+                    <option value="end_of_current_month" selected>End of current month</option>
+                    <option value="start_of_next_month">Start of next month</option>
+                </select>
+            </div>
+
+            <!-- Existing date inputs -->
+            <div class="date-inputs-row">
+                <label for="start-date">Start:</label>
+                <input type="date" id="start-date">
+                <label for="end-date">End:</label>
+                <input type="date" id="end-date">
+            </div>
+
             <label for="interval-select">Interval:</label>
             <select id="interval-select">
                 <option value="auto">Auto</option>
