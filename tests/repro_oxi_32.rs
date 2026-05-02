@@ -57,6 +57,8 @@ mod tests {
             account_types: vec!["asset".to_string()],
             auto_fetch_accounts: false,
             data_dir: "/tmp".to_string(),
+            time_ranges: vec!["7d".to_string(), "30d".to_string(), "3m".to_string(), "6m".to_string(), "1y".to_string(), "ytd".to_string()],
+            default_time_range: "30d".to_string(),
         };
 
         let client = FireflyClient::new(config);

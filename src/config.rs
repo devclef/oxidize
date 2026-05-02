@@ -32,6 +32,8 @@ pub struct Config {
     pub account_types: Vec<String>,
     pub auto_fetch_accounts: bool,
     pub data_dir: String,
+    pub time_ranges: Vec<String>,
+    pub default_time_range: String,
 }
 
 impl Config {
@@ -69,6 +71,18 @@ impl Config {
                 .unwrap_or("./data".to_string())
         });
 
+        // Parse TIME_RANGES: comma-separated list of relative time range presets
+        let time_ranges = env::var("TIME_RANGES")
+            .unwrap_or_else(|_| "7d,30d,3m,6m,1y,ytd".to_string())
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // Parse DEFAULT_TIME_RANGE: which preset to pre-select (default: 30d)
+        let default_time_range = env::var("DEFAULT_TIME_RANGE")
+            .unwrap_or_else(|_| "30d".to_string());
+
         Self {
             firefly_url,
             firefly_token,
@@ -77,6 +91,8 @@ impl Config {
             account_types,
             auto_fetch_accounts,
             data_dir,
+            time_ranges,
+            default_time_range,
         }
     }
 }
