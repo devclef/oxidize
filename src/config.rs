@@ -80,8 +80,8 @@ impl Config {
             .collect();
 
         // Parse DEFAULT_TIME_RANGE: which preset to pre-select (default: 30d)
-        let default_time_range = env::var("DEFAULT_TIME_RANGE")
-            .unwrap_or_else(|_| "30d".to_string());
+        let default_time_range =
+            env::var("DEFAULT_TIME_RANGE").unwrap_or_else(|_| "30d".to_string());
 
         Self {
             firefly_url,
