@@ -327,9 +327,7 @@ impl FireflyClient {
             };
 
             let is_spent = match journal_type {
-                "withdrawal" => {
-                    !selected_ids.contains(dest_id) || selected_ids.is_empty()
-                }
+                "withdrawal" => !selected_ids.contains(dest_id) || selected_ids.is_empty(),
                 "transfer" => {
                     // Transfer out of selected account to outside
                     selected_ids.contains(source_id)
