@@ -539,6 +539,39 @@ button:hover {
     color: white;
 }
 
+/* Earned chart type selector */
+.earned-chart-type-selector {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.earned-chart-type-selector .mode-label {
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+}
+
+.earned-chart-type-selector .mode-label:hover {
+    background: var(--bg-tertiary);
+}
+
+.earned-chart-type-selector .mode-label:has(input:checked) {
+    background: var(--accent-color);
+    color: white;
+}
+
+.earned-chart-type-selector .mode-label input[type="radio"] {
+    display: none;
+}
+
 /* Advanced options collapsible */
 .advanced-options {
     display: none;

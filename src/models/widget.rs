@@ -11,6 +11,9 @@ pub struct Widget {
     pub end_date: Option<String>,
     pub interval: Option<String>,
     pub chart_mode: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earned_chart_type: Option<String>, // "bars", "delta_line", "delta_bar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub widget_type: Option<String>, // "balance" (default) or "earned_spent"
     #[serde(default)]

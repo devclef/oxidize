@@ -97,6 +97,12 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN group_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+
+    // Migration: Add earned_chart_type column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN earned_chart_type TEXT DEFAULT 'bars'",
+        [],
+    );
 }
 
 // Helper function to deserialize chart options from JSON string
@@ -143,6 +149,7 @@ impl Storage {
                     let end_date: Option<String> = row.get(5)?;
                     let interval: Option<String> = row.get(6)?;
                     let chart_mode: Option<String> = row.get(7)?;
+                    let earned_chart_type: Option<String> = row.get(15)?;
                     let widget_type: Option<String> = row.get(8)?;
                     let chart_options_json: Option<String> = row.get(9)?;
                     let display_order: i32 = row.get(10)?;
@@ -169,6 +176,7 @@ impl Storage {
                         end_date,
                         interval,
                         chart_mode,
+                        earned_chart_type,
                         widget_type,
                         chart_options,
                         display_order,

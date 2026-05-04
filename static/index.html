@@ -139,6 +139,23 @@
                     Split
                 </label>
             </div>
+
+            <!-- Earned/Spent chart type selector (only shown for earned_spent widget type) -->
+            <div id="earned-chart-type-selector" class="earned-chart-type-selector" style="display: none;">
+                <label class="mode-label">
+                    <input type="radio" name="earned-chart-type" value="bars" checked>
+                    Earned vs Spent
+                </label>
+                <label class="mode-label">
+                    <input type="radio" name="earned-chart-type" value="delta_line">
+                    Delta Line
+                </label>
+                <label class="mode-label">
+                    <input type="radio" name="earned-chart-type" value="delta_bar">
+                    Delta Bar
+                </label>
+            </div>
+
             <button id="update-chart-btn">Update Graph</button>
         </div>
 

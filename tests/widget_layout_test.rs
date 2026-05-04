@@ -85,6 +85,7 @@ fn test_widget_serialization_includes_new_fields() {
         end_date: None,
         interval: None,
         chart_mode: None,
+        earned_chart_type: None,
         widget_type: None,
         chart_options: None,
         display_order: 3,

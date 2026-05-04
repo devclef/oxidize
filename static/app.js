@@ -614,7 +614,17 @@ function extractChartData(entries, labels = []) {
 }
 
 // Render earned vs spent bar chart
-function renderEarnedSpentChart(ctx, history) {
+function renderEarnedSpentChart(ctx, history, chartType = 'bars') {
+    if (chartType === 'delta_line') {
+        renderDeltaLineChart(ctx, history);
+    } else if (chartType === 'delta_bar') {
+        renderDeltaBarChart(ctx, history);
+    } else {
+        renderEarnedSpentBarsChart(ctx, history);
+    }
+}
+
+function renderEarnedSpentBarsChart(ctx, history) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#eaeaea' : '#333';
     const chartGridColor = isDark ? '#444' : '#ddd';
@@ -713,6 +723,212 @@ function renderEarnedSpentChart(ctx, history) {
                         label: function(context) {
                             if (context.parsed.y !== null) {
                                 return context.dataset.label + ': ' + Math.abs(context.parsed.y).toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDeltaLineChart(ctx, history) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    // Find earned and spent datasets from history
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    // Extract labels from the first dataset that has entries
+    let labels = [];
+    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+
+    if (labels.length === 0) {
+        console.warn('No labels found in earned/spent chart data');
+        return;
+    }
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels) : new Array(labels.length).fill(0);
+
+    // Calculate delta: earned - spent (positive = earned more, negative = spent more)
+    const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
+
+    const lineColor = isDark ? '#3498db' : '#2980b9';
+    const pointColor = deltaData.map(v => v >= 0 ? '#27ae60' : '#e74c3c');
+
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    balanceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Delta (Earned - Spent)',
+                data: deltaData,
+                borderColor: lineColor,
+                backgroundColor: lineColor + '33',
+                tension: 0.3,
+                pointBackgroundColor: pointColor,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 6,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 6,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = parseChartLabel(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            if (value !== null) {
+                                const sign = value >= 0 ? '+' : '';
+                                return 'Delta: ' + sign + value.toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDeltaBarChart(ctx, history) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    // Find earned and spent datasets from history
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    // Extract labels from the first dataset that has entries
+    let labels = [];
+    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+
+    if (labels.length === 0) {
+        console.warn('No labels found in earned/spent chart data');
+        return;
+    }
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels) : new Array(labels.length).fill(0);
+
+    // Calculate delta: earned - spent (positive = earned more, negative = spent more)
+    const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
+
+    const greenColor = isDark ? '#58d68d' : '#27ae60';
+    const redColor = isDark ? '#ec7063' : '#e74c3c';
+
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    balanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Delta (Earned - Spent)',
+                data: deltaData,
+                backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+                borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 6,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 6,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = parseChartLabel(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            if (value !== null) {
+                                const sign = value >= 0 ? '+' : '';
+                                return 'Delta: ' + sign + value.toLocaleString();
                             }
                             return '';
                         }
@@ -1066,9 +1282,10 @@ function renderChart(history, widgetType = 'balance') {
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
-    // For earned_spent widget type, render as a bar chart
+    // For earned_spent widget type, render based on selected chart type
     if (widgetType === 'earned_spent') {
-        renderEarnedSpentChart(ctx, history);
+        const earnedChartType = document.querySelector('input[name="earned-chart-type"]:checked')?.value || 'bars';
+        renderEarnedSpentChart(ctx, history, earnedChartType);
         return;
     }
 
@@ -2071,6 +2288,7 @@ async function saveGraphAsWidget() {
     const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
     const comparisonEndDate = enableComparison ? document.getElementById('comparison-end-date').value : null;
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+    const earnedChartType = document.querySelector('input[name="earned-chart-type"]:checked')?.value || 'bars';
 
     // Identify which selected accounts belong to checked groups
     const checkedGroups = groups.filter(g => g._checked);
@@ -2105,6 +2323,7 @@ async function saveGraphAsWidget() {
         end_date: endDate || null,
         interval: interval || null,
         chart_mode: chartMode,
+        earned_chart_type: earnedChartType,
         widget_type: widgetType,
         chart_options: chartOptions
     };
@@ -2613,9 +2832,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
+            // Toggle earned chart type selector visibility
+            const earnedSelector = document.getElementById('earned-chart-type-selector');
+            if (earnedSelector) {
+                earnedSelector.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
+            }
             fetchChartData();
         });
     }
+
+    // Handle earned chart type change
+    document.querySelectorAll('input[name="earned-chart-type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            fetchChartData();
+        });
+    });
 
     // Load saved lists dropdown
 

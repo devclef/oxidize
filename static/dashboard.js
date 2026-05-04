@@ -549,7 +549,17 @@ function getChartOptions(widget) {
     };
 }
 
-async function renderEarnedSpentChart(ctx, widget, labels, history, containerId) {
+async function renderEarnedSpentChart(ctx, widget, labels, history, containerId, chartType = 'bars') {
+    if (chartType === 'delta_line') {
+        renderDeltaLineChartDashboard(ctx, widget, labels, history);
+    } else if (chartType === 'delta_bar') {
+        renderDeltaBarChartDashboard(ctx, widget, labels, history);
+    } else {
+        renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history);
+    }
+}
+
+function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
     const opts = getChartOptions(widget);
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#eaeaea' : '#333';
@@ -562,7 +572,7 @@ async function renderEarnedSpentChart(ctx, widget, labels, history, containerId)
     const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
     const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
 
-    // Earned is typically positive (income), spent is typically negative (expense)
+    // Earned is typically positive (income), spent is typically positive (expense)
     // We'll show earned in green and spent in red
     const earnedColor = isDark ? '#58d68d' : '#27ae60';
     const spentColor = isDark ? '#ec7063' : '#e74c3c';
@@ -632,6 +642,178 @@ async function renderEarnedSpentChart(ctx, widget, labels, history, containerId)
                         label: function(context) {
                             if (context.parsed.y !== null) {
                                 return context.dataset.label + ': ' + Math.abs(context.parsed.y).toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
+    const opts = getChartOptions(widget);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+
+    const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
+
+    const lineColor = isDark ? '#3498db' : '#2980b9';
+    const pointColor = deltaData.map(v => v >= 0 ? '#27ae60' : '#e74c3c');
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Delta (Earned - Spent)',
+                data: deltaData,
+                borderColor: lineColor,
+                backgroundColor: lineColor + '33',
+                tension: 0.3,
+                pointBackgroundColor: pointColor,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.yAxisLimit,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.xAxisLimit,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = parseChartLabel(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            if (value !== null) {
+                                const sign = value >= 0 ? '+' : '';
+                                return 'Delta: ' + sign + value.toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
+    const opts = getChartOptions(widget);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    const earnedDataset = history.find(ds => ds.label === 'earned');
+    const spentDataset = history.find(ds => ds.label === 'spent');
+
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+
+    const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
+
+    const greenColor = isDark ? '#58d68d' : '#27ae60';
+    const redColor = isDark ? '#ec7063' : '#e74c3c';
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Delta (Earned - Spent)',
+                data: deltaData,
+                backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+                borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.yAxisLimit,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.xAxisLimit,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = parseChartLabel(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            if (value !== null) {
+                                const sign = value >= 0 ? '+' : '';
+                                return 'Delta: ' + sign + value.toLocaleString();
                             }
                             return '';
                         }
@@ -714,7 +896,8 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
 
         // Handle earned vs spent widget type
         if (widgetType === 'earned_spent') {
-            await renderEarnedSpentChart(ctx, widget, labels, history, containerId);
+            const earnedChartType = widget.earned_chart_type || 'bars';
+            await renderEarnedSpentChart(ctx, widget, labels, history, containerId, earnedChartType);
             return;
         }
 
