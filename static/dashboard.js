@@ -278,7 +278,8 @@ async function updateWidgetDateRange(widgetId) {
     const startDate = document.getElementById(`${widgetId}-start`).value;
     const endDate = document.getElementById(`${widgetId}-end`).value;
     const interval = document.getElementById(`${widgetId}-interval`).value;
-    const chartMode = document.getElementById(`${widgetId}-chart-mode`).value;
+    const chartModeEl = document.getElementById(`${widgetId}-chart-mode`);
+    const chartMode = chartModeEl ? chartModeEl.value : undefined;
 
     const widgets = await getDashboardWidgets();
     const widgetIndex = widgets.findIndex(w => w.id === widgetId);
@@ -289,7 +290,7 @@ async function updateWidgetDateRange(widgetId) {
     widget.start_date = startDate || null;
     widget.end_date = endDate || null;
     widget.interval = interval || null;
-    widget.chart_mode = chartMode;
+    if (chartMode !== undefined) widget.chart_mode = chartMode;
     widget.updated_at = new Date().toISOString();
 
     // Update chart options
