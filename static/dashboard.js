@@ -851,10 +851,16 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         let history;
         if (widgetType === 'earned_spent') {
             // For earned vs spent, use the dedicated earned-spent endpoint
+            const groupIds = widget.group_ids || [];
+            const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+            const groupAccountIds = new Set();
+            widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+            const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+
             const params = new URLSearchParams();
             // Add account IDs if specified
-            if (widget.accounts && Array.isArray(widget.accounts)) {
-                widget.accounts.forEach(id => params.append('accounts[]', id));
+            if (allWidgetAccountIds && Array.isArray(allWidgetAccountIds)) {
+                allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
             }
             if (widget.start_date) params.append('start', widget.start_date);
             if (widget.end_date) params.append('end', widget.end_date);
