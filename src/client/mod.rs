@@ -275,7 +275,10 @@ impl FireflyClient {
                 let key = match period {
                     "1M" => {
                         let next_month = if date.month() == 12 {
-                            date.with_year(date.year() + 1).unwrap().with_month(1).unwrap()
+                            date.with_year(date.year() + 1)
+                                .unwrap()
+                                .with_month(1)
+                                .unwrap()
                         } else {
                             date.with_month(date.month() + 1).unwrap()
                         };
@@ -890,7 +893,11 @@ impl FireflyClient {
             let key = match period {
                 "1M" => {
                     let next_month = if current.month() == 12 {
-                        current.with_year(current.year() + 1).unwrap().with_month(1).unwrap()
+                        current
+                            .with_year(current.year() + 1)
+                            .unwrap()
+                            .with_month(1)
+                            .unwrap()
                     } else {
                         current.with_month(current.month() + 1).unwrap()
                     };
