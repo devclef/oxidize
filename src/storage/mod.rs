@@ -134,7 +134,7 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, group_ids, start_date, end_date, interval, chart_mode,
-                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at
+                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -149,7 +149,6 @@ impl Storage {
                     let end_date: Option<String> = row.get(5)?;
                     let interval: Option<String> = row.get(6)?;
                     let chart_mode: Option<String> = row.get(7)?;
-                    let earned_chart_type: Option<String> = row.get(15)?;
                     let widget_type: Option<String> = row.get(8)?;
                     let chart_options_json: Option<String> = row.get(9)?;
                     let display_order: i32 = row.get(10)?;
@@ -157,6 +156,7 @@ impl Storage {
                     let chart_height: i32 = row.get(12)?;
                     let created_at: Option<String> = row.get(13)?;
                     let updated_at: Option<String> = row.get(14)?;
+                    let earned_chart_type: Option<String> = row.get(15)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -208,8 +208,8 @@ impl Storage {
         with_db(|conn| {
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, start_date, end_date, interval,
-                                      chart_mode, widget_type, chart_options, display_order, width, chart_height, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                                      chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -221,6 +221,7 @@ impl Storage {
                     &widget.chart_mode,
                     &widget.widget_type,
                     &chart_options_json,
+                    &widget.earned_chart_type,
                     &widget.display_order,
                     &widget.width,
                     &widget.chart_height,
@@ -251,8 +252,9 @@ impl Storage {
                     "UPDATE widgets SET
                     name = ?1, accounts = ?2, group_ids = ?3, start_date = ?4, end_date = ?5,
                     interval = ?6, chart_mode = ?7, widget_type = ?8, chart_options = ?9,
-                    display_order = ?10, width = ?11, chart_height = ?12, updated_at = ?13
-                 WHERE id = ?14",
+                    earned_chart_type = ?10, display_order = ?11, width = ?12, chart_height = ?13,
+                    updated_at = ?14
+                 WHERE id = ?15",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -263,6 +265,7 @@ impl Storage {
                         &widget.chart_mode,
                         &widget.widget_type,
                         &chart_options_json,
+                        &widget.earned_chart_type,
                         &widget.display_order,
                         &widget.width,
                         &widget.chart_height,
