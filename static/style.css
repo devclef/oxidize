@@ -899,10 +899,15 @@ button:hover {
 .widget-actions button {
     padding: 2px var(--space-2);
     font-size: 12px;
+    background: var(--text-muted);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
 }
 
-.widget-actions .refresh-btn {
-    color: var(--text-muted);
+.widget-actions button:hover {
+    background: var(--border-color);
 }
 
 .widget-actions .refresh-btn:disabled {
@@ -1106,14 +1111,6 @@ button:hover {
 
 .widget-settings button:hover {
     background: var(--border-light);
-}
-
-.settings-toggle {
-    background: var(--text-muted);
-}
-
-.settings-toggle:hover {
-    background: var(--border-color);
 }
 
 /* SortableJS drag styles */
