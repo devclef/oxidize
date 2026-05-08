@@ -1,0 +1,9 @@
+[book]
+authors = ["Jacob Morgan"]
+language = "en"
+src = "src"
+title = "Oxidize — User Guide"
+
+[output.html]
+smart-punctuation = true
+mathjax-support = false
