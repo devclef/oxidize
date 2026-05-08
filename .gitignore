@@ -4,7 +4,7 @@ frontend/dist/
 .env
 .DS_Store
 firefly-reporting-backend/src/*.rs.bak
-book/book/
+docs/site/
 
 
 # Added by cargo

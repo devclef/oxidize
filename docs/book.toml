@@ -4,6 +4,9 @@ language = "en"
 src = "src"
 title = "Oxidize — User Guide"
 
+[build]
+build-dir = "site"
+
 [output.html]
-smart-punctuation = true
-mathjax-support = false
+default-theme = "ayu"
+git-repository-url = "https://github.com/devclef/oxidize"
