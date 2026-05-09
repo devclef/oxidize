@@ -1052,8 +1052,13 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 let total = 0;
                 if (ds.entries && typeof ds.entries === 'object') {
                     Object.values(ds.entries).forEach(v => {
-                        const num = parseFloat(v);
-                        if (!isNaN(num)) total += num;
+                        let num = 0;
+                        if (typeof v === 'object' && v !== null && v.value !== undefined) {
+                            num = parseFloat(v.value);
+                        } else {
+                            num = parseFloat(v);
+                        }
+                        if (!isNaN(num)) total += Math.abs(num);
                     });
                 }
                 budgetLabels.push(ds.label);

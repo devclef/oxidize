@@ -399,8 +399,13 @@ async function fetchChartData() {
                 let total = 0;
                 if (ds.entries && typeof ds.entries === 'object') {
                     Object.values(ds.entries).forEach(v => {
-                        const num = parseFloat(v);
-                        if (!isNaN(num)) total += num;
+                        let num = 0;
+                        if (typeof v === 'object' && v !== null && v.value !== undefined) {
+                            num = parseFloat(v.value);
+                        } else {
+                            num = parseFloat(v);
+                        }
+                        if (!isNaN(num)) total += Math.abs(num);
                     });
                 }
                 budgetNames.push(ds.label);
@@ -427,6 +432,7 @@ async function fetchChartData() {
             }
 
             chartContainer.style.display = 'block';
+            const ctx = document.getElementById('balanceChart').getContext('2d');
             balanceChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
