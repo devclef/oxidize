@@ -361,16 +361,13 @@ async function fetchChartData() {
             return;
         }
 
-        // For budget_spent widget type - one bar per selected budget showing total spent
+        // For budget_spent widget type - time series with dates on X-axis, one line per budget
         if (widgetType === 'budget_spent') {
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
 
             const url = '/api/budgets/spent';
             const fullUrl = params.toString() ? `${url}?${params.toString()}` : url;
-
-            console.log('=== FETCHING BUDGET SPENT DATA ===');
-            console.log('URL:', fullUrl);
 
             const response = await fetch(fullUrl);
             if (!response.ok) {
@@ -386,11 +383,7 @@ async function fetchChartData() {
                 budgetData = budgetData.filter(ds => nameSet.has(ds.label));
             }
 
-            console.log('=== BUDGET SPENT DATA FETCHED ===');
-            console.log('Received budget data:', budgetData);
-
             if (!budgetData || budgetData.length === 0) {
-                console.warn('No budget spent data returned from API');
                 chartErrorEl.innerHTML = '<div class="info">No budget spent data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
@@ -400,31 +393,39 @@ async function fetchChartData() {
                 return;
             }
 
-            // Sum all entries per budget to get total spent
-            const budgetLabels = [];
-            const budgetTotals = [];
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
-
+            // Collect all unique dates across all budget datasets
+            const dateSet = new Set();
             budgetData.forEach(ds => {
-                let total = 0;
                 if (ds.entries && typeof ds.entries === 'object') {
-                    Object.values(ds.entries).forEach(v => {
-                        let num = 0;
-                        if (typeof v === 'object' && v !== null && v.value !== undefined) {
-                            num = parseFloat(v.value);
-                        } else {
-                            num = parseFloat(v);
-                        }
-                        if (!isNaN(num)) total += Math.abs(num);
-                    });
+                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
                 }
-                budgetLabels.push(ds.label);
-                budgetTotals.push(total);
             });
+            const allDates = Array.from(dateSet).sort();
 
-            console.log('Budget totals:', budgetLabels, budgetTotals);
+            // Build Chart.js datasets - one per budget
+            const datasets = budgetData.map((ds, i) => {
+                const data = allDates.map(date => {
+                    const val = ds.entries?.[date];
+                    if (val === undefined || val === null) return 0;
+                    let num = 0;
+                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                        num = parseFloat(val.value);
+                    } else {
+                        num = parseFloat(val);
+                    }
+                    return isNaN(num) ? 0 : Math.abs(num);
+                });
+                return {
+                    label: ds.label,
+                    data: data,
+                    borderColor: getBudgetColor(i),
+                    backgroundColor: getBudgetColor(i, '33'),
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2
+                };
+            });
 
             if (balanceChart) {
                 balanceChart.destroy();
@@ -432,27 +433,30 @@ async function fetchChartData() {
 
             chartContainer.style.display = 'block';
             const ctx = document.getElementById('balanceChart').getContext('2d');
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+
             balanceChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'line',
                 data: {
-                    labels: budgetLabels,
-                    datasets: [{
-                        label: 'Amount Spent',
-                        data: budgetTotals,
-                        backgroundColor: '#3b82f6CC',
-                        borderColor: '#3b82f6',
-                        borderWidth: 1
-                    }]
+                    labels: allDates,
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: true,
+                            labels: { color: chartTextColor }
+                        },
                         tooltip: {
+                            mode: 'index',
+                            intersect: false,
                             callbacks: {
                                 label: function(context) {
-                                    return context.parsed.y.toLocaleString();
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
                                 }
                             }
                         }
@@ -470,7 +474,10 @@ async function fetchChartData() {
                         },
                         x: {
                             grid: { color: chartGridColor },
-                            ticks: { color: chartTextColor }
+                            ticks: {
+                                color: chartTextColor,
+                                maxRotation: 45
+                            }
                         }
                     }
                 }
@@ -703,6 +710,18 @@ function generateColors(count) {
         });
     }
     return colors;
+}
+
+const BUDGET_COLORS = [
+    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
+    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
+    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
+];
+
+function getBudgetColor(index, alpha) {
+    const color = BUDGET_COLORS[index % BUDGET_COLORS.length];
+    if (alpha) return color + alpha;
+    return color;
 }
 
 // Extract chart data from entries (handles both object and array formats)
