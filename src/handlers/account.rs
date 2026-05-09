@@ -247,3 +247,51 @@ pub async fn get_net_worth(client: web::Data<FireflyClient>, req: HttpRequest) -
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+/// GET endpoint for budget spending chart data
+#[get("/api/budgets/spent")]
+pub async fn get_budget_spent(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            _ => {}
+        }
+    }
+
+    match client.get_budget_spent(start, end).await {
+        Ok(chart) => HttpResponse::Ok().json(chart),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+/// GET endpoint for budget list (for widget selector)
+#[get("/api/budgets/list")]
+pub async fn get_budget_list(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            _ => {}
+        }
+    }
+
+    match client.get_budgets(start, end).await {
+        Ok(budgets) => HttpResponse::Ok().json(budgets),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}

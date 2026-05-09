@@ -56,6 +56,14 @@ mod tests {
             "get_net_worth should be registered (OXI-14 fix)"
         );
         assert!(
+            main_rs.contains("get_budget_spent"),
+            "get_budget_spent should be registered"
+        );
+        assert!(
+            main_rs.contains("get_budget_list"),
+            "get_budget_list should be registered"
+        );
+        assert!(
             main_rs.contains("dashboard"),
             "dashboard should be registered"
         );
@@ -115,6 +123,14 @@ mod tests {
             account_rs.contains("pub async fn get_net_worth"),
             "get_net_worth function should exist"
         );
+        assert!(
+            account_rs.contains("pub async fn get_budget_spent"),
+            "get_budget_spent function should exist"
+        );
+        assert!(
+            account_rs.contains("pub async fn get_budget_list"),
+            "get_budget_list function should exist"
+        );
 
         // Check that the #[get] attributes are present with correct paths
         assert!(
@@ -124,6 +140,14 @@ mod tests {
         assert!(
             account_rs.contains("#[get(\"/api/expenses-by-category\")]"),
             "get_expenses_by_category should have #[get(\"/api/expenses-by-category\")] attribute"
+        );
+        assert!(
+            account_rs.contains("#[get(\"/api/budgets/spent\")]"),
+            "get_budget_spent should have #[get(\"/api/budgets/spent\")] attribute"
+        );
+        assert!(
+            account_rs.contains("#[get(\"/api/budgets/list\")]"),
+            "get_budget_list should have #[get(\"/api/budgets/list\")] attribute"
         );
     }
 
