@@ -1022,7 +1022,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             return;
         }
 
-        // Handle budget_spent widget type - aggregate total spent per budget into one bar each
+       // Handle budget_spent widget type - time series bar chart with dates on x-axis
         if (widgetType === 'budget_spent') {
             const budgetNames = widget.budget_names || [];
             let filteredHistory = history;
@@ -1035,58 +1035,66 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 return;
             }
 
+            // Collect all unique dates across all budgets
+            const allDates = new Set();
+            filteredHistory.forEach(ds => {
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.keys(ds.entries).forEach(k => allDates.add(k));
+                }
+            });
+            const sortedDates = Array.from(allDates).sort();
+
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
             const chartTextColor = isDark ? '#eaeaea' : '#333';
             const chartGridColor = isDark ? '#444' : '#ddd';
+            const hueStep = 360 / filteredHistory.length;
+
+            const datasets = filteredHistory.map((ds, idx) => {
+                const data = sortedDates.map(date => {
+                    const raw = ds.entries?.[date];
+                    let num = 0;
+                    if (typeof raw === 'object' && raw !== null && raw.value !== undefined) {
+                        num = parseFloat(raw.value);
+                    } else {
+                        num = parseFloat(raw);
+                    }
+                    return isNaN(num) ? null : Math.abs(num);
+                });
+                return {
+                    label: ds.label,
+                    data: data,
+                    backgroundColor: `hsl(${Math.round(idx * hueStep)}, 70%, 50%)CC`,
+                    borderColor: `hsl(${Math.round(idx * hueStep)}, 70%, 50%)`,
+                    borderWidth: 1,
+                    borderRadius: 4
+                };
+            });
 
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
 
-            const budgetLabels = [];
-            const budgetTotals = [];
-            const colors = generateColors(filteredHistory.length);
-
-            filteredHistory.forEach(ds => {
-                let total = 0;
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.values(ds.entries).forEach(v => {
-                        let num = 0;
-                        if (typeof v === 'object' && v !== null && v.value !== undefined) {
-                            num = parseFloat(v.value);
-                        } else {
-                            num = parseFloat(v);
-                        }
-                        if (!isNaN(num)) total += Math.abs(num);
-                    });
-                }
-                budgetLabels.push(ds.label);
-                budgetTotals.push(total);
-            });
-
             widgetCharts[widget.id] = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: budgetLabels,
-                    datasets: [{
-                        label: 'Amount Spent',
-                        data: budgetTotals,
-                        backgroundColor: colors.map(c => c + 'CC'),
-                        borderColor: colors,
-                        borderWidth: 1,
-                        borderRadius: 4
-                    }]
+                    labels: sortedDates,
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: filteredHistory.length > 1,
+                            position: 'top',
+                            labels: { color: chartTextColor }
+                        },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return context.parsed.y.toLocaleString();
+                                    if (context.parsed.y === null) return '';
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
                                 }
                             }
                         }
@@ -1104,8 +1112,21 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                         },
                         x: {
                             grid: { color: chartGridColor },
-                            ticks: { color: chartTextColor }
-                        }
+                            ticks: {
+                                color: chartTextColor,
+                                maxTicksLimit: 12,
+                                autoSkip: true,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    if (!label) return '';
+                                    const parts = label.split('-');
+                                    if (parts.length === 3) {
+                                        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                                        if (!isNaN(d.getTime())) return d.toLocaleDateString();
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     }
                 }
