@@ -378,20 +378,41 @@ async function fetchChartData() {
             }
             let budgetData = await response.json();
 
-            // Filter by selected budget names
+            // Filter by selected budget names and sum entries per budget
             const selectedBudgetCheckboxes = document.querySelectorAll('.budget-select:checked');
             const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);
             if (selectedBudgetNames.length > 0) {
                 const nameSet = new Set(selectedBudgetNames);
                 budgetData = budgetData.filter(ds => nameSet.has(ds.label));
-                console.log('Filtered budget data to selected budgets:', selectedBudgetNames);
             }
 
-            console.log('=== BUDGET SPENT DATA FETCHED ===');
-            console.log('Received budget data:', budgetData);
+            // Aggregate: each budget = one bar showing total spent
+            const budgetNames = [];
+            const budgetTotals = [];
+            const colors = [];
+            const hueStep = 360 / budgetData.length;
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
 
-            if (!budgetData || budgetData.length === 0) {
-                console.warn('No budget spent data returned from API');
+            budgetData.forEach((ds, idx) => {
+                let total = 0;
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.values(ds.entries).forEach(v => {
+                        const num = parseFloat(v);
+                        if (!isNaN(num)) total += num;
+                    });
+                }
+                budgetNames.push(ds.label);
+                budgetTotals.push(total);
+                colors.push(`hsl(${Math.round(idx * hueStep)}, 70%, 50%)`);
+            });
+
+            console.log('=== BUDGET SPENT DATA AGGREGATED ===');
+            console.log('Budgets:', budgetNames);
+            console.log('Totals:', budgetTotals);
+
+            if (budgetNames.length === 0) {
                 chartErrorEl.innerHTML = '<div class="info">No budget spent data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
@@ -401,8 +422,55 @@ async function fetchChartData() {
                 return;
             }
 
+            if (balanceChart) {
+                balanceChart.destroy();
+            }
+
             chartContainer.style.display = 'block';
-            renderBudgetChart(budgetData);
+            balanceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: budgetNames,
+                    datasets: [{
+                        label: 'Amount Spent',
+                        data: budgetTotals,
+                        backgroundColor: colors.map(c => c + 'CC'),
+                        borderColor: colors,
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: chartGridColor },
+                            ticks: { color: chartTextColor }
+                        }
+                    }
+                }
+            });
             return;
         }
 
@@ -1180,117 +1248,6 @@ function renderNetWorthChart(ctx, history) {
     });
 }
 
-function renderBudgetChart(budgetData) {
-    const ctx = document.getElementById('balanceChart').getContext('2d');
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
-    const chartGridColor = isDark ? '#444' : '#ddd';
-
-    // Extract date keys from the first dataset (entries is always an object keyed by date)
-    const firstDataset = budgetData.find(ds => ds.entries && typeof ds.entries === 'object' && !Array.isArray(ds.entries) && Object.keys(ds.entries).length > 0);
-    if (!firstDataset) {
-        chartErrorEl.innerHTML = '<div class="info">No budget data found for the current date range.</div>';
-        return;
-    }
-
-    const labels = Object.keys(firstDataset.entries);
-    if (labels.length === 0) {
-        chartErrorEl.innerHTML = '<div class="info">No budget data points found for the current date range.</div>';
-        return;
-    }
-
-    // Generate colors for budget datasets
-    const colors = [];
-    const hueStep = 360 / budgetData.length;
-    for (let i = 0; i < budgetData.length; i++) {
-        colors.push(`hsl(${Math.round(i * hueStep)}, 70%, 50%)`);
-    }
-
-    const datasets = budgetData.map((ds, idx) => {
-        const data = labels.map(key => {
-            const raw = ds.entries?.[key];
-            if (raw === null || raw === undefined || raw === '') return null;
-            const v = parseFloat(raw);
-            return isNaN(v) ? null : v;
-        });
-
-        return {
-            label: ds.label,
-            data: data,
-            backgroundColor: colors[idx] + 'CC',
-            borderColor: colors[idx],
-            borderWidth: 1,
-            borderRadius: 4
-        };
-    });
-
-    // Destroy existing chart
-    if (balanceChart) {
-        balanceChart.destroy();
-    }
-
-    balanceChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: budgetData.length > 1,
-                    position: 'top',
-                    labels: { color: chartTextColor }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            if (context.parsed.y === null) return '';
-                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: { color: chartGridColor },
-                    ticks: {
-                        color: chartTextColor,
-                        callback: function(value) {
-                            return value.toLocaleString();
-                        }
-                    }
-                },
-                x: {
-                    grid: { color: chartGridColor },
-                    ticks: {
-                        color: chartTextColor,
-                        maxTicksLimit: 10,
-                        autoSkip: true,
-                        callback: function(value) {
-                            // Labels are already date strings like "2026-01-01"
-                            const label = this.getLabelForValue(value);
-                            if (!label) return '';
-                            // Parse and format the date string directly
-                            const parts = label.split('-');
-                            if (parts.length === 3) {
-                                const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-                                if (!isNaN(d.getTime())) {
-                                    return d.toLocaleDateString();
-                                }
-                            }
-                            return label;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
 // Aggregate account data into groups for split mode rendering
 function aggregateGroupData(history, groups, allAccountsList) {
     // Build a map of account name -> { data, balance }
@@ -1454,12 +1411,6 @@ function renderChart(history, widgetType = 'balance') {
     // For net_worth widget type, render as a line chart
     if (widgetType === 'net_worth') {
         renderNetWorthChart(ctx, history);
-        return;
-    }
-
-    // For budget_spent widget type, render as a bar chart
-    if (widgetType === 'budget_spent') {
-        renderBudgetChart(history);
         return;
     }
 
