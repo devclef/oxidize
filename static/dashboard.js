@@ -1035,16 +1035,13 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 return;
             }
 
-            // Re-extract labels from filtered data
-            const filteredFirstDataset = filteredHistory.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
-            let budgetLabels = [];
-            if (filteredFirstDataset) {
-                if (Array.isArray(filteredFirstDataset.entries)) {
-                    budgetLabels = filteredFirstDataset.entries.map(e => e.key || e.date || e.timestamp);
-                } else {
-                    budgetLabels = Object.keys(filteredFirstDataset.entries);
-                }
+            // Extract date keys from the first dataset (entries is always an object keyed by date)
+            const filteredFirstDataset = filteredHistory.find(ds => ds.entries && typeof ds.entries === 'object' && !Array.isArray(ds.entries) && Object.keys(ds.entries).length > 0);
+            if (!filteredFirstDataset) {
+                document.getElementById(`${containerId}-error`).textContent = 'No budget data available';
+                return;
             }
+            const budgetLabels = Object.keys(filteredFirstDataset.entries);
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1057,15 +1054,12 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
 
             const colors = generateColors(filteredHistory.length);
             const datasets = filteredHistory.map((ds, idx) => {
-                let data = [];
-                if (Array.isArray(ds.entries)) {
-                    data = ds.entries.map(e => parseFloat(e.value || 0));
-                } else {
-                    data = Object.values(ds.entries).map(v => {
-                        if (typeof v === 'object' && v !== null) return parseFloat(v.value || 0);
-                        return parseFloat(v);
-                    });
-                }
+                const data = budgetLabels.map(key => {
+                    const raw = ds.entries?.[key];
+                    if (raw === null || raw === undefined || raw === '') return null;
+                    const v = parseFloat(raw);
+                    return isNaN(v) ? null : v;
+                });
                 return {
                     label: ds.label,
                     data: data,
@@ -1094,6 +1088,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
+                                    if (context.parsed.y === null) return '';
                                     return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
                                 }
                             }
@@ -1118,8 +1113,13 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                                 autoSkip: true,
                                 callback: function(value) {
                                     const label = this.getLabelForValue(value);
-                                    const date = parseChartLabel(label);
-                                    return date.toLocaleDateString();
+                                    if (!label) return '';
+                                    const parts = label.split('-');
+                                    if (parts.length === 3) {
+                                        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                                        if (!isNaN(d.getTime())) return d.toLocaleDateString();
+                                    }
+                                    return label;
                                 }
                             }
                         }
