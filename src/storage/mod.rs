@@ -39,6 +39,8 @@ fn init_db(conn: &Connection) {
             name TEXT NOT NULL,
             accounts TEXT NOT NULL,
             group_ids TEXT NOT NULL DEFAULT '[]',
+            budget_ids TEXT NOT NULL DEFAULT '[]',
+            budget_names TEXT NOT NULL DEFAULT '[]',
             start_date TEXT,
             end_date TEXT,
             interval TEXT,
@@ -103,6 +105,18 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN earned_chart_type TEXT DEFAULT 'bars'",
         [],
     );
+
+    // Migration: Add budget_ids column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN budget_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+
+    // Migration: Add budget_names column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN budget_names TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
 }
 
 // Helper function to deserialize chart options from JSON string
@@ -133,7 +147,7 @@ impl Storage {
         with_db(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, accounts, group_ids, start_date, end_date, interval, chart_mode,
+                    "SELECT id, name, accounts, group_ids, budget_ids, budget_names, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
@@ -145,24 +159,32 @@ impl Storage {
                     let name: String = row.get(1)?;
                     let accounts_json: String = row.get(2)?;
                     let group_ids_json: String = row.get(3)?;
-                    let start_date: Option<String> = row.get(4)?;
-                    let end_date: Option<String> = row.get(5)?;
-                    let interval: Option<String> = row.get(6)?;
-                    let chart_mode: Option<String> = row.get(7)?;
-                    let widget_type: Option<String> = row.get(8)?;
-                    let chart_options_json: Option<String> = row.get(9)?;
-                    let display_order: i32 = row.get(10)?;
-                    let width: i32 = row.get(11)?;
-                    let chart_height: i32 = row.get(12)?;
-                    let created_at: Option<String> = row.get(13)?;
-                    let updated_at: Option<String> = row.get(14)?;
-                    let earned_chart_type: Option<String> = row.get(15)?;
+                    let budget_ids_json: String = row.get(4)?;
+                    let budget_names_json: String = row.get(5)?;
+                    let start_date: Option<String> = row.get(6)?;
+                    let end_date: Option<String> = row.get(7)?;
+                    let interval: Option<String> = row.get(8)?;
+                    let chart_mode: Option<String> = row.get(9)?;
+                    let widget_type: Option<String> = row.get(10)?;
+                    let chart_options_json: Option<String> = row.get(11)?;
+                    let display_order: i32 = row.get(12)?;
+                    let width: i32 = row.get(13)?;
+                    let chart_height: i32 = row.get(14)?;
+                    let created_at: Option<String> = row.get(15)?;
+                    let updated_at: Option<String> = row.get(16)?;
+                    let earned_chart_type: Option<String> = row.get(17)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
 
                     let group_ids: Vec<String> =
                         serde_json::from_str(&group_ids_json).unwrap_or_default();
+
+                    let budget_ids: Vec<String> =
+                        serde_json::from_str(&budget_ids_json).unwrap_or_default();
+
+                    let budget_names: Vec<String> =
+                        serde_json::from_str(&budget_names_json).unwrap_or_default();
 
                     let chart_options =
                         deserialize_chart_options(chart_options_json.as_deref()).unwrap_or(None);
@@ -172,6 +194,8 @@ impl Storage {
                         name,
                         accounts,
                         group_ids,
+                        budget_ids,
+                        budget_names,
                         start_date,
                         end_date,
                         interval,
@@ -198,6 +222,8 @@ impl Storage {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
         let group_ids_json = serde_json::to_string(&widget.group_ids).map_err(|e| e.to_string())?;
+        let budget_ids_json = serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
+        let budget_names_json = serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
         let chart_options_json = widget
             .chart_options
             .as_ref()
@@ -207,14 +233,16 @@ impl Storage {
 
         with_db(|conn| {
             conn.execute(
-                "INSERT INTO widgets (id, name, accounts, group_ids, start_date, end_date, interval,
+                "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params![
                     &widget.id,
                     &widget.name,
                     &accounts_json,
                     &group_ids_json,
+                    &budget_ids_json,
+                    &budget_names_json,
                     &widget.start_date,
                     &widget.end_date,
                     &widget.interval,
@@ -239,6 +267,8 @@ impl Storage {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
         let group_ids_json = serde_json::to_string(&widget.group_ids).map_err(|e| e.to_string())?;
+        let budget_ids_json = serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
+        let budget_names_json = serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
         let chart_options_json = widget
             .chart_options
             .as_ref()
@@ -250,15 +280,17 @@ impl Storage {
             let rows = conn
                 .execute(
                     "UPDATE widgets SET
-                    name = ?1, accounts = ?2, group_ids = ?3, start_date = ?4, end_date = ?5,
-                    interval = ?6, chart_mode = ?7, widget_type = ?8, chart_options = ?9,
-                    earned_chart_type = ?10, display_order = ?11, width = ?12, chart_height = ?13,
-                    updated_at = ?14
-                 WHERE id = ?15",
+                    name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5,
+                    start_date = ?6, end_date = ?7, interval = ?8, chart_mode = ?9,
+                    widget_type = ?10, chart_options = ?11, earned_chart_type = ?12,
+                    display_order = ?13, width = ?14, chart_height = ?15, updated_at = ?16
+                 WHERE id = ?17",
                     params![
                         &widget.name,
                         &accounts_json,
                         &group_ids_json,
+                        &budget_ids_json,
+                        &budget_names_json,
                         &widget.start_date,
                         &widget.end_date,
                         &widget.interval,

@@ -2273,6 +2273,11 @@ async function saveGraphAsWidget() {
     const selectedCheckboxes = document.querySelectorAll('.account-select:checked');
     const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
+    // Get selected budget IDs and names
+    const selectedBudgetCheckboxes = document.querySelectorAll('.budget-select:checked');
+    const selectedBudgetIds = Array.from(selectedBudgetCheckboxes).map(cb => cb.value);
+    const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);
+
     // Only balance widget type requires accounts
     if (widgetType === 'balance' && selectedIds.length === 0) {
         alert('Please select at least one account');
@@ -2319,6 +2324,8 @@ async function saveGraphAsWidget() {
         name: widgetName,
         accounts: individualAccountIds,
         group_ids: groupIds,
+        budget_ids: selectedBudgetIds,
+        budget_names: selectedBudgetNames,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -2780,6 +2787,16 @@ document.addEventListener('DOMContentLoaded', () => {
     deselectAllBtn.addEventListener('click', deselectAllAccounts);
     toggleAccountsBtn.addEventListener('click', toggleAccountsSection);
 
+    // Budget select/deselect buttons
+    const selectAllBudgetsBtn = document.getElementById('select-all-budgets-btn');
+    const deselectAllBudgetsBtn = document.getElementById('deselect-all-budgets-btn');
+    if (selectAllBudgetsBtn) {
+        selectAllBudgetsBtn.addEventListener('click', selectAllBudgets);
+    }
+    if (deselectAllBudgetsBtn) {
+        deselectAllBudgetsBtn.addEventListener('click', deselectAllBudgets);
+    }
+
     // Load and render groups
     loadGroups();
     groupsLoadedPromise = fetchGroups().then(backendGroups => {
@@ -2817,10 +2834,55 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Budget state
+    let allBudgets = [];
+
+    async function fetchBudgets() {
+        try {
+            const response = await fetch('/api/budgets/list');
+            if (!response.ok) {
+                console.warn('Failed to load budgets:', response.status);
+                return;
+            }
+            allBudgets = await response.json();
+            renderBudgets();
+        } catch (e) {
+            console.warn('Failed to load budgets:', e);
+        }
+    }
+
+    function renderBudgets() {
+        const container = document.getElementById('budgets-list');
+        if (!container || !allBudgets.length) return;
+
+        let html = '<div class="account-list">';
+        allBudgets.forEach(budget => {
+            html += `
+                <div class="account-card">
+                    <input type="checkbox" class="budget-select" value="${budget.id}" data-name="${budget.name}">
+                    <div class="account-info">
+                        <span class="account-name">${budget.name}</span>
+                        ${budget.active ? '<span class="account-type-tag active">Active</span>' : '<span class="account-type-tag inactive">Inactive</span>'}
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function selectAllBudgets() {
+        document.querySelectorAll('.budget-select').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllBudgets() {
+        document.querySelectorAll('.budget-select').forEach(cb => cb.checked = false);
+    }
+
     // Handle widget type change
     const widgetTypeSelect = document.getElementById('widget-type-select');
     if (widgetTypeSelect) {
-        widgetTypeSelect.addEventListener('change', () => {
+        widgetTypeSelect.addEventListener('change', async () => {
             const widgetType = widgetTypeSelect.value;
             const chartTitle = document.getElementById('chart-title');
             if (chartTitle) {
@@ -2828,7 +2890,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     'balance': 'Account Balance History',
                     'earned_spent': 'Earned vs Spent',
                     'expenses_by_category': 'Expenses by Category',
-                    'net_worth': 'Net Worth'
+                    'net_worth': 'Net Worth',
+                    'budget_spent': 'Budget Spent Over Time'
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -2836,6 +2899,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const earnedSelector = document.getElementById('earned-chart-type-selector');
             if (earnedSelector) {
                 earnedSelector.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
+            }
+            // Toggle budgets section visibility
+            const budgetsSection = document.getElementById('budgets-section');
+            if (budgetsSection) {
+                budgetsSection.style.display = widgetType === 'budget_spent' ? 'block' : 'none';
+                if (widgetType === 'budget_spent' && allBudgets.length === 0) {
+                    await fetchBudgets();
+                }
             }
             fetchChartData();
         });

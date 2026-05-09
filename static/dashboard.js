@@ -841,6 +841,12 @@ function extractChartData(entries, length) {
     }
 }
 
+// Filter ChartLine datasets by budget names (matches by label)
+function filterChartLineByNames(chartLine, budgetNames) {
+    const nameSet = new Set(budgetNames);
+    return chartLine.filter(ds => nameSet.has(ds.label));
+}
+
 async function refreshWidget(widgetId) {
     const btn = document.querySelector(`[data-widget-id="${widgetId}"] .refresh-btn`);
     if (btn) {
@@ -965,6 +971,18 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
             }
             history = await response.json();
+        } else if (widgetType === 'budget_spent') {
+            // For budget spent, use the budget-spent endpoint
+            const params = new URLSearchParams();
+            if (widget.start_date) params.append('start', widget.start_date);
+            if (widget.end_date) params.append('end', widget.end_date);
+
+            const url = `/api/budgets/spent?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            history = await response.json();
         } else {
             // For balance widgets, fetch with all relevant accounts (individual + group members)
             const groupIds = widget.group_ids || [];
@@ -1001,6 +1019,113 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         if (widgetType === 'earned_spent') {
             const earnedChartType = widget.earned_chart_type || 'bars';
             await renderEarnedSpentChart(ctx, widget, labels, history, containerId, earnedChartType);
+            return;
+        }
+
+        // Handle budget_spent widget type
+        if (widgetType === 'budget_spent') {
+            const budgetNames = widget.budget_names || [];
+            let filteredHistory = history;
+            if (budgetNames.length > 0) {
+                filteredHistory = filterChartLineByNames(history, budgetNames);
+            }
+
+            if (!filteredHistory || filteredHistory.length === 0) {
+                document.getElementById(`${containerId}-error`).textContent = 'No budget data available';
+                return;
+            }
+
+            // Re-extract labels from filtered data
+            const filteredFirstDataset = filteredHistory.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+            let budgetLabels = [];
+            if (filteredFirstDataset) {
+                if (Array.isArray(filteredFirstDataset.entries)) {
+                    budgetLabels = filteredFirstDataset.entries.map(e => e.key || e.date || e.timestamp);
+                } else {
+                    budgetLabels = Object.keys(filteredFirstDataset.entries);
+                }
+            }
+
+            const opts = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+
+            if (widgetCharts[widget.id]) {
+                widgetCharts[widget.id].destroy();
+            }
+
+            const colors = generateColors(filteredHistory.length);
+            const datasets = filteredHistory.map((ds, idx) => {
+                let data = [];
+                if (Array.isArray(ds.entries)) {
+                    data = ds.entries.map(e => parseFloat(e.value || 0));
+                } else {
+                    data = Object.values(ds.entries).map(v => {
+                        if (typeof v === 'object' && v !== null) return parseFloat(v.value || 0);
+                        return parseFloat(v);
+                    });
+                }
+                return {
+                    label: ds.label,
+                    data: data,
+                    backgroundColor: colors[idx] + 'CC',
+                    borderColor: colors[idx],
+                    borderWidth: 1,
+                    borderRadius: 4
+                };
+            });
+
+            widgetCharts[widget.id] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: budgetLabels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: filteredHistory.length > 1,
+                            position: 'top',
+                            labels: { color: chartTextColor }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: opts.beginAtZero,
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                maxTicksLimit: opts.xAxisLimit,
+                                autoSkip: true,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    const date = parseChartLabel(label);
+                                    return date.toLocaleDateString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
             return;
         }
 
@@ -1422,7 +1547,8 @@ async function renderDashboard() {
 
         const accountTags = [
             ...widgetGroups.map(g => `<span class="widget-account-tag">${g.name}</span>`),
-            ...individualAccounts.map(a => `<span class="widget-account-tag">${a.name}</span>`)
+            ...individualAccounts.map(a => `<span class="widget-account-tag">${a.name}</span>`),
+            ...(widget.budget_names || []).map(b => `<span class="widget-account-tag budget-tag">${b}</span>`)
         ].join('');
 
         const startDate = widget.start_date || '';
@@ -1433,9 +1559,14 @@ async function renderDashboard() {
         const chartOpts = getChartOptions(widget);
 
         // Widget type badge
-        const widgetTypeBadge = widgetType === 'earned_spent'
-            ? '<span class="widget-type-badge earned-spent">Earned vs Spent</span>'
-            : '<span class="widget-type-badge balance">Balance</span>';
+        let widgetTypeBadge;
+        if (widgetType === 'earned_spent') {
+            widgetTypeBadge = '<span class="widget-type-badge earned-spent">Earned vs Spent</span>';
+        } else if (widgetType === 'budget_spent') {
+            widgetTypeBadge = '<span class="widget-type-badge budget-spent">Budget Spent</span>';
+        } else {
+            widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
+        }
 
         html += `
             <div class="widget" data-widget-id="${widget.id}" data-cols="${widget.width || 12}">

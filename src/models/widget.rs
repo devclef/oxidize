@@ -7,6 +7,10 @@ pub struct Widget {
     pub accounts: Vec<String>,
     #[serde(default)]
     pub group_ids: Vec<String>,
+    #[serde(default)]
+    pub budget_ids: Vec<String>,
+    #[serde(default)]
+    pub budget_names: Vec<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub interval: Option<String>,

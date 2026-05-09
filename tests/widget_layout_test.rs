@@ -81,6 +81,8 @@ fn test_widget_serialization_includes_new_fields() {
         name: "Test".to_string(),
         accounts: vec!["acc-1".to_string()],
         group_ids: vec![],
+        budget_ids: vec![],
+        budget_names: vec![],
         start_date: None,
         end_date: None,
         interval: None,

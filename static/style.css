@@ -21,6 +21,7 @@
     --warning-color: #f59e0b;
     --warning-hover: #d97706;
     --warning-light: #fffbeb;
+    --warning-text: #92400e;
     --error-color: #ef4444;
     --error-bg: #fef2f2;
     --radius-sm: 4px;
@@ -60,6 +61,7 @@
     --warning-color: #fbbf24;
     --warning-hover: #f59e0b;
     --warning-light: #3a2e1a;
+    --warning-text: #fde68a;
     --error-color: #f87171;
     --error-bg: #3a1a1a;
 }
@@ -978,6 +980,11 @@ button:hover {
     font-size: 11px;
 }
 
+.widget-account-tag.budget-tag {
+    background: var(--warning-light);
+    color: var(--warning-text);
+}
+
 .widget-mode {
     display: flex;
     align-items: center;
@@ -1008,6 +1015,11 @@ button:hover {
 
 .widget-type-badge.earned-spent {
     background: linear-gradient(135deg, var(--success-color), var(--error-color));
+    color: white;
+}
+
+.widget-type-badge.budget-spent {
+    background: var(--warning-color);
     color: white;
 }
 
