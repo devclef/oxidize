@@ -15,6 +15,10 @@ pub struct DataCache {
     accounts: RwLock<HashMap<String, CacheEntry<String>>>,
     /// Cache for balance history, keyed by query parameters
     balance_history: RwLock<HashMap<String, CacheEntry<String>>>,
+    /// Cache for budget lists, keyed by date range
+    budgets: RwLock<HashMap<String, CacheEntry<String>>>,
+    /// Cache for budget spending chart, keyed by date range
+    budget_spent: RwLock<HashMap<String, CacheEntry<String>>>,
     /// Default TTL in seconds (5 minutes)
     ttl_seconds: u64,
 }
@@ -24,6 +28,8 @@ impl DataCache {
         Self {
             accounts: RwLock::new(HashMap::new()),
             balance_history: RwLock::new(HashMap::new()),
+            budgets: RwLock::new(HashMap::new()),
+            budget_spent: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -137,6 +143,12 @@ impl DataCache {
         if let Ok(mut cache) = self.balance_history.write() {
             cache.clear();
         }
+        if let Ok(mut cache) = self.budgets.write() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = self.budget_spent.write() {
+            cache.clear();
+        }
     }
 
     /// Clear only accounts cache
@@ -149,6 +161,112 @@ impl DataCache {
     /// Clear only balance history cache
     pub fn clear_balance_history(&self) {
         if let Ok(mut cache) = self.balance_history.write() {
+            cache.clear();
+        }
+    }
+
+    /// Generate a cache key for budget list queries
+    fn budget_key(start_date: Option<&str>, end_date: Option<&str>) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        format!("budgets:{}:{}", start, end)
+    }
+
+    /// Generate a cache key for budget spending chart queries
+    fn budget_spent_key(start_date: Option<&str>, end_date: Option<&str>) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        format!("budget_spent:{}:{}", start, end)
+    }
+
+    /// Get cached budget list data
+    pub fn get_budgets(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Option<String> {
+        let key = Self::budget_key(
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        let cache = self.budgets.read().ok()?;
+        let entry = cache.get(&key)?;
+
+        if Self::is_expired(entry) {
+            return None;
+        }
+
+        Some(entry.data.clone())
+    }
+
+    /// Set cached budget list data
+    pub fn set_budgets(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        data: String,
+    ) {
+        let key = Self::budget_key(
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
+        let entry = CacheEntry { data, expires_at };
+
+        if let Ok(mut cache) = self.budgets.write() {
+            cache.insert(key, entry);
+        }
+    }
+
+    /// Get cached budget spending chart data
+    pub fn get_budget_spent(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Option<String> {
+        let key = Self::budget_spent_key(
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        let cache = self.budget_spent.read().ok()?;
+        let entry = cache.get(&key)?;
+
+        if Self::is_expired(entry) {
+            return None;
+        }
+
+        Some(entry.data.clone())
+    }
+
+    /// Set cached budget spending chart data
+    pub fn set_budget_spent(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        data: String,
+    ) {
+        let key = Self::budget_spent_key(
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
+        let entry = CacheEntry { data, expires_at };
+
+        if let Ok(mut cache) = self.budget_spent.write() {
+            cache.insert(key, entry);
+        }
+    }
+
+    /// Clear only budgets cache
+    pub fn clear_budgets(&self) {
+        if let Ok(mut cache) = self.budgets.write() {
+            cache.clear();
+        }
+    }
+
+    /// Clear only budget spending cache
+    pub fn clear_budget_spent(&self) {
+        if let Ok(mut cache) = self.budget_spent.write() {
             cache.clear();
         }
     }

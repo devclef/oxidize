@@ -1,6 +1,6 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::{AccountArray, CategoryExpense, ChartLine, MonthlySummary, SimpleAccount};
+use crate::models::{AccountArray, BudgetListResponse, CategoryExpense, ChartLine, MonthlySummary, SimpleAccount};
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -743,6 +743,100 @@ impl FireflyClient {
             currency_symbol,
             currency_code,
         })
+    }
+
+    pub async fn get_budgets(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<Vec<crate::models::BudgetRead>, String> {
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Check cache
+        if let Some(cached) = self.cache.get_budgets(Some(start.clone()), Some(end.clone())) {
+            debug!("Cache hit for budgets: {} to {}", start, end);
+            let response: BudgetListResponse =
+                serde_json::from_str(&cached).map_err(|e| e.to_string())?;
+            return Ok(response.budgets());
+        }
+        debug!("Cache miss for budgets: {} to {}", start, end);
+
+        let url = format!("{}/v1/budgets", self.config.firefly_url.as_str());
+        let query = vec![
+            ("start".to_string(), start.clone()),
+            ("end".to_string(), end.clone()),
+        ];
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.get_headers())
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let body = response.text().await.map_err(|e| e.to_string())?;
+
+        // Cache the raw JSON
+        self.cache
+            .set_budgets(Some(start), Some(end), body.clone());
+
+        let budget_response: BudgetListResponse =
+            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        Ok(budget_response.budgets())
+    }
+
+    pub async fn get_budget_spent(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<ChartLine, String> {
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Check cache
+        if let Some(cached) = self.cache.get_budget_spent(Some(start.clone()), Some(end.clone())) {
+            debug!("Cache hit for budget_spent: {} to {}", start, end);
+            let chart: ChartLine =
+                serde_json::from_str(&cached).map_err(|e| e.to_string())?;
+            return Ok(chart);
+        }
+        debug!("Cache miss for budget_spent: {} to {}", start, end);
+
+        let url = format!(
+            "{}/v1/chart/budget/overview",
+            self.config.firefly_url.as_str()
+        );
+        let query = vec![
+            ("start".to_string(), start.clone()),
+            ("end".to_string(), end.clone()),
+        ];
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.get_headers())
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let body = response.text().await.map_err(|e| e.to_string())?;
+
+        // Cache the raw JSON
+        self.cache
+            .set_budget_spent(Some(start), Some(end), body.clone());
+
+        let chart: ChartLine = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        Ok(chart)
     }
 
     fn get_headers(&self) -> HeaderMap {
