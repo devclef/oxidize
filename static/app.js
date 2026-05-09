@@ -361,6 +361,42 @@ async function fetchChartData() {
             return;
         }
 
+        // For budget_spent widget type
+        if (widgetType === 'budget_spent') {
+            if (startDate) params.append('start', startDate);
+            if (endDate) params.append('end', endDate);
+
+            const url = '/api/budgets/spent';
+            const fullUrl = params.toString() ? `${url}?${params.toString()}` : url;
+
+            console.log('=== FETCHING BUDGET SPENT DATA ===');
+            console.log('URL:', fullUrl);
+
+            const response = await fetch(fullUrl);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const budgetData = await response.json();
+
+            console.log('=== BUDGET SPENT DATA FETCHED ===');
+            console.log('Received budget data:', budgetData);
+
+            if (!budgetData || budgetData.length === 0) {
+                console.warn('No budget spent data returned from API');
+                chartErrorEl.innerHTML = '<div class="info">No budget spent data found for the current date range.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            chartContainer.style.display = 'block';
+            renderBudgetChart(budgetData);
+            return;
+        }
+
         if (selectedIds.length > 0) {
             selectedIds.forEach(id => params.append('accounts[]', id));
         } else if (chartMode === 'split') {
@@ -1135,6 +1171,144 @@ function renderNetWorthChart(ctx, history) {
     });
 }
 
+function renderBudgetChart(budgetData) {
+    const ctx = document.getElementById('balanceChart').getContext('2d');
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    // Extract labels from the first dataset
+    let labels = [];
+    const firstDataset = budgetData.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries || {}).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+
+    if (labels.length === 0) {
+        console.warn('No labels found in budget chart data');
+        return;
+    }
+
+    // Filter out any null/undefined data points
+    const cleanLabels = labels.filter((_, i) => {
+        return budgetData.every(ds => {
+            let val = 0;
+            if (Array.isArray(ds.entries)) {
+                val = ds.entries[i]?.value ?? 0;
+            } else {
+                const key = labels[i];
+                val = ds.entries?.[key] ?? 0;
+            }
+            return val !== null && val !== undefined && val !== '';
+        });
+    });
+
+    if (cleanLabels.length === 0) {
+        chartErrorEl.innerHTML = '<div class="info">No budget data points found for the current date range.</div>';
+        return;
+    }
+
+    // Generate colors for budget datasets
+    const colors = [];
+    const hueStep = 360 / budgetData.length;
+    for (let i = 0; i < budgetData.length; i++) {
+        colors.push(`hsl(${Math.round(i * hueStep)}, 70%, 50%)`);
+    }
+
+    const datasets = budgetData.map((ds, idx) => {
+        let data = [];
+        if (Array.isArray(ds.entries)) {
+            data = ds.entries.map(e => {
+                const v = parseFloat(e.value || 0);
+                return (isNaN(v) || v === null) ? null : v;
+            });
+        } else {
+            data = labels.map(key => {
+                const v = parseFloat(ds.entries?.[key] ?? 0);
+                return (isNaN(v) || v === null) ? null : v;
+            });
+        }
+        // Filter to match cleanLabels
+        const labelIndexMap = {};
+        cleanLabels.forEach((l, i) => { labelIndexMap[l] = i; });
+        const filteredData = [];
+        for (let i = 0; i < labels.length; i++) {
+            if (labelIndexMap[labels[i]] !== undefined) {
+                filteredData.push(data[i]);
+            }
+        }
+
+        return {
+            label: ds.label,
+            data: filteredData,
+            backgroundColor: colors[idx] + 'CC',
+            borderColor: colors[idx],
+            borderWidth: 1,
+            borderRadius: 4
+        };
+    });
+
+    // Destroy existing chart
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    balanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: cleanLabels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: budgetData.length > 1,
+                    position: 'top',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: 10,
+                        autoSkip: true,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const date = parseChartLabel(label);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 // Aggregate account data into groups for split mode rendering
 function aggregateGroupData(history, groups, allAccountsList) {
     // Build a map of account name -> { data, balance }
@@ -1298,6 +1472,12 @@ function renderChart(history, widgetType = 'balance') {
     // For net_worth widget type, render as a line chart
     if (widgetType === 'net_worth') {
         renderNetWorthChart(ctx, history);
+        return;
+    }
+
+    // For budget_spent widget type, render as a bar chart
+    if (widgetType === 'budget_spent') {
+        renderBudgetChart(history);
         return;
     }
 
