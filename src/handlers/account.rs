@@ -94,6 +94,16 @@ pub async fn refresh_all(client: web::Data<FireflyClient>) -> impl Responder {
     }))
 }
 
+/// POST endpoint to refresh/clear the budget spent cache
+#[post("/api/budgets/spent/refresh")]
+pub async fn refresh_budget_spent(client: web::Data<FireflyClient>) -> impl Responder {
+    client.clear_budget_spent_cache();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "Budget spent cache cleared"
+    }))
+}
+
 /// GET endpoint for earned vs spent chart data
 #[get("/api/earned-spent")]
 pub async fn get_earned_spent(

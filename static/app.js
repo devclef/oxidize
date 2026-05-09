@@ -375,6 +375,22 @@ async function fetchChartData() {
             }
             let budgetData = await response.json();
 
+            console.log('=== BUDGET SPENT RAW API RESPONSE ===');
+            console.log('budgetData length:', budgetData.length);
+            budgetData.forEach((ds, i) => {
+                console.log(`Dataset ${i}: label="${ds.label}"`);
+                console.log('  entries type:', typeof ds.entries, Array.isArray(ds.entries) ? '[Array]' : '[Object]');
+                if (Array.isArray(ds.entries)) {
+                    console.log('  entries[0]:', JSON.stringify(ds.entries[0]));
+                } else if (ds.entries && typeof ds.entries === 'object') {
+                    const keys = Object.keys(ds.entries);
+                    console.log('  entries keys (first 3):', keys.slice(0, 3));
+                    keys.slice(0, 3).forEach(k => {
+                        console.log(`  entries["${k}"] =`, JSON.stringify(ds.entries[k]), `(type: ${typeof ds.entries[k]})`);
+                    });
+                }
+            });
+
             // Filter by selected budget names
             const selectedBudgetCheckboxes = document.querySelectorAll('.budget-select:checked');
             const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);

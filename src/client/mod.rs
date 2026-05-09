@@ -1,6 +1,6 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::{AccountArray, BudgetListResponse, CategoryExpense, ChartLine, MonthlySummary, SimpleAccount};
+use crate::models::{AccountArray, BudgetListResponse, CategoryExpense, ChartDataSet, ChartLine, MonthlySummary, SimpleAccount};
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -43,6 +43,11 @@ impl FireflyClient {
     pub fn clear_balance_history_cache(&self) {
         self.cache.clear_balance_history();
         info!("Balance history cache cleared");
+    }
+
+    pub fn clear_budget_spent_cache(&self) {
+        self.cache.clear_budget_spent();
+        info!("Budget spent cache cleared");
     }
 
     pub async fn get_accounts(
@@ -835,7 +840,32 @@ impl FireflyClient {
         self.cache
             .set_budget_spent(Some(start), Some(end), body.clone());
 
-        let chart: ChartLine = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let value: serde_json::Value =
+            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let chart = match &value {
+            serde_json::Value::Array(_arr) => {
+                // Direct array format
+                serde_json::from_value(value).map_err(|e| e.to_string())?
+            }
+            serde_json::Value::Object(map) => {
+                // Object format: collect all arrays into a single ChartLine
+                let mut all_datasets = Vec::new();
+                for (_key, val) in map {
+                    if let serde_json::Value::Array(arr) = val {
+                        for item in arr {
+                            if let Ok(ds) =
+                                serde_json::from_value::<ChartDataSet>(item.clone())
+                            {
+                                all_datasets.push(ds);
+                            }
+                        }
+                    }
+                }
+                all_datasets
+            }
+            _ => return Err("Unexpected budget chart response format".to_string()),
+        };
+        debug!("budget_spent: {} datasets parsed", chart.len());
         Ok(chart)
     }
 
