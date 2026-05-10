@@ -1140,6 +1140,35 @@ button:hover {
     opacity: 0.9;
 }
 
+/* Budget section styles */
+.budgets-section {
+    margin: var(--space-4) 0;
+    background: var(--card-bg);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.budgets-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+}
+
+.budgets-section-header h3 {
+    margin: 0;
+    color: var(--heading-color);
+    font-size: var(--text-base);
+    font-weight: 600;
+}
+
+.budget-actions {
+    display: flex;
+    gap: var(--space-3);
+}
+
 /* Group section styles */
 .groups-section {
     margin-bottom: 1rem;

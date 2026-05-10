@@ -2894,6 +2894,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 
+    // Budget search input
+    const budgetSearchInput = document.getElementById('budget-search-input');
+    let budgetSearchTimeout = null;
+    budgetSearchInput?.addEventListener('input', (e) => {
+        clearTimeout(budgetSearchTimeout);
+        budgetSearchTimeout = setTimeout(() => {
+            const query = e.target.value.toLowerCase();
+            document.querySelectorAll('.budget-select').forEach(cb => {
+                const card = cb.closest('.account-card');
+                const name = card?.querySelector('.account-name')?.textContent.toLowerCase() || '';
+                card.style.display = name.includes(query) ? 'flex' : 'none';
+            });
+        }, 300);
+    });
+
     // Advanced options toggle
     const advancedOptions = document.getElementById('advanced-options');
     const toggleAdvancedBtn = document.createElement('button');
@@ -2976,6 +2991,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Budget state
     let allBudgets = [];
+    let budgetSearchFilter = '';
+    let budgetActiveFilter = 'all'; // 'all', 'active', 'inactive'
 
     async function fetchBudgets() {
         try {
@@ -2985,20 +3002,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             allBudgets = await response.json();
+            renderBudgetTypeFilterPills();
             renderBudgets();
         } catch (e) {
             console.warn('Failed to load budgets:', e);
         }
     }
 
+    function renderBudgetTypeFilterPills() {
+        const container = document.getElementById('budget-type-filter-pills');
+        if (!container) return;
+
+        const hasActive = allBudgets.some(b => b.active);
+        const hasInactive = allBudgets.some(b => !b.active);
+
+        container.innerHTML = `
+            <button class="type-pill ${budgetActiveFilter === 'all' ? 'active' : ''}" data-filter="all">All</button>
+            ${hasActive ? '<button class="type-pill active" data-filter="active">Active</button>' : ''}
+            ${hasInactive ? '<button class="type-pill inactive" data-filter="inactive">Inactive</button>' : ''}
+        `;
+
+        container.querySelectorAll('.type-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                budgetActiveFilter = btn.dataset.filter;
+                renderBudgetTypeFilterPills();
+                renderBudgets();
+            });
+        });
+    }
+
     function renderBudgets() {
         const container = document.getElementById('budgets-list');
-        if (!container || !allBudgets.length) return;
+        if (!container) return;
+
+        let filtered = allBudgets;
+
+        // Apply search filter
+        if (budgetSearchFilter) {
+            const search = budgetSearchFilter.toLowerCase();
+            filtered = filtered.filter(b => b.name.toLowerCase().includes(search));
+        }
+
+        // Apply active/inactive filter
+        if (budgetActiveFilter === 'active') {
+            filtered = filtered.filter(b => b.active);
+        } else if (budgetActiveFilter === 'inactive') {
+            filtered = filtered.filter(b => !b.active);
+        }
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="loading">No budgets found.</div>';
+            return;
+        }
 
         let html = '<div class="account-list">';
-        allBudgets.forEach(budget => {
+        filtered.forEach(budget => {
             html += `
-                <div class="account-card">
+                <div class="account-card" data-budget-id="${budget.id}">
                     <input type="checkbox" class="budget-select" value="${budget.id}" data-name="${budget.name}">
                     <div class="account-info">
                         <span class="account-name">${budget.name}</span>
@@ -3013,10 +3073,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function selectAllBudgets() {
         document.querySelectorAll('.budget-select').forEach(cb => cb.checked = true);
+        fetchChartData();
     }
 
     function deselectAllBudgets() {
         document.querySelectorAll('.budget-select').forEach(cb => cb.checked = false);
+        fetchChartData();
     }
 
     // Handle widget type change
@@ -3040,12 +3102,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (earnedSelector) {
                 earnedSelector.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
             }
-            // Toggle budgets section visibility
+             // Toggle budgets section visibility
             const budgetsSection = document.getElementById('budgets-section');
             if (budgetsSection) {
                 budgetsSection.style.display = widgetType === 'budget_spent' ? 'block' : 'none';
                 if (widgetType === 'budget_spent' && allBudgets.length === 0) {
                     await fetchBudgets();
+                }
+                // When switching to budget_spent, auto-select all budgets if none selected
+                if (widgetType === 'budget_spent') {
+                    const selected = document.querySelectorAll('.budget-select:checked');
+                    if (selected.length === 0 && allBudgets.length > 0) {
+                        selectAllBudgets();
+                        return;
+                    }
                 }
             }
             fetchChartData();
