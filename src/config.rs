@@ -32,6 +32,7 @@ pub struct Config {
     pub account_types: Vec<String>,
     pub auto_fetch_accounts: bool,
     pub data_dir: String,
+    pub cache_ttl: u64,
     pub time_ranges: Vec<String>,
     pub default_time_range: String,
 }
@@ -71,6 +72,12 @@ impl Config {
                 .unwrap_or("./data".to_string())
         });
 
+        // Parse CACHE_TTL: cache TTL in seconds (default: 300 = 5 minutes)
+        let cache_ttl = env::var("CACHE_TTL")
+            .unwrap_or_else(|_| "300".to_string())
+            .parse::<u64>()
+            .unwrap_or(300);
+
         // Parse TIME_RANGES: comma-separated list of relative time range presets
         let time_ranges = env::var("TIME_RANGES")
             .unwrap_or_else(|_| "7d,30d,3m,6m,1y,ytd".to_string())
@@ -91,6 +98,7 @@ impl Config {
             account_types,
             auto_fetch_accounts,
             data_dir,
+            cache_ttl,
             time_ranges,
             default_time_range,
         }

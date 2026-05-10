@@ -14,7 +14,9 @@ pub struct FireflyClient {
 
 impl FireflyClient {
     pub fn new(config: Config) -> Self {
-        Self::with_cache(config, DataCache::default())
+        let ttl = config.cache_ttl;
+        let cache_config = config.clone();
+        Self::with_cache(cache_config, DataCache::new(ttl))
     }
 
     pub fn with_cache(config: Config, cache: DataCache) -> Self {

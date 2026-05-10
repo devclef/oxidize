@@ -57,6 +57,7 @@ mod tests {
             account_types: vec!["asset".to_string()],
             auto_fetch_accounts: false,
             data_dir: "/tmp".to_string(),
+            cache_ttl: 300,
             time_ranges: vec![
                 "7d".to_string(),
                 "30d".to_string(),
