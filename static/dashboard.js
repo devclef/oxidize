@@ -23,6 +23,12 @@ function parseChartLabel(label) {
 const PCT_ENABLED_KEY = 'show_pct';
 const PCT_MODE_KEY = 'pct_mode';
 
+const BUDGET_COLORS = [
+    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
+    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
+    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
+];
+
 function computePercentChange(data, mode) {
     const labels = new Array(data.length).fill(null);
 
@@ -972,12 +978,19 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             }
             history = await response.json();
         } else if (widgetType === 'budget_spent') {
-            // For budget spent, use the budget-spent endpoint
+            // For budget spent history, use the spent-history endpoint
             const params = new URLSearchParams();
             if (widget.start_date) params.append('start', widget.start_date);
             if (widget.end_date) params.append('end', widget.end_date);
+            // Add account IDs for filtering
+            const groupIds = widget.group_ids || [];
+            const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+            const groupAccountIds = new Set();
+            widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+            const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+            allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
 
-            const url = `/api/budgets/spent?${params.toString()}`;
+            const url = `/api/budgets/spent-history?${params.toString()}`;
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
@@ -1022,7 +1035,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             return;
         }
 
-        // Handle budget_spent widget type - bar chart with budget names on X-axis, spent amount on Y-axis
+        // Handle budget_spent widget type - time-series line chart with dates on X-axis, one line per budget
         if (widgetType === 'budget_spent') {
             const budgetNames = widget.budget_names || [];
             let filteredHistory = history;
@@ -1035,46 +1048,69 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 return;
             }
 
-            // Calculate spent = budgeted - left for each budget
-            const budgetLabels = [];
-            const budgetSpent = [];
+            // Collect all unique dates across all budget datasets
+            const dateSet = new Set();
             filteredHistory.forEach(ds => {
-                const budgeted = parseFloat(ds.entries?.budgeted || 0) || 0;
-                const left = parseFloat(ds.entries?.left || 0) || 0;
-                budgetLabels.push(ds.label);
-                budgetSpent.push(budgeted - left);
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
+                }
             });
-
-            if (widgetCharts[widget.id]) {
-                widgetCharts[widget.id].destroy();
-            }
+            const allDates = Array.from(dateSet).sort();
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
             const chartTextColor = isDark ? '#eaeaea' : '#333';
             const chartGridColor = isDark ? '#444' : '#ddd';
 
+            // Build Chart.js datasets - one per budget
+            const datasets = filteredHistory.map((ds, i) => {
+                const data = allDates.map(date => {
+                    const val = ds.entries?.[date];
+                    if (val === undefined || val === null) return 0;
+                    let num = 0;
+                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                        num = parseFloat(val.value);
+                    } else {
+                        num = parseFloat(val);
+                    }
+                    return isNaN(num) ? 0 : Math.abs(num);
+                });
+                return {
+                    label: ds.label,
+                    data: data,
+                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
+                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2
+                };
+            });
+
+            if (widgetCharts[widget.id]) {
+                widgetCharts[widget.id].destroy();
+            }
+
             widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'bar',
+                type: 'line',
                 data: {
-                    labels: budgetLabels,
-                    datasets: [{
-                        label: 'Amount Spent',
-                        data: budgetSpent,
-                        backgroundColor: '#3b82f6CC',
-                        borderColor: '#3b82f6',
-                        borderWidth: 1
-                    }]
+                    labels: allDates,
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: true,
+                            labels: { color: chartTextColor }
+                        },
                         tooltip: {
+                            mode: 'index',
+                            intersect: false,
                             callbacks: {
                                 label: function(context) {
-                                    return context.parsed.y.toLocaleString();
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
                                 }
                             }
                         }

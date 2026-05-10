@@ -869,6 +869,135 @@ impl FireflyClient {
         Ok(chart)
     }
 
+    pub async fn get_budget_spent_history(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        account_ids: Option<Vec<String>>,
+    ) -> Result<ChartLine, String> {
+        use crate::models::chart::ChartDataSet;
+
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .await?;
+
+        // Flatten transactions into journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        // Filter to journal entries with budget_name, group by date+budget
+        let mut budget_entries: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let source_id = journal
+                .get("source_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            let _dest_id = journal
+                .get("destination_id")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+
+            // Only count "spent" transactions (withdrawals and outbound transfers)
+            let is_spent = match journal_type {
+                "withdrawal" => true,
+                "transfer" => {
+                    // Transfer out of any account to outside
+                    !source_id.is_empty()
+                }
+                _ => false,
+            };
+
+            if !is_spent {
+                continue;
+            }
+
+            // Only include journal entries that have a budget_name
+            let budget_name = match journal.get("budget_name").and_then(|n| n.as_str()) {
+                Some(name) if !name.is_empty() => name.to_string(),
+                _ => continue,
+            };
+
+            if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
+                if let Ok(amount) = amount_str.parse::<f64>() {
+                    if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
+                        // Extract just the date part (YYYY-MM-DD)
+                        let date_key = date.split('T').next().unwrap_or(date);
+
+                        let entries =
+                            budget_entries.entry(budget_name).or_insert_with(
+                                std::collections::HashMap::new,
+                            );
+                        *entries.entry(date_key.to_string()).or_insert(0.0) += amount;
+                    }
+                }
+            }
+
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+            }
+        }
+
+        // Convert to ChartLine: one ChartDataSet per budget
+        let mut chart: Vec<ChartDataSet> = budget_entries
+            .into_iter()
+            .map(|(label, entries)| ChartDataSet {
+                label,
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(entries).unwrap(),
+            })
+            .collect();
+
+        // Sort by number of data points descending for consistent ordering
+        chart.sort_by(|a, b| {
+            let a_count = if let serde_json::Value::Object(m) = &a.entries {
+                m.len()
+            } else {
+                0
+            };
+            let b_count = if let serde_json::Value::Object(m) = &b.entries {
+                m.len()
+            } else {
+                0
+            };
+            b_count.cmp(&a_count)
+        });
+
+        debug!("budget_spent_history: {} budgets, {} to {}", chart.len(), start, end);
+        Ok(chart)
+    }
+
     fn get_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         if !self.config.firefly_token.is_empty() {
