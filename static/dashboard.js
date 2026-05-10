@@ -23,12 +23,6 @@ function parseChartLabel(label) {
 const PCT_ENABLED_KEY = 'show_pct';
 const PCT_MODE_KEY = 'pct_mode';
 
-const BUDGET_COLORS = [
-    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
-    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
-];
-
 function computePercentChange(data, mode) {
     const labels = new Array(data.length).fill(null);
 
@@ -1063,8 +1057,14 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             const chartTextColor = isDark ? '#eaeaea' : '#333';
             const chartGridColor = isDark ? '#444' : '#ddd';
 
+            // Generate colors for budgets
+            const colors = generateColors(filteredHistory.length);
+
             // Build Chart.js datasets - one per budget
-            const datasets = filteredHistory.map((ds, i) => {
+            const datasets = [];
+            const legendInfo = [];
+
+            filteredHistory.forEach((ds, i) => {
                 const data = allDates.map(date => {
                     const val = ds.entries?.[date];
                     if (val === undefined || val === null) return 0;
@@ -1076,16 +1076,19 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                     }
                     return isNaN(num) ? 0 : Math.abs(num);
                 });
-                return {
+                datasets.push({
                     label: ds.label,
                     data: data,
-                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
-                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+                    absoluteData: data,
+                    borderColor: colors[i],
+                    backgroundColor: colors[i] + '33',
                     fill: false,
                     tension: 0.3,
                     pointRadius: 3,
-                    borderWidth: 2
-                };
+                    borderWidth: 2,
+                    order: 1
+                });
+                legendInfo.push({ name: ds.label });
             });
 
             if (widgetCharts[widget.id]) {
@@ -1102,10 +1105,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: chartTextColor }
-                        },
+                        legend: { display: false },
                         tooltip: {
                             mode: 'index',
                             intersect: false,
@@ -1137,6 +1137,9 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                     }
                 }
             });
+
+            // Render interactive split legend below chart
+            renderSplitLegend(widget.id, legendInfo, datasets);
             return;
         }
 
