@@ -23,12 +23,6 @@ function parseChartLabel(label) {
 const PCT_ENABLED_KEY = 'show_pct';
 const PCT_MODE_KEY = 'pct_mode';
 
-const BUDGET_COLORS = [
-    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
-    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
-];
-
 function computePercentChange(data, mode) {
     const labels = new Array(data.length).fill(null);
 
@@ -1028,7 +1022,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             return;
         }
 
-        // Handle budget_spent widget type - time series with dates on X-axis, one line per budget
+        // Handle budget_spent widget type - bar chart with budget names on X-axis, spent amount on Y-axis
         if (widgetType === 'budget_spent') {
             const budgetNames = widget.budget_names || [];
             let filteredHistory = history;
@@ -1041,69 +1035,46 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 return;
             }
 
-            // Collect all unique dates across all budget datasets
-            const dateSet = new Set();
+            // Calculate spent = budgeted - left for each budget
+            const budgetLabels = [];
+            const budgetSpent = [];
             filteredHistory.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            const opts = getChartOptions(widget);
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
-
-            // Build Chart.js datasets - one per budget
-            const datasets = filteredHistory.map((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                return {
-                    label: ds.label,
-                    data: data,
-                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
-                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2
-                };
+                const budgeted = parseFloat(ds.entries?.budgeted || 0) || 0;
+                const left = parseFloat(ds.entries?.left || 0) || 0;
+                budgetLabels.push(ds.label);
+                budgetSpent.push(budgeted - left);
             });
 
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
 
+            const opts = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+
             widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'line',
+                type: 'bar',
                 data: {
-                    labels: allDates,
-                    datasets: datasets
+                    labels: budgetLabels,
+                    datasets: [{
+                        label: 'Amount Spent',
+                        data: budgetSpent,
+                        backgroundColor: '#3b82f6CC',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: chartTextColor }
-                        },
+                        legend: { display: false },
                         tooltip: {
-                            mode: 'index',
-                            intersect: false,
                             callbacks: {
                                 label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                    return context.parsed.y.toLocaleString();
                                 }
                             }
                         }

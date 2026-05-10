@@ -361,7 +361,7 @@ async function fetchChartData() {
             return;
         }
 
-        // For budget_spent widget type - time series with dates on X-axis, one line per budget
+        // For budget_spent widget type - bar chart with budget names on X-axis, spent amount on Y-axis
         if (widgetType === 'budget_spent') {
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
@@ -374,22 +374,6 @@ async function fetchChartData() {
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
             }
             let budgetData = await response.json();
-
-            console.log('=== BUDGET SPENT RAW API RESPONSE ===');
-            console.log('budgetData length:', budgetData.length);
-            budgetData.forEach((ds, i) => {
-                console.log(`Dataset ${i}: label="${ds.label}"`);
-                console.log('  entries type:', typeof ds.entries, Array.isArray(ds.entries) ? '[Array]' : '[Object]');
-                if (Array.isArray(ds.entries)) {
-                    console.log('  entries[0]:', JSON.stringify(ds.entries[0]));
-                } else if (ds.entries && typeof ds.entries === 'object') {
-                    const keys = Object.keys(ds.entries);
-                    console.log('  entries keys (first 3):', keys.slice(0, 3));
-                    keys.slice(0, 3).forEach(k => {
-                        console.log(`  entries["${k}"] =`, JSON.stringify(ds.entries[k]), `(type: ${typeof ds.entries[k]})`);
-                    });
-                }
-            });
 
             // Filter by selected budget names
             const selectedBudgetCheckboxes = document.querySelectorAll('.budget-select:checked');
@@ -409,38 +393,14 @@ async function fetchChartData() {
                 return;
             }
 
-            // Collect all unique dates across all budget datasets
-            const dateSet = new Set();
+            // Calculate spent = budgeted - left for each budget
+            const budgetLabels = [];
+            const budgetSpent = [];
             budgetData.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            // Build Chart.js datasets - one per budget
-            const datasets = budgetData.map((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                return {
-                    label: ds.label,
-                    data: data,
-                    borderColor: getBudgetColor(i),
-                    backgroundColor: getBudgetColor(i, '33'),
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2
-                };
+                const budgeted = parseFloat(ds.entries?.budgeted || 0) || 0;
+                const left = parseFloat(ds.entries?.left || 0) || 0;
+                budgetLabels.push(ds.label);
+                budgetSpent.push(budgeted - left);
             });
 
             if (balanceChart) {
@@ -454,25 +414,26 @@ async function fetchChartData() {
             const chartGridColor = isDark ? '#444' : '#ddd';
 
             balanceChart = new Chart(ctx, {
-                type: 'line',
+                type: 'bar',
                 data: {
-                    labels: allDates,
-                    datasets: datasets
+                    labels: budgetLabels,
+                    datasets: [{
+                        label: 'Amount Spent',
+                        data: budgetSpent,
+                        backgroundColor: '#3b82f6CC',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: chartTextColor }
-                        },
+                        legend: { display: false },
                         tooltip: {
-                            mode: 'index',
-                            intersect: false,
                             callbacks: {
                                 label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                    return context.parsed.y.toLocaleString();
                                 }
                             }
                         }
@@ -726,18 +687,6 @@ function generateColors(count) {
         });
     }
     return colors;
-}
-
-const BUDGET_COLORS = [
-    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
-    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
-];
-
-function getBudgetColor(index, alpha) {
-    const color = BUDGET_COLORS[index % BUDGET_COLORS.length];
-    if (alpha) return color + alpha;
-    return color;
 }
 
 // Extract chart data from entries (handles both object and array formats)
