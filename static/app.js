@@ -361,10 +361,11 @@ async function fetchChartData() {
             return;
         }
 
-        // For budget_spent widget type - time-series line chart with dates on X-axis, one line per budget
+       // For budget_spent widget type - time-series line chart with dates on X-axis, one line per budget
         if (widgetType === 'budget_spent') {
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
+            if (interval && interval !== 'auto') params.append('period', interval);
 
             // Add account IDs for filtering
             const selectedAccountIds = getSelectedAccountIds();

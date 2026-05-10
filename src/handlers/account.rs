@@ -294,19 +294,21 @@ pub async fn get_budget_spent_history(
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
+    let mut period: Option<String> = None;
     let mut account_ids: Vec<String> = Vec::new();
 
     for (k, v) in params {
         match k.as_str() {
             "start" => start = Some(v),
             "end" => end = Some(v),
+            "period" => period = Some(v),
             "accounts[]" | "accounts" => account_ids.push(v),
             _ => {}
         }
     }
 
     match client
-        .get_budget_spent_history(start, end, if account_ids.is_empty() { None } else { Some(account_ids) })
+        .get_budget_spent_history(start, end, period, if account_ids.is_empty() { None } else { Some(account_ids) })
         .await
     {
         Ok(chart) => HttpResponse::Ok().json(chart),

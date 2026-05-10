@@ -869,10 +869,74 @@ impl FireflyClient {
         Ok(chart)
     }
 
+    fn get_period_key(date_str: &str, period: &str) -> String {
+        fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+                .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
+                })
+                .or_else(|_| {
+                    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+                })
+                .ok()
+        }
+
+        if let Some(date) = parse_tx_date(date_str) {
+            let key = match period {
+                "1M" => {
+                    let first_of_next = chrono::NaiveDate::from_ymd_opt(
+                        if date.month() == 12 {
+                            date.year() + 1
+                        } else {
+                            date.year()
+                        },
+                        if date.month() == 12 {
+                            1
+                        } else {
+                            date.month() + 1
+                        },
+                        1,
+                    )
+                    .unwrap();
+                    (first_of_next - chrono::Duration::days(1))
+                        .format("%Y-%m-%dT00:00:00+00:00")
+                        .to_string()
+                }
+                "1Q" => {
+                    let quarter_month = match date.month() {
+                        1..=3 => 1,
+                        4..=6 => 4,
+                        7..=9 => 7,
+                        10..=12 => 10,
+                        _ => 1,
+                    };
+                    date.with_month(quarter_month)
+                        .unwrap()
+                        .format("%Y-%m-%dT00:00:00+00:00")
+                        .to_string()
+                }
+                "1W" => {
+                    let monday = date
+                        - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+                    monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
+                }
+                _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
+            };
+            return key;
+        }
+        date_str.to_string()
+    }
+
     pub async fn get_budget_spent_history(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
+        period: Option<String>,
         account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
         use crate::models::chart::ChartDataSet;
@@ -883,6 +947,7 @@ impl FireflyClient {
                 .format("%Y-%m-%d")
                 .to_string()
         });
+        let period_val = period.unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref())
@@ -944,14 +1009,13 @@ impl FireflyClient {
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
                 if let Ok(amount) = amount_str.parse::<f64>() {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
-                        // Extract just the date part (YYYY-MM-DD)
-                        let date_key = date.split('T').next().unwrap_or(date);
+                        let period_key = Self::get_period_key(date, &period_val);
 
                         let entries =
                             budget_entries.entry(budget_name).or_insert_with(
                                 std::collections::HashMap::new,
                             );
-                        *entries.entry(date_key.to_string()).or_insert(0.0) += amount;
+                        *entries.entry(period_key).or_insert(0.0) += amount;
                     }
                 }
             }

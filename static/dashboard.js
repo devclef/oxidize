@@ -977,11 +977,12 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
             }
             history = await response.json();
-        } else if (widgetType === 'budget_spent') {
+      } else if (widgetType === 'budget_spent') {
             // For budget spent history, use the spent-history endpoint
             const params = new URLSearchParams();
             if (widget.start_date) params.append('start', widget.start_date);
             if (widget.end_date) params.append('end', widget.end_date);
+            if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
             // Add account IDs for filtering
             const groupIds = widget.group_ids || [];
             const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
