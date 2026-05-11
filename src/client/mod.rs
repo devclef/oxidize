@@ -1,6 +1,9 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::{AccountArray, BudgetListResponse, CategoryExpense, ChartDataSet, ChartLine, MonthlySummary, SimpleAccount};
+use crate::models::{
+    AccountArray, BudgetListResponse, CategoryExpense, ChartDataSet, ChartLine, MonthlySummary,
+    SimpleAccount,
+};
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -765,7 +768,10 @@ impl FireflyClient {
         });
 
         // Check cache
-        if let Some(cached) = self.cache.get_budgets(Some(start.clone()), Some(end.clone())) {
+        if let Some(cached) = self
+            .cache
+            .get_budgets(Some(start.clone()), Some(end.clone()))
+        {
             debug!("Cache hit for budgets: {} to {}", start, end);
             let response: BudgetListResponse =
                 serde_json::from_str(&cached).map_err(|e| e.to_string())?;
@@ -790,8 +796,7 @@ impl FireflyClient {
         let body = response.text().await.map_err(|e| e.to_string())?;
 
         // Cache the raw JSON
-        self.cache
-            .set_budgets(Some(start), Some(end), body.clone());
+        self.cache.set_budgets(Some(start), Some(end), body.clone());
 
         let budget_response: BudgetListResponse =
             serde_json::from_str(&body).map_err(|e| e.to_string())?;
@@ -811,10 +816,12 @@ impl FireflyClient {
         });
 
         // Check cache
-        if let Some(cached) = self.cache.get_budget_spent(Some(start.clone()), Some(end.clone())) {
+        if let Some(cached) = self
+            .cache
+            .get_budget_spent(Some(start.clone()), Some(end.clone()))
+        {
             debug!("Cache hit for budget_spent: {} to {}", start, end);
-            let chart: ChartLine =
-                serde_json::from_str(&cached).map_err(|e| e.to_string())?;
+            let chart: ChartLine = serde_json::from_str(&cached).map_err(|e| e.to_string())?;
             return Ok(chart);
         }
         debug!("Cache miss for budget_spent: {} to {}", start, end);
@@ -842,8 +849,7 @@ impl FireflyClient {
         self.cache
             .set_budget_spent(Some(start), Some(end), body.clone());
 
-        let value: serde_json::Value =
-            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
         let chart = match &value {
             serde_json::Value::Array(_arr) => {
                 // Direct array format
@@ -855,9 +861,7 @@ impl FireflyClient {
                 for (_key, val) in map {
                     if let serde_json::Value::Array(arr) = val {
                         for item in arr {
-                            if let Ok(ds) =
-                                serde_json::from_value::<ChartDataSet>(item.clone())
-                            {
+                            if let Ok(ds) = serde_json::from_value::<ChartDataSet>(item.clone()) {
                                 all_datasets.push(ds);
                             }
                         }
@@ -923,8 +927,8 @@ impl FireflyClient {
                         .to_string()
                 }
                 "1W" => {
-                    let monday = date
-                        - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+                    let monday =
+                        date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
                     monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
                 _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
@@ -1013,10 +1017,7 @@ impl FireflyClient {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
                         let period_key = Self::get_period_key(date, &period_val);
 
-                        let entries =
-                            budget_entries.entry(budget_name).or_insert_with(
-                                std::collections::HashMap::new,
-                            );
+                        let entries = budget_entries.entry(budget_name).or_default();
                         *entries.entry(period_key).or_insert(0.0) += amount;
                     }
                 }
@@ -1060,7 +1061,12 @@ impl FireflyClient {
             b_count.cmp(&a_count)
         });
 
-        debug!("budget_spent_history: {} budgets, {} to {}", chart.len(), start, end);
+        debug!(
+            "budget_spent_history: {} budgets, {} to {}",
+            chart.len(),
+            start,
+            end
+        );
         Ok(chart)
     }
 

@@ -185,10 +185,7 @@ impl DataCache {
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Option<String> {
-        let key = Self::budget_key(
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+        let key = Self::budget_key(start_date.as_deref(), end_date.as_deref());
         let cache = self.budgets.read().ok()?;
         let entry = cache.get(&key)?;
 
@@ -200,16 +197,8 @@ impl DataCache {
     }
 
     /// Set cached budget list data
-    pub fn set_budgets(
-        &self,
-        start_date: Option<String>,
-        end_date: Option<String>,
-        data: String,
-    ) {
-        let key = Self::budget_key(
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+    pub fn set_budgets(&self, start_date: Option<String>, end_date: Option<String>, data: String) {
+        let key = Self::budget_key(start_date.as_deref(), end_date.as_deref());
         let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
         let entry = CacheEntry { data, expires_at };
 
@@ -224,10 +213,7 @@ impl DataCache {
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Option<String> {
-        let key = Self::budget_spent_key(
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref());
         let cache = self.budget_spent.read().ok()?;
         let entry = cache.get(&key)?;
 
@@ -245,10 +231,7 @@ impl DataCache {
         end_date: Option<String>,
         data: String,
     ) {
-        let key = Self::budget_spent_key(
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref());
         let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
         let entry = CacheEntry { data, expires_at };
 
