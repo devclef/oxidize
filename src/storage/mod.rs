@@ -222,8 +222,10 @@ impl Storage {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
         let group_ids_json = serde_json::to_string(&widget.group_ids).map_err(|e| e.to_string())?;
-        let budget_ids_json = serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
-        let budget_names_json = serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
+        let budget_ids_json =
+            serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
+        let budget_names_json =
+            serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
         let chart_options_json = widget
             .chart_options
             .as_ref()
@@ -267,8 +269,10 @@ impl Storage {
         let now = chrono::Utc::now().to_rfc3339();
         let accounts_json = serde_json::to_string(&widget.accounts).map_err(|e| e.to_string())?;
         let group_ids_json = serde_json::to_string(&widget.group_ids).map_err(|e| e.to_string())?;
-        let budget_ids_json = serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
-        let budget_names_json = serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
+        let budget_ids_json =
+            serde_json::to_string(&widget.budget_ids).map_err(|e| e.to_string())?;
+        let budget_names_json =
+            serde_json::to_string(&widget.budget_names).map_err(|e| e.to_string())?;
         let chart_options_json = widget
             .chart_options
             .as_ref()

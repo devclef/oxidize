@@ -260,7 +260,10 @@ pub async fn get_net_worth(client: web::Data<FireflyClient>, req: HttpRequest) -
 
 /// GET endpoint for budget spending chart data
 #[get("/api/budgets/spent")]
-pub async fn get_budget_spent(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {
+pub async fn get_budget_spent(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
@@ -308,7 +311,16 @@ pub async fn get_budget_spent_history(
     }
 
     match client
-        .get_budget_spent_history(start, end, period, if account_ids.is_empty() { None } else { Some(account_ids) })
+        .get_budget_spent_history(
+            start,
+            end,
+            period,
+            if account_ids.is_empty() {
+                None
+            } else {
+                Some(account_ids)
+            },
+        )
         .await
     {
         Ok(chart) => HttpResponse::Ok().json(chart),

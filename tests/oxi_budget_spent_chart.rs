@@ -113,8 +113,7 @@ mod tests {
             }
         ]);
 
-        let chart_line: oxidize::models::ChartLine =
-            serde_json::from_value(json_response).unwrap();
+        let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
         assert_eq!(chart_line.len(), 2);
         assert_eq!(chart_line[0].label, "Groceries");
@@ -150,8 +149,7 @@ mod tests {
             }
         ]);
 
-        let chart_line: oxidize::models::ChartLine =
-            serde_json::from_value(json_response).unwrap();
+        let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
         // Filter to only Groceries and Dining Out
         let selected = vec!["Groceries".to_string(), "Dining Out".to_string()];
@@ -185,8 +183,7 @@ mod tests {
             }
         ]);
 
-        let chart_line: oxidize::models::ChartLine =
-            serde_json::from_value(json_response).unwrap();
+        let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
         let selected: Vec<String> = Vec::new();
         let filtered: oxidize::models::ChartLine = if selected.is_empty() {
@@ -213,8 +210,7 @@ mod tests {
             }
         ]);
 
-        let chart_line: oxidize::models::ChartLine =
-            serde_json::from_value(json_response).unwrap();
+        let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
         let selected = vec!["Nonexistent".to_string()];
         let filtered: oxidize::models::ChartLine = chart_line
@@ -233,7 +229,9 @@ mod tests {
 
         let _m = server
             .mock("GET", "/v1/budgets")
-            .match_query(mockito::Matcher::Regex(r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string()))
+            .match_query(mockito::Matcher::Regex(
+                r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -291,7 +289,9 @@ mod tests {
 
         let _m = server
             .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string()))
+            .match_query(mockito::Matcher::Regex(
+                r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -352,7 +352,9 @@ mod tests {
         // First call - will be cached
         let _m1 = server
             .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string()))
+            .match_query(mockito::Matcher::Regex(
+                r"start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}".to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
