@@ -282,20 +282,18 @@ async function fetchChartData() {
             return;
         }
 
-        // For expenses_by_category widget type
+        // For expenses_by_category widget type - time-series line chart with dates on X-axis, one line per category
         if (widgetType === 'expenses_by_category') {
             selectedIds.forEach(id => params.append('accounts[]', id));
 
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
+            if (interval && interval !== 'auto') params.append('period', interval);
 
             let url = '/api/expenses-by-category';
             if (params.toString()) {
                 url += `?${params.toString()}`;
             }
-
-            console.log('=== FETCHING EXPENSES BY CATEGORY DATA ===');
-            console.log('URL:', url);
 
             const response = await fetch(url);
             if (!response.ok) {
@@ -303,11 +301,7 @@ async function fetchChartData() {
             }
             const categories = await response.json();
 
-            console.log('=== EXPENSES BY CATEGORY DATA FETCHED ===');
-            console.log('Received categories:', categories);
-
             if (!categories || categories.length === 0) {
-                console.warn('No expenses by category data returned from API');
                 chartErrorEl.innerHTML = '<div class="info">No expenses by category data found for the current date range.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
@@ -1079,82 +1073,95 @@ function renderDeltaBarChart(ctx, history) {
     });
 }
 
-// Render expenses by category chart (horizontal bar chart)
-function renderExpensesByCategoryChart(ctx, categories) {
+// Render expenses by category chart (line chart with time on X axis, one line per category)
+function renderExpensesByCategoryChart(ctx, datasets) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#eaeaea' : '#333';
     const chartGridColor = isDark ? '#444' : '#ddd';
 
-    // Categories is an array of {name, amount, currency_symbol, currency_code}
-    if (!categories || categories.length === 0) {
+    if (!datasets || datasets.length === 0) {
         console.warn('No category data to render');
         return;
     }
 
-    // Sort by amount descending for better visualization
-    const sortedCategories = [...categories].sort((a, b) => b.amount - a.amount);
+    // Collect all unique dates across all category datasets
+    const dateSet = new Set();
+    datasets.forEach(ds => {
+        if (ds.entries && typeof ds.entries === 'object') {
+            Object.keys(ds.entries).forEach(date => dateSet.add(date));
+        }
+    });
+    const allDates = Array.from(dateSet).sort();
 
-    const labels = sortedCategories.map(c => c.name);
-    const data = sortedCategories.map(c => c.amount);
-    const currencySymbol = sortedCategories[0]?.currency_symbol || '';
-
-    // Generate colors for each category
-    const colors = [];
-    const hues = [210, 280, 330, 120, 60, 30, 190, 260, 300, 40]; // Blue, Purple, Pink, Green, Orange, Red, etc.
-    sortedCategories.forEach((_, i) => {
-        const hue = hues[i % hues.length];
-        colors.push(isDark ? `hsl(${hue}, 60%, 60%)` : `hsl(${hue}, 70%, 50%)`);
+    // Build Chart.js datasets - one per category
+    const chartDatasets = datasets.map((ds, i) => {
+        const data = allDates.map(date => {
+            const val = ds.entries?.[date];
+            if (val === undefined || val === null) return 0;
+            let num = 0;
+            if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                num = parseFloat(val.value);
+            } else {
+                num = parseFloat(val);
+            }
+            return isNaN(num) ? 0 : Math.abs(num);
+        });
+        return {
+            label: ds.label,
+            data: data,
+            borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
+            backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+            fill: false,
+            tension: 0.3,
+            pointRadius: 3,
+            borderWidth: 2
+        };
     });
 
-    // Destroy existing chart
     if (balanceChart) {
         balanceChart.destroy();
     }
 
     balanceChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
-            labels: labels,
-            datasets: [{
-                label: 'Expenses',
-                data: data,
-                backgroundColor: colors,
-                borderColor: colors.map(c => c.replace('60%', '40%').replace('50%', '40%')),
-                borderWidth: 1
-            }]
+            labels: allDates,
+            datasets: chartDatasets
         },
         options: {
-            indexAxis: 'y', // Horizontal bar chart
             responsive: true,
             maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
             scales: {
-                x: {
+                y: {
                     beginAtZero: true,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
                         callback: function(value) {
-                            return currencySymbol + value.toLocaleString();
+                            return value.toLocaleString();
                         }
                     }
                 },
-                y: {
-                    grid: { display: false },
+                x: {
+                    grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxRotation: 0
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return currencySymbol + context.parsed.x.toLocaleString();
-                        }
+                        maxRotation: 45
                     }
                 }
             }
@@ -1429,7 +1436,7 @@ function renderChart(history, widgetType = 'balance') {
         return;
     }
 
-    // For expenses_by_category widget type, render as a horizontal bar chart
+    // For expenses_by_category widget type, render as a line chart with time on X axis
     if (widgetType === 'expenses_by_category') {
         renderExpensesByCategoryChart(ctx, history);
         return;
@@ -3091,7 +3098,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const titles = {
                     'balance': 'Account Balance History',
                     'earned_spent': 'Earned vs Spent',
-                    'expenses_by_category': 'Expenses by Category',
+                    'expenses_by_category': 'Expenses by Category Over Time',
                     'net_worth': 'Net Worth',
                     'budget_spent': 'Budget Spent Over Time'
                 };

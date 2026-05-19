@@ -1,7 +1,7 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
-    AccountArray, BudgetListResponse, CategoryExpense, ChartDataSet, ChartLine, MonthlySummary,
+    AccountArray, BudgetListResponse, ChartDataSet, ChartLine, MonthlySummary,
     SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
@@ -419,97 +419,116 @@ impl FireflyClient {
         ])
     }
 
+    /// Sum all numeric values in a ChartDataSet entries object
+    fn sum_entries(entries: &serde_json::Value) -> f64 {
+        if let serde_json::Value::Object(map) = entries {
+            map.values()
+                .filter_map(|v| v.as_f64())
+                .sum()
+        } else {
+            0.0
+        }
+    }
+
     pub async fn get_expenses_by_category(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
+        period: Option<String>,
         account_ids: Option<Vec<String>>,
-    ) -> Result<Vec<CategoryExpense>, String> {
+    ) -> Result<ChartLine, String> {
+        use crate::models::chart::ChartDataSet;
+
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
                 .to_string()
         });
+        let period_val = period.unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref())
             .await?;
 
-        let expense_transactions: Vec<_> = all_transactions
-            .iter()
-            .filter(|tx| {
-                tx.get("attributes")
-                    .and_then(|a| a.get("transactions"))
-                    .and_then(|t| t.as_array())
-                    .map(|trans| {
-                        trans
-                            .iter()
-                            .any(|t| t.get("type").and_then(|ty| ty.as_str()) == Some("withdrawal"))
-                    })
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
-
-        let mut category_expenses: std::collections::HashMap<String, (f64, String, String)> =
-            std::collections::HashMap::new();
-
-        for tx in &expense_transactions {
-            if let Some(transactions) = tx
+        // Flatten transactions into journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
                 .get("attributes")
                 .and_then(|a| a.get("transactions"))
                 .and_then(|t| t.as_array())
             {
-                for t in transactions {
-                    if let Some(amount_str) = t.get("amount").and_then(|a| a.as_str()) {
-                        if let Ok(amount) = amount_str.parse::<f64>() {
-                            let category_name = t
-                                .get("category_name")
-                                .and_then(|c| c.as_str())
-                                .map(String::from)
-                                .unwrap_or_else(|| "Uncategorized".to_string());
-                            let entry = category_expenses.entry(category_name).or_insert((
-                                0.0,
-                                String::new(),
-                                String::new(),
-                            ));
-                            entry.0 += amount;
-                            if entry.1.is_empty() {
-                                entry.1 = t
-                                    .get("currency_symbol")
-                                    .and_then(|s| s.as_str())
-                                    .map(String::from)
-                                    .unwrap_or_default();
-                                entry.2 = t
-                                    .get("currency_code")
-                                    .and_then(|s| s.as_str())
-                                    .map(String::from)
-                                    .unwrap_or_default();
-                            }
-                        }
-                    }
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
                 }
             }
         }
 
-        let mut result: Vec<CategoryExpense> = category_expenses
+        // Filter to withdrawal journals, group by category + period
+        let mut category_entries: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if journal_type != "withdrawal" {
+                continue;
+            }
+
+            let category_name = journal
+                .get("category_name")
+                .and_then(|c| c.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| "Uncategorized".to_string());
+
+            if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
+                if let Ok(amount) = amount_str.parse::<f64>() {
+                    if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
+                        let period_key = Self::get_period_key(date, &period_val);
+
+                        let entries = category_entries.entry(category_name).or_default();
+                        *entries.entry(period_key).or_insert(0.0) += amount;
+                    }
+                }
+            }
+
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+            }
+        }
+
+        // Convert to ChartLine: one ChartDataSet per category
+        let mut chart: Vec<ChartDataSet> = category_entries
             .into_iter()
-            .map(
-                |(name, (amount, currency_symbol, currency_code))| CategoryExpense {
-                    name,
-                    amount,
-                    currency_symbol,
-                    currency_code,
-                },
-            )
+            .map(|(label, entries)| ChartDataSet {
+                label,
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(entries).unwrap(),
+            })
             .collect();
-        result.sort_by(|a, b| {
-            b.amount
-                .partial_cmp(&a.amount)
+
+        // Sort by total spend descending
+        chart.sort_by(|a, b| {
+            let sum_a = Self::sum_entries(&a.entries);
+            let sum_b = Self::sum_entries(&b.entries);
+            sum_b
+                .partial_cmp(&sum_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        Ok(result)
+
+        Ok(chart)
     }
 
     pub async fn get_net_worth(
