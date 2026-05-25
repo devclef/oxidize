@@ -57,3 +57,4 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+          wait-for-processing: false
