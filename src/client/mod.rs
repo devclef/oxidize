@@ -1,8 +1,7 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
-    AccountArray, BudgetListResponse, ChartDataSet, ChartLine, MonthlySummary,
-    SimpleAccount,
+    AccountArray, BudgetListResponse, ChartDataSet, ChartLine, MonthlySummary, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -422,9 +421,7 @@ impl FireflyClient {
     /// Sum all numeric values in a ChartDataSet entries object
     fn sum_entries(entries: &serde_json::Value) -> f64 {
         if let serde_json::Value::Object(map) = entries {
-            map.values()
-                .filter_map(|v| v.as_f64())
-                .sum()
+            map.values().filter_map(|v| v.as_f64()).sum()
         } else {
             0.0
         }
