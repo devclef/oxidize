@@ -45,13 +45,14 @@ jobs:
       - name: Fetch all dependencies
         run: cargo fetch
 
-      - name: Build dependencies for analysis
-        run: cargo check
+      - name: Build all targets for analysis
+        run: cargo build --all-targets
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          source-root: .
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
