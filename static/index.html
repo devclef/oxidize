@@ -62,6 +62,20 @@
         <div id="groups-list"></div>
     </div>
 
+    <div id="categories-section" class="categories-section" style="display: none;">
+        <div class="budgets-section-header">
+            <h3>Categories</h3>
+            <div class="budget-actions">
+                <button id="select-all-categories-btn">Select all</button>
+                <button id="deselect-all-categories-btn">Deselect all</button>
+            </div>
+        </div>
+        <div class="account-search">
+            <input type="text" id="category-search-input" placeholder="Search categories..." autocomplete="off">
+        </div>
+        <div id="categories-list"></div>
+    </div>
+
     <div id="budgets-section" class="budgets-section" style="display: none;">
         <div class="budgets-section-header">
             <h3>Budgets</h3>
@@ -88,6 +102,7 @@
                 <option value="expenses_by_category">Expenses by Category</option>
                 <option value="net_worth">Net Worth</option>
                 <option value="budget_spent">Budget Spent</option>
+                <option value="category_subcat">Category Subcategories</option>
             </select>
         </div>
 

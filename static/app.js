@@ -377,6 +377,10 @@ async function fetchChartData() {
             // Filter by selected budget names
             const selectedBudgetCheckboxes = document.querySelectorAll('.budget-select:checked');
             const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);
+
+    // Get selected parent categories
+    const selectedCategoryCheckboxes = document.querySelectorAll('.category-select:checked');
+    const selectedParentCategories = Array.from(selectedCategoryCheckboxes).map(cb => cb.value);
             if (selectedBudgetNames.length > 0) {
                 const nameSet = new Set(selectedBudgetNames);
                 budgetData = budgetData.filter(ds => nameSet.has(ds.label));
@@ -403,6 +407,141 @@ async function fetchChartData() {
 
             // Build Chart.js datasets - one per budget
             const datasets = budgetData.map((ds, i) => {
+                const data = allDates.map(date => {
+                    const val = ds.entries?.[date];
+                    if (val === undefined || val === null) return 0;
+                    let num = 0;
+                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                        num = parseFloat(val.value);
+                    } else {
+                        num = parseFloat(val);
+                    }
+                    return isNaN(num) ? 0 : Math.abs(num);
+                });
+                return {
+                    label: ds.label,
+                    data: data,
+                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
+                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2
+                };
+            });
+
+            if (balanceChart) {
+                balanceChart.destroy();
+            }
+
+            chartContainer.style.display = 'block';
+            const ctx = document.getElementById('balanceChart').getContext('2d');
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+
+            balanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: chartTextColor }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                maxRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+            return;
+        }
+
+        // For category_subcat widget type - time-series line chart with dates on X-axis, one line per subcategory
+        if (widgetType === 'category_subcat') {
+            if (startDate) params.append('start', startDate);
+            if (endDate) params.append('end', endDate);
+            if (interval && interval !== 'auto') params.append('period', interval);
+
+            // Add selected parent categories
+            const selectedCategoryCheckboxes = document.querySelectorAll('.category-select:checked');
+            const selectedCategoryNames = Array.from(selectedCategoryCheckboxes).map(cb => cb.value);
+            if (selectedCategoryNames.length === 0) {
+                chartErrorEl.innerHTML = '<div class="info">Please select at least one category.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+            selectedCategoryNames.forEach(name => params.append('parent_categories[]', name));
+
+            // Add account IDs for filtering
+            const selectedAccountIds = getSelectedAccountIds();
+            selectedAccountIds.forEach(id => params.append('accounts[]', id));
+
+            const url = '/api/categories/subcategory-spend';
+            const fullUrl = params.toString() ? `${url}?${params.toString()}` : url;
+
+            const response = await fetch(fullUrl);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const subcatData = await response.json();
+
+            if (!subcatData || subcatData.length === 0) {
+                chartErrorEl.innerHTML = '<div class="info">No subcategory spend data found for the selected categories and date range.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            // Collect all unique dates across all subcategory datasets
+            const dateSet = new Set();
+            subcatData.forEach(ds => {
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
+                }
+            });
+            const allDates = Array.from(dateSet).sort();
+
+            // Build Chart.js datasets - one per subcategory
+            const datasets = subcatData.map((ds, i) => {
                 const data = allDates.map(date => {
                     const val = ds.entries?.[date];
                     if (val === undefined || val === null) return 0;
@@ -2425,6 +2564,10 @@ async function saveGraphAsWidget() {
     const selectedBudgetIds = Array.from(selectedBudgetCheckboxes).map(cb => cb.value);
     const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);
 
+    // Get selected parent categories
+    const selectedCategoryCheckboxes = document.querySelectorAll('.category-select:checked');
+    const selectedParentCategories = Array.from(selectedCategoryCheckboxes).map(cb => cb.value);
+
     // Only balance widget type requires accounts
     if (widgetType === 'balance' && selectedIds.length === 0) {
         alert('Please select at least one account');
@@ -2473,6 +2616,7 @@ async function saveGraphAsWidget() {
         group_ids: groupIds,
         budget_ids: selectedBudgetIds,
         budget_names: selectedBudgetNames,
+        parent_categories: selectedParentCategories,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -2958,6 +3102,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deselectAllBudgetsBtn) {
         deselectAllBudgetsBtn.addEventListener('click', deselectAllBudgets);
     }
+    // Category button listeners
+    const selectAllCategoriesBtn = document.getElementById('select-all-categories-btn');
+    const deselectAllCategoriesBtn = document.getElementById('deselect-all-categories-btn');
+    if (selectAllCategoriesBtn) {
+        selectAllCategoriesBtn.addEventListener('click', selectAllCategories);
+    }
+    if (deselectAllCategoriesBtn) {
+        deselectAllCategoriesBtn.addEventListener('click', deselectAllCategories);
+    }
+    // Category search input
+    const categorySearchInput = document.getElementById('category-search-input');
+    if (categorySearchInput) {
+        categorySearchInput.addEventListener('input', (e) => {
+            categorySearchFilter = e.target.value;
+            renderCategories();
+        });
+    }
 
     // Load and render groups
     loadGroups();
@@ -3088,6 +3249,70 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchChartData();
     }
 
+
+    // Category state
+    let allCategories = [];
+    let categorySearchFilter = '';
+
+    async function fetchCategories() {
+        try {
+            const response = await fetch('/api/categories/list');
+            if (!response.ok) {
+                console.warn('Failed to load categories:', response.status);
+                return;
+            }
+            allCategories = await response.json();
+            renderCategories();
+        } catch (e) {
+            console.warn('Failed to load categories:', e);
+        }
+    }
+
+    function renderCategories() {
+        const container = document.getElementById('categories-list');
+        if (!container) return;
+
+        let filtered = allCategories;
+
+        // Apply search filter
+        if (categorySearchFilter) {
+            const search = categorySearchFilter.toLowerCase();
+            filtered = filtered.filter(c => c.name.toLowerCase().includes(search));
+        }
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="loading">No categories with subcategories found.</div>';
+            return;
+        }
+
+        let html = '<div class="account-list">';
+        filtered.forEach(cat => {
+            const subcatInfo = cat.subcategories.length > 0
+                ? `<span class="subcat-count">${cat.subcategories.length} subcategories: ${cat.subcategories.join(', ')}</span>`
+                : '';
+            html += `
+                <div class="account-card" data-category-name="${cat.name}">
+                    <input type="checkbox" class="category-select" value="${cat.name}" data-name="${cat.name}">
+                    <div class="account-info">
+                        <span class="account-name">${cat.name}</span>
+                        ${subcatInfo}
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function selectAllCategories() {
+        document.querySelectorAll('.category-select').forEach(cb => cb.checked = true);
+        fetchChartData();
+    }
+
+    function deselectAllCategories() {
+        document.querySelectorAll('.category-select').forEach(cb => cb.checked = false);
+        fetchChartData();
+    }
     // Handle widget type change
     const widgetTypeSelect = document.getElementById('widget-type-select');
     if (widgetTypeSelect) {
@@ -3100,7 +3325,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     'earned_spent': 'Earned vs Spent',
                     'expenses_by_category': 'Expenses by Category Over Time',
                     'net_worth': 'Net Worth',
-                    'budget_spent': 'Budget Spent Over Time'
+                    'budget_spent': 'Budget Spent Over Time',
+                    'category_subcat': 'Category Subcategory Spend'
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -3116,11 +3342,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (widgetType === 'budget_spent' && allBudgets.length === 0) {
                     await fetchBudgets();
                 }
-                // When switching to budget_spent, auto-select all budgets if none selected
                 if (widgetType === 'budget_spent') {
                     const selected = document.querySelectorAll('.budget-select:checked');
                     if (selected.length === 0 && allBudgets.length > 0) {
                         selectAllBudgets();
+                        return;
+                    }
+                }
+            }
+            // Toggle categories section visibility
+            const categoriesSection = document.getElementById('categories-section');
+            if (categoriesSection) {
+                categoriesSection.style.display = widgetType === 'category_subcat' ? 'block' : 'none';
+                if (widgetType === 'category_subcat' && allCategories.length === 0) {
+                    await fetchCategories();
+                }
+                if (widgetType === 'category_subcat') {
+                    const selected = document.querySelectorAll('.category-select:checked');
+                    if (selected.length === 0 && allCategories.length > 0) {
+                        selectAllCategories();
                         return;
                     }
                 }

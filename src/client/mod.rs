@@ -1,6 +1,7 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
+    CategoryListResponse, ParentCategory,
     AccountArray, BudgetListResponse, ChartDataSet, ChartLine, MonthlySummary, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
@@ -1392,6 +1393,197 @@ impl FireflyClient {
                 (symbol, code)
             })
             .unwrap_or((None, None))
+    }
+
+    /// Fetch all categories from Firefly III, cached.
+    /// Returns a list of ParentCategory objects (categories with subcategories derived from ":" splitting).
+    pub async fn get_categories(&self) -> Result<Vec<ParentCategory>, String> {
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_categories() {
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached categories: {}", e));
+        }
+
+        let headers = self.get_headers();
+        let url = format!("{}/v1/categories", self.config.firefly_url.as_str());
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            error!("API request failed with status: {}. Body: {}", status, body);
+            return Err(format!("API request failed with status: {}", status));
+        }
+
+        let category_array: CategoryListResponse =
+            response.json().await.map_err(|e| e.to_string())?;
+        let categories = category_array.categories();
+
+        // Group by parent category (split by ":")
+        let mut parent_map: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+            std::collections::BTreeMap::new();
+        for cat in &categories {
+            let parts: Vec<&str> = cat.name.splitn(2, ':').collect();
+            let parent = parts[0].trim().to_string();
+            let subcat = if parts.len() > 1 {
+                parts[1].trim().to_string()
+            } else {
+                "Other".to_string()
+            };
+            parent_map.entry(parent).or_default().insert(subcat);
+        }
+
+        let result: Vec<ParentCategory> = parent_map
+            .into_iter()
+            .map(|(name, subcats)| ParentCategory {
+                name: name.clone(),
+                category_type: name,
+                subcategories: subcats.into_iter().collect(),
+            })
+            .collect();
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_categories(json);
+        }
+
+        Ok(result)
+    }
+
+    /// Get subcategory spend chart data for selected parent categories.
+    /// Returns a ChartLine with one ChartDataSet per subcategory.
+    pub async fn get_subcategory_spend_chart(
+        &self,
+        parent_categories: Vec<String>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+        account_ids: Option<Vec<String>>,
+    ) -> Result<ChartLine, String> {
+        use crate::models::chart::ChartDataSet;
+
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+        let period_val = period.unwrap_or_else(|| "1M".to_string());
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .await?;
+
+        // Build a set of parent categories for filtering
+        let parent_set: std::collections::HashSet<String> =
+            parent_categories.iter().cloned().collect();
+
+        // Flatten transactions into journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        // Filter to withdrawal journals, group by subcategory + period
+        let mut subcat_entries: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if journal_type != "withdrawal" {
+                continue;
+            }
+
+            let full_category = journal
+                .get("category_name")
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+
+            // Skip if no category
+            if full_category.is_empty() {
+                continue;
+            }
+
+            // Split by ":" to get parent and subcategory
+            let parts: Vec<&str> = full_category.splitn(2, ':').collect();
+            let parent = parts[0].trim();
+            let subcat = if parts.len() > 1 {
+                parts[1].trim()
+            } else {
+                "Other"
+            };
+
+            // Skip if parent category not in selected list
+            if !parent_set.contains(parent) {
+                continue;
+            }
+
+            if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
+                if let Ok(amount) = amount_str.parse::<f64>() {
+                    if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
+                        let period_key = Self::get_period_key(date, &period_val);
+
+                        // Use "parent > subcat" as the label for clarity
+                        let label = format!("{} > {}", parent, subcat);
+
+                        let entries = subcat_entries.entry(label).or_default();
+                        *entries.entry(period_key).or_insert(0.0) += amount;
+                    }
+                }
+            }
+
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+            }
+        }
+
+        // Convert to ChartLine: one ChartDataSet per subcategory
+        let mut chart: Vec<ChartDataSet> = subcat_entries
+            .into_iter()
+            .map(|(label, entries)| ChartDataSet {
+                label,
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(entries).unwrap(),
+            })
+            .collect();
+
+        // Sort by total spend descending
+        chart.sort_by(|a, b| {
+            let sum_a = Self::sum_entries(&a.entries);
+            let sum_b = Self::sum_entries(&b.entries);
+            sum_b
+                .partial_cmp(&sum_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(chart)
     }
 }
 

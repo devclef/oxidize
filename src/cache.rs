@@ -253,6 +253,43 @@ impl DataCache {
             cache.clear();
         }
     }
+
+    /// Generate a cache key for category queries
+    fn categories_key() -> String {
+        "categories".to_string()
+    }
+
+    /// Get cached categories data
+    pub fn get_categories(&self) -> Option<String> {
+        let key = Self::categories_key();
+        let cache = self.accounts.read().ok()?;
+        let entry = cache.get(&key)?;
+
+        if Self::is_expired(entry) {
+            return None;
+        }
+
+        Some(entry.data.clone())
+    }
+
+    /// Set cached categories data
+    pub fn set_categories(&self, data: String) {
+        let key = Self::categories_key();
+        let expires_at = Utc::now() + chrono::Duration::seconds(self.ttl_seconds as i64);
+        let entry = CacheEntry { data, expires_at };
+
+        if let Ok(mut cache) = self.accounts.write() {
+            cache.insert(key, entry);
+        }
+    }
+
+    /// Clear only categories cache
+    pub fn clear_categories(&self) {
+        let key = Self::categories_key();
+        if let Ok(mut cache) = self.accounts.write() {
+            cache.remove(&key);
+        }
+    }
 }
 
 impl Default for DataCache {

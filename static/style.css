@@ -1334,3 +1334,20 @@ button:hover {
     border: none;
     color: white;
 }
+
+/* Categories section */
+.categories-section {
+    margin: var(--space-4) 0;
+    background: var(--card-bg);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.subcat-count {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
