@@ -3105,11 +3105,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Category button listeners
     const selectAllCategoriesBtn = document.getElementById('select-all-categories-btn');
     const deselectAllCategoriesBtn = document.getElementById('deselect-all-categories-btn');
+    const selectSomeCategoriesBtn = document.getElementById('select-some-categories-btn');
     if (selectAllCategoriesBtn) {
         selectAllCategoriesBtn.addEventListener('click', selectAllCategories);
     }
     if (deselectAllCategoriesBtn) {
         deselectAllCategoriesBtn.addEventListener('click', deselectAllCategories);
+    }
+    if (selectSomeCategoriesBtn) {
+        selectSomeCategoriesBtn.addEventListener('click', selectSomeCategories);
+    }
+    // Category sort select
+    const categorySortSelect = document.getElementById('category-sort-select');
+    if (categorySortSelect) {
+        categorySortSelect.addEventListener('change', (e) => {
+            categorySortMode = e.target.value;
+            renderCategories();
+        });
     }
     // Category search input
     const categorySearchInput = document.getElementById('category-search-input');
@@ -3253,6 +3265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Category state
     let allCategories = [];
     let categorySearchFilter = '';
+    let categorySortMode = 'subcat_desc';
 
     async function fetchCategories() {
         try {
@@ -3268,6 +3281,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function sortCategories(cats) {
+        const sorted = [...cats];
+        switch (categorySortMode) {
+            case 'subcat_desc':
+                sorted.sort((a, b) => b.subcategories.length - a.subcategories.length || a.name.localeCompare(b.name));
+                break;
+            case 'subcat_asc':
+                sorted.sort((a, b) => a.subcategories.length - b.subcategories.length || a.name.localeCompare(b.name));
+                break;
+            case 'name_desc':
+                sorted.sort((a, b) => b.name.localeCompare(a.name));
+                break;
+            case 'name_asc':
+            default:
+                sorted.sort((a, b) => a.name.localeCompare(b.name));
+                break;
+        }
+        return sorted;
+    }
+
+    function updateCategoryBadge() {
+        const badge = document.getElementById('categories-count-badge');
+        if (!badge) return;
+        const total = allCategories.length;
+        const checked = document.querySelectorAll('.category-select:checked').length;
+        badge.textContent = checked > 0 ? `${checked}/${total} selected` : `${total} categories`;
+    }
+
     function renderCategories() {
         const container = document.getElementById('categories-list');
         if (!container) return;
@@ -3277,40 +3318,78 @@ document.addEventListener('DOMContentLoaded', () => {
         // Apply search filter
         if (categorySearchFilter) {
             const search = categorySearchFilter.toLowerCase();
-            filtered = filtered.filter(c => c.name.toLowerCase().includes(search));
+            filtered = filtered.filter(c => c.name.toLowerCase().includes(search) ||
+                c.subcategories.some(s => s.toLowerCase().includes(search)));
         }
 
+        // Sort
+        filtered = sortCategories(filtered);
+
         if (filtered.length === 0) {
-            container.innerHTML = '<div class="loading">No categories with subcategories found.</div>';
+            container.innerHTML = '<div class="loading">No categories matching search found.</div>';
+            updateCategoryBadge();
             return;
         }
 
         let html = '<div class="account-list">';
         filtered.forEach(cat => {
-            const subcatInfo = cat.subcategories.length > 0
-                ? `<span class="subcat-count">${cat.subcategories.length} subcategories: ${cat.subcategories.join(', ')}</span>`
-                : '';
+            const subcatCount = cat.subcategories.length;
+            const subcatPills = subcatCount > 0
+                ? `<div class="category-subcat-pills">${cat.subcategories.map(s => `<span class="subcat-pill">${s}</span>`).join('')}</div>`
+                : '<span class="subcat-count">No subcategories</span>';
             html += `
-                <div class="account-card" data-category-name="${cat.name}">
+                <div class="account-card category-card" data-category-name="${cat.name}">
                     <input type="checkbox" class="category-select" value="${cat.name}" data-name="${cat.name}">
                     <div class="account-info">
-                        <span class="account-name">${cat.name}</span>
-                        ${subcatInfo}
+                        <div class="category-header-row">
+                            <span class="account-name">${cat.name}</span>
+                            <span class="subcat-count">${subcatCount} subcat${subcatCount !== 1 ? 's' : ''}</span>
+                        </div>
+                        ${subcatPills}
                     </div>
                 </div>
             `;
         });
         html += '</div>';
         container.innerHTML = html;
+
+        // Wire up checkbox change handlers for auto-refresh
+        container.querySelectorAll('.category-select').forEach(cb => {
+            cb.addEventListener('change', () => {
+                updateCategoryBadge();
+                fetchChartData();
+            });
+        });
+
+        updateCategoryBadge();
     }
 
     function selectAllCategories() {
         document.querySelectorAll('.category-select').forEach(cb => cb.checked = true);
+        updateCategoryBadge();
         fetchChartData();
     }
 
     function deselectAllCategories() {
         document.querySelectorAll('.category-select').forEach(cb => cb.checked = false);
+        updateCategoryBadge();
+        fetchChartData();
+    }
+
+    function selectSomeCategories() {
+        const minSubcats = prompt('Select categories with at least how many subcategories?', '2');
+        if (minSubcats === null) return;
+        const min = parseInt(minSubcats, 10);
+        if (isNaN(min) || min < 1) {
+            alert('Please enter a number >= 1');
+            return;
+        }
+        document.querySelectorAll('.category-select').forEach(cb => {
+            const card = cb.closest('.category-card');
+            const pills = card ? card.querySelectorAll('.subcat-pill').length : 0;
+            cb.checked = pills >= min;
+        });
+        updateCategoryBadge();
         fetchChartData();
     }
     // Handle widget type change

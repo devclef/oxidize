@@ -64,14 +64,26 @@
 
     <div id="categories-section" class="categories-section" style="display: none;">
         <div class="budgets-section-header">
-            <h3>Categories</h3>
+            <h3>Categories <span id="categories-count-badge" class="account-count-badge"></span></h3>
             <div class="budget-actions">
                 <button id="select-all-categories-btn">Select all</button>
                 <button id="deselect-all-categories-btn">Deselect all</button>
+                <button id="select-some-categories-btn" title="Select categories with at least N subcategories">Select some</button>
             </div>
         </div>
-        <div class="account-search">
-            <input type="text" id="category-search-input" placeholder="Search categories..." autocomplete="off">
+        <div class="category-controls-row">
+            <div class="account-search" style="flex:1;">
+                <input type="text" id="category-search-input" placeholder="Search categories..." autocomplete="off">
+            </div>
+            <div class="category-sort-controls">
+                <label for="category-sort-select">Sort:</label>
+                <select id="category-sort-select">
+                    <option value="subcat_desc">Most subcategories</option>
+                    <option value="subcat_asc">Least subcategories</option>
+                    <option value="name_asc">Name (A–Z)</option>
+                    <option value="name_desc">Name (Z–A)</option>
+                </select>
+            </div>
         </div>
         <div id="categories-list"></div>
     </div>

@@ -1345,6 +1345,148 @@ button:hover {
     border: 1px solid var(--border-color);
 }
 
+#categories-count-badge {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    background: var(--border-light);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-full);
+    font-weight: 400;
+}
+
+.category-controls-row {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-3);
+}
+
+.category-sort-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+
+.category-sort-controls label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0;
+    white-space: nowrap;
+}
+
+.category-sort-controls select {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-bg);
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+.category-sort-controls select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.category-card {
+    background: var(--card-bg);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.category-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent-color);
+}
+
+.category-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent-color);
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.category-card:has(.category-select:checked)::before {
+    opacity: 1;
+}
+
+.category-card input[type="checkbox"] {
+    margin: 0;
+    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.category-card .account-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.category-header-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.category-header-row .account-name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--text-color);
+}
+
+.category-header-row .subcat-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--border-light);
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.category-subcat-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: 2px;
+}
+
+.subcat-pill {
+    font-size: 0.7rem;
+    color: var(--accent-text);
+    background: var(--accent-light);
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    cursor: default;
+}
+
+.subcat-pill:hover {
+    background: var(--accent-color);
+    color: white;
+}
+
+/* Standalone subcat-count for categories with no subcategories */
 .subcat-count {
     display: block;
     font-size: 0.8rem;
