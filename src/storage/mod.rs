@@ -244,8 +244,8 @@ impl Storage {
             .transpose()
             .map_err(|e| e.to_string())?;
 
-        let parent_categories_json = serde_json::to_string(&widget.parent_categories)
-            .map_err(|e| e.to_string())?;
+        let parent_categories_json =
+            serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
 
         with_db(|conn| {
             conn.execute(
@@ -295,8 +295,8 @@ impl Storage {
             .transpose()
             .map_err(|e| e.to_string())?;
 
-        let parent_categories_json = serde_json::to_string(&widget.parent_categories)
-            .map_err(|e| e.to_string())?;
+        let parent_categories_json =
+            serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
 
         with_db(|conn| {
             let rows = conn

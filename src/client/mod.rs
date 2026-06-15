@@ -1,8 +1,8 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
-    CategoryListResponse, ParentCategory,
-    AccountArray, BudgetListResponse, ChartDataSet, ChartLine, MonthlySummary, SimpleAccount,
+    AccountArray, BudgetListResponse, CategoryListResponse, ChartDataSet, ChartLine,
+    MonthlySummary, ParentCategory, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};

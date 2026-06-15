@@ -83,6 +83,7 @@ fn test_widget_serialization_includes_new_fields() {
         group_ids: vec![],
         budget_ids: vec![],
         budget_names: vec![],
+        parent_categories: vec![],
         start_date: None,
         end_date: None,
         interval: None,
