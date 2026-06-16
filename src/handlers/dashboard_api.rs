@@ -35,7 +35,10 @@ pub async fn create_dashboard(body: web::Json<Dashboard>) -> impl Responder {
 }
 
 #[put("/api/dashboards/{id}")]
-pub async fn update_dashboard(path: web::Path<String>, body: web::Json<Dashboard>) -> impl Responder {
+pub async fn update_dashboard(
+    path: web::Path<String>,
+    body: web::Json<Dashboard>,
+) -> impl Responder {
     let path_id = path.into_inner();
     let dashboard = body.into_inner();
 

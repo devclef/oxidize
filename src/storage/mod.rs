@@ -85,23 +85,57 @@ fn init_db(conn: &Connection) {
     .expect("Failed to create dashboards table");
 
     // Migrations: Add columns if they don't exist
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN widget_type TEXT DEFAULT 'balance'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN width INTEGER NOT NULL DEFAULT 12", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN chart_height INTEGER NOT NULL DEFAULT 300", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN group_ids TEXT NOT NULL DEFAULT '[]'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN earned_chart_type TEXT DEFAULT 'bars'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN budget_ids TEXT NOT NULL DEFAULT '[]'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN budget_names TEXT NOT NULL DEFAULT '[]'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN parent_categories TEXT NOT NULL DEFAULT '[]'", []);
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN subcategories TEXT NOT NULL DEFAULT '[]'", []);
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN widget_type TEXT DEFAULT 'balance'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN width INTEGER NOT NULL DEFAULT 12",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN chart_height INTEGER NOT NULL DEFAULT 300",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN group_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN earned_chart_type TEXT DEFAULT 'bars'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN budget_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN budget_names TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN parent_categories TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN subcategories TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
     // Migration: Add dashboard_ids column if it doesn't exist
-    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN dashboard_ids TEXT NOT NULL DEFAULT '[]'", []);
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN dashboard_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
 }
 
 // Seed a default "Main" dashboard if none exist
 fn seed_default_dashboard(conn: &Connection) {
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM dashboards", [], |row| row.get(0))
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM dashboards", [], |row| row.get(0))
         .unwrap_or(0);
     if count == 0 {
         let id = "default";
@@ -236,7 +270,8 @@ impl Storage {
     /// Get widgets filtered by dashboard ID
     pub fn get_widgets_for_dashboard(dashboard_id: &str) -> Result<Vec<Widget>, String> {
         Self::get_all_widgets().map(|widgets| {
-            widgets.into_iter()
+            widgets
+                .into_iter()
                 .filter(|w| w.dashboard_ids.contains(&dashboard_id.to_string()))
                 .collect()
         })
