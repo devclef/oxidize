@@ -9,6 +9,15 @@ let editingGroupId = null;
 const GROUPS_STORAGE_KEY = 'oxidize_groups';
 let groupsLoadedPromise = null;
 
+// Category state
+let allCategories = [];
+let categorySearchFilter = '';
+let categorySortMode = 'subcat_desc';
+// Track expanded state per category name
+let categoryExpanded = {};
+// Track selected subcategories: Map<parentName, Set<subcatName>>
+let selectedSubcategories = new Map();
+
 // Parse a chart label that may be a date string or quarterly format like "2025-Q1"
 function parseChartLabel(label) {
     if (typeof label !== 'string') return new Date(label);
@@ -3282,14 +3291,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Category state
-    let allCategories = [];
-    let categorySearchFilter = '';
-    let categorySortMode = 'subcat_desc';
-    // Track expanded state per category name
-    let categoryExpanded = {};
-    // Track selected subcategories: Map<parentName, Set<subcatName>>
-    let selectedSubcategories = new Map();
-
     async function fetchCategories() {
         try {
             const response = await fetch('/api/categories/list');
