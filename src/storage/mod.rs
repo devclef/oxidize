@@ -41,6 +41,9 @@ where
 {
     let db_path = PathBuf::from(DATA_DIR.get()?.as_str()).join("oxidize.db");
     let conn = Connection::open(&db_path).ok()?;
+    // Checkpoint WAL so this connection sees writes from previous connections.
+    // Important for test isolation where each operation opens a fresh connection.
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
     Some(f(&conn))
 }
 
