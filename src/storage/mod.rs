@@ -25,7 +25,6 @@ pub fn init_data_dir(dir: String) {
     DATA_DIR.set(dir).ok();
 }
 
-
 fn get_db_path() -> String {
     let dir = DATA_DIR.get().expect("Data directory not initialized");
     PathBuf::from(dir)
@@ -34,6 +33,16 @@ fn get_db_path() -> String {
         .to_string()
 }
 
+/// Like with_db but returns Ok(None) if data dir is not initialized.
+/// Used by PersistentCache so tests that don't call init_data_dir still work.
+fn with_db_optional<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&Connection) -> R,
+{
+    let db_path = PathBuf::from(DATA_DIR.get()?.as_str()).join("oxidize.db");
+    let conn = Connection::open(&db_path).ok()?;
+    Some(f(&conn))
+}
 
 fn init_db(conn: &Connection) {
     // Create widgets table
@@ -164,7 +173,6 @@ fn seed_default_dashboard(conn: &Connection) {
     }
 }
 
-
 // Helper function to deserialize chart options from JSON string
 fn deserialize_chart_options(json: Option<&str>) -> Result<Option<ChartOptions>, String> {
     match json {
@@ -175,7 +183,6 @@ fn deserialize_chart_options(json: Option<&str>) -> Result<Option<ChartOptions>,
     }
 }
 
-
 fn with_db<F, R>(f: F) -> Result<R, String>
 where
     F: FnOnce(&Connection) -> Result<R, String>,
@@ -184,7 +191,6 @@ where
     let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?;
     f(&conn)
 }
-
 
 pub struct Storage;
 
@@ -592,7 +598,6 @@ impl Storage {
     }
 }
 
-
 // ── Persistent chart cache ──────────────────────────────────────────────
 
 /// Persistent cache for chart data fetched from Firefly.
@@ -620,64 +625,65 @@ impl PersistentCache {
 
     /// Get cached data by key. Returns None if missing or expired.
     pub fn get(key: &str) -> Option<String> {
-        with_db(|conn| {
+        with_db_optional(|conn| {
             let now = chrono::Utc::now().to_rfc3339();
-            let mut stmt = conn.prepare(
-                "SELECT data FROM chart_cache WHERE key = ?1 AND expires_at > ?2 LIMIT 1",
-            ).map_err(|e| e.to_string())?;
-            let result: Option<String> = stmt.query_row(params![key, &now], |row| row.get(0)).ok();
-            Ok(result)
-        }).unwrap_or(None)
+            let mut stmt = conn
+                .prepare("SELECT data FROM chart_cache WHERE key = ?1 AND expires_at > ?2 LIMIT 1")
+                .ok()?;
+            stmt.query_row(params![key, &now], |row| row.get(0)).ok()
+        })
+        .flatten()
     }
 
-    /// Set cached data with a TTL in seconds.
+    /// Set cached data with a TTL in seconds. No-op if DB not available.
     pub fn set(key: &str, data: &str, ttl_seconds: u64) {
         let now = chrono::Utc::now();
         let fetched_at = now.to_rfc3339();
         let expires_at = (now + chrono::Duration::seconds(ttl_seconds as i64)).to_rfc3339();
-        let _ = with_db(|conn| {
+        let _ = with_db_optional(|conn| {
             conn.execute(
                 "INSERT OR REPLACE INTO chart_cache (key, data, fetched_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
                 params![key, data, &fetched_at, &expires_at],
-            ).map_err(|e| e.to_string())
+            ).ok();
         });
     }
 
-    /// Remove a specific key from the cache.
+    /// Remove a specific key from the cache. No-op if DB not available.
     pub fn remove(key: &str) {
-        let _ = with_db(|conn| {
+        let _ = with_db_optional(|conn| {
             conn.execute("DELETE FROM chart_cache WHERE key = ?1", params![key])
-                .map_err(|e| e.to_string())
+                .ok();
         });
     }
 
     /// Clear all expired entries and optionally all entries.
     pub fn clear_all() {
-        let _ = with_db(|conn| {
-            conn.execute("DELETE FROM chart_cache", []).map_err(|e| e.to_string())
+        let _ = with_db_optional(|conn| {
+            conn.execute("DELETE FROM chart_cache", []).ok();
         });
     }
 
     /// Clear only expired entries (background cleanup).
     pub fn cleanup_expired() {
         let now = chrono::Utc::now().to_rfc3339();
-        let _ = with_db(|conn| {
+        let _ = with_db_optional(|conn| {
             conn.execute(
                 "DELETE FROM chart_cache WHERE expires_at <= ?1",
                 params![&now],
-            ).map_err(|e| e.to_string())
+            )
+            .ok();
         });
     }
 
     /// Delete a prefix-matched set of keys (e.g., "balance:*").
     pub fn clear_prefix(prefix: &str) {
         let pattern = format!("{}%", prefix);
-        let _ = with_db(|conn| {
+        let _ = with_db_optional(|conn| {
             conn.execute(
                 "DELETE FROM chart_cache WHERE key LIKE ?1",
                 params![&pattern],
-            ).map_err(|e| e.to_string())
+            )
+            .ok();
         });
     }
 }
-

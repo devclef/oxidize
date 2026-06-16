@@ -247,14 +247,20 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached earned/spent: {}", e));
         }
 
-        let result = self.get_earned_spent_with_since(start_date.clone(), end_date.clone(), period.clone(), account_ids.clone(), None)
+        let result = self
+            .get_earned_spent_with_since(
+                start_date.clone(),
+                end_date.clone(),
+                period.clone(),
+                account_ids.clone(),
+                None,
+            )
             .await;
 
         if let Ok(ref chart_line) = result {
             if let Ok(json) = serde_json::to_string(chart_line) {
-                self.cache.set_earned_spent(
-                    start_date, end_date, period, account_ids, json,
-                );
+                self.cache
+                    .set_earned_spent(start_date, end_date, period, account_ids, json);
             }
         }
 
@@ -496,7 +502,9 @@ impl FireflyClient {
 
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
@@ -587,9 +595,8 @@ impl FireflyClient {
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&chart) {
-            self.cache.set_expenses_by_category(
-                start_date, end_date, period, account_ids, json,
-            );
+            self.cache
+                .set_expenses_by_category(start_date, end_date, period, account_ids, json);
         }
 
         Ok(chart)
@@ -602,11 +609,10 @@ impl FireflyClient {
         period: Option<String>,
     ) -> Result<ChartLine, String> {
         // Check cache first
-        if let Some(cached_json) = self.cache.get_net_worth(
-            start_date.clone(),
-            end_date.clone(),
-            period.clone(),
-        ) {
+        if let Some(cached_json) =
+            self.cache
+                .get_net_worth(start_date.clone(), end_date.clone(), period.clone())
+        {
             debug!("Cache hit for net worth");
             return serde_json::from_str(&cached_json)
                 .map_err(|e| format!("Failed to deserialize cached net worth: {}", e));
@@ -614,7 +620,9 @@ impl FireflyClient {
 
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
@@ -1060,7 +1068,9 @@ impl FireflyClient {
 
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(30))
                 .format("%Y-%m-%d")
@@ -1183,9 +1193,8 @@ impl FireflyClient {
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&chart) {
-            self.cache.set_budget_spent_history(
-                start_date, end_date, period, account_ids, json,
-            );
+            self.cache
+                .set_budget_spent_history(start_date, end_date, period, account_ids, json);
         }
 
         Ok(chart)
@@ -1588,7 +1597,9 @@ impl FireflyClient {
 
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
@@ -1720,7 +1731,11 @@ impl FireflyClient {
             self.cache.set_subcategory_spend(
                 &parent_categories,
                 &subcategories,
-                start_date, end_date, period, account_ids, json,
+                start_date,
+                end_date,
+                period,
+                account_ids,
+                json,
             );
         }
 

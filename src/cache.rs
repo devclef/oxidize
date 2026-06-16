@@ -195,7 +195,11 @@ impl DataCache {
         format!("budgets:{}:{}", start, end)
     }
 
-    pub fn get_budgets(&self, start_date: Option<String>, end_date: Option<String>) -> Option<String> {
+    pub fn get_budgets(
+        &self,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Option<String> {
         let key = Self::budget_key(start_date.as_deref(), end_date.as_deref());
         Self::get_tiered(&self.budgets, &key)
     }
@@ -247,7 +251,10 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
-        format!("budget_spent_hist:{}:{}:{}:{}", start, end, period, accounts)
+        format!(
+            "budget_spent_hist:{}:{}:{}:{}",
+            start, end, period, accounts
+        )
     }
 
     pub fn get_budget_spent_history(
@@ -472,6 +479,7 @@ impl DataCache {
         Self::get_tiered(&self.subcategory_spend, &key)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_subcategory_spend(
         &self,
         parent_categories: &[String],
