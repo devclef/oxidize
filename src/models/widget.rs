@@ -34,6 +34,8 @@ pub struct Widget {
     pub width: i32,
     #[serde(default = "default_chart_height")]
     pub chart_height: i32,
+    #[serde(default)]
+    pub dashboard_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

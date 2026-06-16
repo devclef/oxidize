@@ -1581,3 +1581,371 @@ button:hover {
     color: var(--text-muted);
     margin-top: 2px;
 }
+
+/* ── Nav dashboard dropdown ──────────────────────────────────────────── */
+.nav-dashboard-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.nav-dashboard-btn {
+    color: var(--heading-color);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: inherit;
+}
+
+.nav-dashboard-btn.active {
+    background: var(--accent-light);
+    color: var(--accent-text);
+}
+
+.nav-dashboard-btn:hover {
+    background: var(--accent-light);
+    color: var(--accent-text);
+}
+
+.nav-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 200px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-hover);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.nav-dropdown-menu.open {
+    display: block;
+}
+
+.nav-dropdown-list {
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.nav-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    background: none;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast);
+}
+
+.nav-dropdown-item:hover {
+    background: var(--accent-light);
+    color: var(--accent-text);
+}
+
+.nav-dropdown-item.active {
+    background: var(--accent-light);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+
+.nav-dropdown-item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.nav-dropdown-new {
+    color: var(--accent-text);
+}
+
+.nav-dropdown-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: var(--space-1) 0;
+}
+
+/* ── Dashboard header ────────────────────────────────────────────────── */
+.dashboard-header-left {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+}
+
+.dashboard-header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.dashboard-widget-count {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    width: 90%;
+    max-width: 520px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-sm {
+    max-width: 380px;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0 var(--space-1);
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: var(--text-color);
+}
+
+.modal-body {
+    padding: var(--space-5);
+}
+
+.modal-body label {
+    display: block;
+    margin-bottom: var(--space-4);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.modal-body input[type="text"] {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    margin-top: var(--space-1);
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-sizing: border-box;
+}
+
+.modal-body input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-color)33;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+
+.btn {
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    transition: all var(--transition-fast);
+}
+
+.btn-primary {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
+}
+
+.btn-primary:hover {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    background: var(--border-color);
+}
+
+.btn-danger {
+    background: var(--error-bg);
+    color: var(--error-color);
+    border-color: var(--error-color);
+}
+
+.btn-danger:hover {
+    background: var(--error-color);
+    color: #fff;
+}
+
+.btn-sm {
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.8rem;
+}
+
+/* ── Manage dashboards list ──────────────────────────────────────────── */
+.dashboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.manage-dashboard-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: background var(--transition-fast);
+}
+
+.manage-dashboard-item.active {
+    background: var(--accent-light);
+    border-color: var(--accent-color);
+}
+
+.manage-dashboard-info {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+}
+
+.manage-dashboard-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.manage-dashboard-count {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.manage-dashboard-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.current-badge {
+    font-size: 0.75rem;
+    color: var(--accent-text);
+    font-weight: 600;
+    padding: var(--space-1) var(--space-2);
+    background: var(--accent-color)15;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Widget dashboard assignment ─────────────────────────────────────── */
+.widget-dashboard-assignment {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.dashboard-checkbox {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+}
+
+.dashboard-checkbox:hover {
+    background: var(--border-light);
+}
+
+.dashboard-checkbox input[type="checkbox"] {
+    accent-color: var(--accent-color);
+}
+
+.widget-dash-save-btn {
+    font-size: 0.8rem;
+    padding: var(--space-1) var(--space-3);
+    background: var(--accent-color);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.widget-dash-save-btn:hover {
+    background: var(--accent-hover);
+}
+
+/* ── Widget dashboard badges ─────────────────────────────────────────── */
+.widget-dash-badges {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.widget-dash-badge {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: var(--border-light);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+.widget-dash-badge.active {
+    background: var(--accent-light);
+    color: var(--accent-text);
+    border-color: var(--accent-color);
+}

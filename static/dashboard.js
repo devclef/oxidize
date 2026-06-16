@@ -3,8 +3,254 @@ const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 let widgetCharts = {};
 let widgetDatasetVisibility = {};
 let widgetsCache = [];
+let dashboardsCache = [];
+let currentDashboardId = null;
 let dashboardLocked = true;
 let dashboardGrid = null;
+
+// ── Dashboard management ──────────────────────────────────────────────
+
+async function fetchDashboards() {
+    try {
+        const res = await fetch('/api/dashboards');
+        if (!res.ok) return [];
+        return await res.json();
+    } catch {
+        return [];
+    }
+}
+
+async function loadDashboards() {
+    dashboardsCache = await fetchDashboards();
+    // Restore or pick default
+    const saved = localStorage.getItem('oxidize_current_dashboard');
+    if (saved && dashboardsCache.find(d => d.id === saved)) {
+        currentDashboardId = saved;
+    } else if (dashboardsCache.length > 0) {
+        currentDashboardId = dashboardsCache[0].id;
+    }
+    renderNavDropdown();
+}
+
+function renderNavDropdown() {
+    const list = document.getElementById('nav-dashboard-list');
+    if (!list) return;
+    list.innerHTML = '';
+    dashboardsCache.forEach(d => {
+        const item = document.createElement('button');
+        item.className = 'nav-dropdown-item' + (d.id === currentDashboardId ? ' active' : '');
+        item.textContent = d.name;
+        item.addEventListener('click', () => switchDashboard(d.id));
+        list.appendChild(item);
+    });
+
+    // Update nav button label
+    const btn = document.getElementById('nav-dashboard-btn');
+    if (btn) {
+        const current = dashboardsCache.find(d => d.id === currentDashboardId);
+        btn.childNodes[0].textContent = (current ? current.name : 'Dashboard') + ' ';
+    }
+}
+
+async function switchDashboard(id) {
+    if (id === currentDashboardId) { closeNavDropdown(); return; }
+    currentDashboardId = id;
+    localStorage.setItem('oxidize_current_dashboard', id);
+    closeNavDropdown();
+
+    const current = dashboardsCache.find(d => d.id === id);
+    const titleEl = document.getElementById('dashboard-title');
+    if (titleEl) titleEl.textContent = current ? current.name : 'Dashboard';
+
+    await renderDashboard();
+}
+
+function closeNavDropdown() {
+    const menu = document.getElementById('nav-dropdown-menu');
+    if (menu) menu.classList.remove('open');
+}
+
+// ── New dashboard modal ───────────────────────────────────────────────
+
+function openNewDashboardModal() {
+    closeNavDropdown();
+    const overlay = document.getElementById('new-dashboard-modal-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        const input = document.getElementById('new-dashboard-name');
+        if (input) { input.value = ''; input.focus(); }
+    }
+}
+
+function closeNewDashboardModal() {
+    const overlay = document.getElementById('new-dashboard-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function createNewDashboard() {
+    const input = document.getElementById('new-dashboard-name');
+    const name = (input ? input.value.trim() : '');
+    if (!name) { input.focus(); return; }
+
+    const id = 'dash_' + Date.now();
+    try {
+        const res = await fetch('/api/dashboards', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, name })
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || 'Failed to create');
+        }
+        dashboardsCache = await fetchDashboards();
+        renderNavDropdown();
+        closeNewDashboardModal();
+        await switchDashboard(id);
+    } catch (e) {
+        alert('Failed to create dashboard: ' + e.message);
+    }
+}
+
+// ── Manage dashboards modal ───────────────────────────────────────────
+
+function openManageModal() {
+    closeNavDropdown();
+    const overlay = document.getElementById('manage-modal-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        renderManageList();
+    }
+}
+
+function closeManageModal() {
+    const overlay = document.getElementById('manage-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function renderManageList() {
+    const container = document.getElementById('manage-dashboard-list');
+    if (!container) return;
+
+    const dashboards = dashboardsCache;
+    const allWidgets = await getDashboardWidgets();
+
+    let html = '';
+    dashboards.forEach(d => {
+        const widgetCount = allWidgets.filter(w => (w.dashboard_ids || []).includes(d.id)).length;
+        const isCurrent = d.id === currentDashboardId;
+        const isDefault = d.id === 'default';
+        html += `
+            <div class="manage-dashboard-item ${isCurrent ? 'active' : ''}">
+                <div class="manage-dashboard-info">
+                    <span class="manage-dashboard-name">${d.name}</span>
+                    <span class="manage-dashboard-count">${widgetCount} widget${widgetCount !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="manage-dashboard-actions">
+                    ${!isCurrent ? `<button class="btn btn-sm" onclick="switchDashboard('${d.id}'); closeManageModal();">Switch</button>` : '<span class="current-badge">Current</span>'}
+                    <button class="btn btn-sm btn-secondary" onclick="renameDashboard('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Rename</button>
+                    ${!isDefault ? `<button class="btn btn-sm btn-danger" onclick="deleteDashboardConfirm('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Delete</button>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+async function renameDashboard(id, oldName) {
+    const name = prompt('New dashboard name:', oldName);
+    if (!name || name.trim() === oldName) return;
+    try {
+        const res = await fetch(`/api/dashboards/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, name: name.trim() })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        dashboardsCache = await fetchDashboards();
+        renderNavDropdown();
+        renderManageList();
+        const titleEl = document.getElementById('dashboard-title');
+        if (titleEl && id === currentDashboardId) {
+            const d = dashboardsCache.find(dd => dd.id === id);
+            titleEl.textContent = d ? d.name : 'Dashboard';
+        }
+    } catch (e) {
+        alert('Failed to rename: ' + e.message);
+    }
+}
+
+async function deleteDashboardConfirm(id, name) {
+    if (!confirm(`Delete dashboard "${name}"? Widgets will lose this dashboard assignment.`)) return;
+    try {
+        const res = await fetch(`/api/dashboards/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(await res.text());
+        dashboardsCache = await fetchDashboards();
+        // If we deleted the current one, switch to first available
+        if (id === currentDashboardId) {
+            currentDashboardId = dashboardsCache[0] ? dashboardsCache[0].id : null;
+            localStorage.setItem('oxidize_current_dashboard', currentDashboardId);
+            const titleEl = document.getElementById('dashboard-title');
+            if (titleEl) {
+                const d = dashboardsCache.find(dd => dd.id === currentDashboardId);
+                titleEl.textContent = d ? d.name : 'Dashboard';
+            }
+            await renderDashboard();
+        }
+        renderNavDropdown();
+        renderManageList();
+    } catch (e) {
+        alert('Failed to delete: ' + e.message);
+    }
+}
+
+// ── Widget-to-dashboard assignment (in widget settings) ───────────────
+
+function buildDashboardCheckboxes(widget) {
+    const widgetDashIds = widget.dashboard_ids || [];
+    let html = '<div class="widget-dashboard-assignment">';
+    dashboardsCache.forEach(d => {
+        const checked = widgetDashIds.includes(d.id) ? 'checked' : '';
+        html += `
+            <label class="checkbox-label dashboard-checkbox">
+                <input type="checkbox" id="${widget.id}-dash-${d.id}" value="${d.id}" ${checked}>
+                ${d.name}
+            </label>
+        `;
+    });
+    html += '</div>';
+    return html;
+}
+
+async function saveWidgetDashboardAssignment(widgetId) {
+    const checkboxes = document.querySelectorAll(`[id^="${widgetId}-dash-"]:checked`);
+    const newDashIds = Array.from(checkboxes).map(cb => cb.value);
+
+    const widgets = await getDashboardWidgets();
+    const w = widgets.find(ww => ww.id === widgetId);
+    if (!w) return;
+
+    w.dashboard_ids = newDashIds;
+    w.updated_at = new Date().toISOString();
+
+    try {
+        const res = await fetch(`/api/widgets/${widgetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(w)
+        });
+        if (!res.ok) throw new Error(await res.text());
+
+        // If this widget was removed from the current dashboard, re-render
+        if (!newDashIds.includes(currentDashboardId)) {
+            await renderDashboard();
+        }
+    } catch (e) {
+        alert('Failed to update dashboard assignment: ' + e.message);
+    }
+}
+
+// ── End dashboard management ──────────────────────────────────────────
 
 // Parse a chart label that may be a date string or quarterly format like "2025-Q1"
 function parseChartLabel(label) {
@@ -782,6 +1028,7 @@ function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
             maintainAspectRatio: false,
             scales: {
                 y: {
+                    beginAtZero: true,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
@@ -940,6 +1187,20 @@ function mergePartialChartIntoExisting(chartInstance, partialChart) {
     return merged;
 }
 
+// Helper: extract labels from chart history data
+function extractChartLabels(history) {
+    let labels = [];
+    const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
+    if (firstDataset) {
+        if (Array.isArray(firstDataset.entries)) {
+            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
+        } else {
+            labels = Object.keys(firstDataset.entries);
+        }
+    }
+    return labels;
+}
+
 async function renderWidgetChart(widget, containerId, allAccounts, allGroups = []) {
     const ctx = document.getElementById(containerId).getContext('2d');
 
@@ -1039,15 +1300,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         }
 
         // Extract labels
-        let labels = [];
-        const firstDataset = history.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
-        if (firstDataset) {
-            if (Array.isArray(firstDataset.entries)) {
-                labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
-            } else {
-                labels = Object.keys(firstDataset.entries);
-            }
-        }
+        let labels = extractChartLabels(history);
 
         // Handle earned vs spent widget type
         if (widgetType === 'earned_spent') {
@@ -1648,19 +1901,35 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
 
 async function renderDashboard() {
     const container = document.getElementById('dashboard-container');
-    const widgets = await getDashboardWidgets();
+    const allWidgets = await getDashboardWidgets();
+
+    // Filter widgets by current dashboard
+    let widgets = allWidgets.filter(w => (w.dashboard_ids || []).includes(currentDashboardId));
+
+    // Ensure dashboard_ids exists on all widgets
+    allWidgets.forEach(w => {
+        if (!w.dashboard_ids) w.dashboard_ids = [];
+    });
 
     if (widgets.length === 0) {
+        const dashName = dashboardsCache.find(d => d.id === currentDashboardId)?.name || 'this dashboard';
         container.innerHTML = `
             <div class="empty-dashboard">
-                <h3>No Widgets Yet</h3>
-                <p>Go to the <a href="/">Graph Builder</a> to create your first widget.</p>
+                <h3>No Widgets on ${dashName}</h3>
+                <p>Go to the <a href="/">Graph Builder</a> to create your first widget, then assign it to this dashboard in widget settings.</p>
             </div>
         `;
+        // Update widget count
+        const countEl = document.getElementById('dashboard-widget-count');
+        if (countEl) countEl.textContent = '';
         return;
     }
 
     widgetsCache = widgets;
+
+    // Update widget count badge
+    const countEl = document.getElementById('dashboard-widget-count');
+    if (countEl) countEl.textContent = `${widgets.length} widget${widgets.length !== 1 ? 's' : ''}`;
 
     // Fetch all accounts and groups
     const allAccounts = await fetchAccounts();
@@ -1719,6 +1988,13 @@ async function renderDashboard() {
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
+
+        // Dashboard assignment badges
+        const widgetDashIds = widget.dashboard_ids || [];
+        const dashBadges = widgetDashIds.map(did => {
+            const d = dashboardsCache.find(dd => dd.id === did);
+            return d ? `<span class="widget-dash-badge ${did === currentDashboardId ? 'active' : ''}">${d.name}</span>` : '';
+        }).join('');
 
         html += `
             <div class="widget" data-widget-id="${widget.id}" data-cols="${widget.width || 12}">
@@ -1809,20 +2085,25 @@ async function renderDashboard() {
                         <label>Forecast Days: <input type="number" id="${widget.id}-forecast-days" value="${chartOpts.forecastDays}" min="1" max="365" style="width: 60px;"></label>
                         ` : ''}
                     </div>
-                        <div class="widget-settings-section" style="border-bottom: none; padding-bottom: 0;">
-                            <strong>Width</strong>
-                            <label>
-                                <select id="${widget.id}-width" style="width: 120px;">
-                                    <option value="12" ${widget.width === undefined || widget.width === 12 ? 'selected' : ''}>Full (12)</option>
-                                    <option value="6" ${widget.width === 6 ? 'selected' : ''}>Half (6)</option>
-                                    <option value="4" ${widget.width === 4 ? 'selected' : ''}>Third (4)</option>
-                                    <option value="3" ${widget.width === 3 ? 'selected' : ''}>Quarter (3)</option>
-                                    <option value="2" ${widget.width === 2 ? 'selected' : ''}>Half Third (2)</option>
-                                    <option value="1" ${widget.width === 1 ? 'selected' : ''}>Narrow (1)</option>
-                                </select>
-                            </label>
-                        </div>
-                        <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
+                    <div class="widget-settings-section">
+                        <strong>Width</strong>
+                        <label>
+                            <select id="${widget.id}-width" style="width: 120px;">
+                                <option value="12" ${widget.width === undefined || widget.width === 12 ? 'selected' : ''}>Full (12)</option>
+                                <option value="6" ${widget.width === 6 ? 'selected' : ''}>Half (6)</option>
+                                <option value="4" ${widget.width === 4 ? 'selected' : ''}>Third (4)</option>
+                                <option value="3" ${widget.width === 3 ? 'selected' : ''}>Quarter (3)</option>
+                                <option value="2" ${widget.width === 2 ? 'selected' : ''}>Half Third (2)</option>
+                                <option value="1" ${widget.width === 1 ? 'selected' : ''}>Narrow (1)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="widget-settings-section">
+                        <strong>Assign to Dashboards</strong>
+                        ${buildDashboardCheckboxes(widget)}
+                        <button class="widget-dash-save-btn" onclick="saveWidgetDashboardAssignment('${widget.id}')">Save Assignment</button>
+                    </div>
+                    <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
                 </div>
                 <div class="widget-body">
                     <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>
@@ -1838,6 +2119,7 @@ async function renderDashboard() {
                         <div class="widget-mode">
                             ${widgetTypeBadge}
                             ${widgetType === 'balance' ? `<span class="widget-mode-badge">${widget.chart_mode}</span>` : ''}
+                            ${dashBadges ? `<div class="widget-dash-badges">${dashBadges}</div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -2040,7 +2322,7 @@ async function renderDashboard() {
             dragClass: 'sortable-drag',
             onEnd: function(evt) {
                 const newOrder = [];
-                grid.querySelectorAll('.widget').forEach(el => {
+                dashboardGrid.querySelectorAll('.widget').forEach(el => {
                     const id = el.getAttribute('data-widget-id');
                     if (id) newOrder.push(id);
                 });
@@ -2100,7 +2382,7 @@ async function renderDashboard() {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Register percentage labels plugin
     if (typeof Chart !== 'undefined') {
         Chart.register(pctLabelPlugin);
@@ -2114,6 +2396,57 @@ document.addEventListener('DOMContentLoaded', () => {
     if (themeToggle) {
         themeToggle.addEventListener('click', toggleTheme);
     }
+
+    // Load dashboards and set up nav dropdown
+    await loadDashboards();
+
+    // Set dashboard title
+    const current = dashboardsCache.find(d => d.id === currentDashboardId);
+    const titleEl = document.getElementById('dashboard-title');
+    if (titleEl) titleEl.textContent = current ? current.name : 'Dashboard';
+
+    // Nav dropdown toggle
+    const navBtn = document.getElementById('nav-dashboard-btn');
+    const navMenu = document.getElementById('nav-dropdown-menu');
+    if (navBtn && navMenu) {
+        navBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navMenu.classList.toggle('open');
+        });
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!navMenu.contains(e.target)) {
+                navMenu.classList.remove('open');
+            }
+        });
+    }
+
+    // New dashboard button
+    const newDashBtn = document.getElementById('nav-new-dashboard-btn');
+    if (newDashBtn) newDashBtn.addEventListener('click', openNewDashboardModal);
+
+    // Manage dashboards button
+    const manageDashBtn = document.getElementById('nav-manage-dashboards-btn');
+    if (manageDashBtn) manageDashBtn.addEventListener('click', openManageModal);
+
+    // New dashboard modal events
+    document.getElementById('new-dashboard-modal-close')?.addEventListener('click', closeNewDashboardModal);
+    document.getElementById('new-dashboard-cancel')?.addEventListener('click', closeNewDashboardModal);
+    document.getElementById('new-dashboard-create')?.addEventListener('click', createNewDashboard);
+    document.getElementById('new-dashboard-name')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') createNewDashboard();
+    });
+
+    // Manage modal close
+    document.getElementById('manage-modal-close')?.addEventListener('click', closeManageModal);
+
+    // Close modals on overlay click
+    document.getElementById('new-dashboard-modal-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeNewDashboardModal();
+    });
+    document.getElementById('manage-modal-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeManageModal();
+    });
 
     // Dashboard lock/unlock toggle
     const lockToggle = document.getElementById('dashboard-lock-toggle');

@@ -95,6 +95,7 @@ fn test_widget_serialization_includes_new_fields() {
         display_order: 3,
         width: 4,
         chart_height: 350,
+        dashboard_ids: vec![],
         created_at: None,
         updated_at: None,
     };
