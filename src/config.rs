@@ -72,11 +72,11 @@ impl Config {
                 .unwrap_or("./data".to_string())
         });
 
-        // Parse CACHE_TTL: cache TTL in seconds (default: 300 = 5 minutes)
+        // Parse CACHE_TTL: cache TTL in seconds (default: 3600 = 1 hour)
         let cache_ttl = env::var("CACHE_TTL")
-            .unwrap_or_else(|_| "300".to_string())
+            .unwrap_or_else(|_| "3600".to_string())
             .parse::<u64>()
-            .unwrap_or(300);
+            .unwrap_or(3600);
 
         // Parse TIME_RANGES: comma-separated list of relative time range presets
         let time_ranges = env::var("TIME_RANGES")

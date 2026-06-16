@@ -55,6 +55,31 @@ impl FireflyClient {
         info!("Budget spent cache cleared");
     }
 
+    pub fn clear_earned_spent_cache(&self) {
+        self.cache.clear_earned_spent();
+        info!("Earned/spent cache cleared");
+    }
+
+    pub fn clear_expenses_category_cache(&self) {
+        self.cache.clear_expenses_by_category();
+        info!("Expenses by category cache cleared");
+    }
+
+    pub fn clear_net_worth_cache(&self) {
+        self.cache.clear_net_worth();
+        info!("Net worth cache cleared");
+    }
+
+    pub fn clear_subcategory_spend_cache(&self) {
+        self.cache.clear_subcategory_spend();
+        info!("Subcategory spend cache cleared");
+    }
+
+    pub fn clear_budget_spent_history_cache(&self) {
+        self.cache.clear_budget_spent_history();
+        info!("Budget spent history cache cleared");
+    }
+
     pub async fn get_accounts(
         &self,
         type_filter: Option<String>,
@@ -210,8 +235,30 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
-        self.get_earned_spent_with_since(start_date, end_date, period, account_ids, None)
-            .await
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_earned_spent(
+            start_date.clone(),
+            end_date.clone(),
+            period.clone(),
+            account_ids.clone(),
+        ) {
+            debug!("Cache hit for earned/spent");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached earned/spent: {}", e));
+        }
+
+        let result = self.get_earned_spent_with_since(start_date.clone(), end_date.clone(), period.clone(), account_ids.clone(), None)
+            .await;
+
+        if let Ok(ref chart_line) = result {
+            if let Ok(json) = serde_json::to_string(chart_line) {
+                self.cache.set_earned_spent(
+                    start_date, end_date, period, account_ids, json,
+                );
+            }
+        }
+
+        result
     }
 
     pub async fn get_earned_spent_with_since(
@@ -435,15 +482,27 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_expenses_by_category(
+            start_date.clone(),
+            end_date.clone(),
+            period.clone(),
+            account_ids.clone(),
+        ) {
+            debug!("Cache hit for expenses by category");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached expenses: {}", e));
+        }
+
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-        let start = start_date.unwrap_or_else(|| {
+        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
                 .to_string()
         });
-        let period_val = period.unwrap_or_else(|| "1M".to_string());
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref())
@@ -526,6 +585,13 @@ impl FireflyClient {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_expenses_by_category(
+                start_date, end_date, period, account_ids, json,
+            );
+        }
+
         Ok(chart)
     }
 
@@ -535,15 +601,26 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
     ) -> Result<ChartLine, String> {
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_net_worth(
+            start_date.clone(),
+            end_date.clone(),
+            period.clone(),
+        ) {
+            debug!("Cache hit for net worth");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached net worth: {}", e));
+        }
+
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-        let start = start_date.unwrap_or_else(|| {
+        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
                 .to_string()
         });
-        let period_val = period.unwrap_or_else(|| "1M".to_string());
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let url = format!(
             "{}/v1/chart/account/overview",
@@ -629,12 +706,19 @@ impl FireflyClient {
                 .cmp(b["date"].as_str().unwrap_or(""))
         });
 
-        Ok(vec![ChartDataSet {
+        let result = vec![ChartDataSet {
             label: "Net Worth".to_string(),
             currency_symbol,
             currency_code,
             entries: serde_json::Value::Array(entries_vec),
-        }])
+        }];
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_net_worth(start_date, end_date, period, json);
+        }
+
+        Ok(result)
     }
 
     pub async fn get_monthly_summary(
@@ -962,15 +1046,27 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_budget_spent_history(
+            start_date.clone(),
+            end_date.clone(),
+            period.clone(),
+            account_ids.clone(),
+        ) {
+            debug!("Cache hit for budget spent history");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached budget spent hist: {}", e));
+        }
+
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-        let start = start_date.unwrap_or_else(|| {
+        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(30))
                 .format("%Y-%m-%d")
                 .to_string()
         });
-        let period_val = period.unwrap_or_else(|| "1D".to_string());
+        let period_val = period.clone().unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref())
@@ -1084,6 +1180,14 @@ impl FireflyClient {
             start,
             end
         );
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_budget_spent_history(
+                start_date, end_date, period, account_ids, json,
+            );
+        }
+
         Ok(chart)
     }
 
@@ -1468,15 +1572,29 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
     ) -> Result<ChartLine, String> {
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_subcategory_spend(
+            &parent_categories,
+            &subcategories,
+            start_date.clone(),
+            end_date.clone(),
+            period.clone(),
+            account_ids.clone(),
+        ) {
+            debug!("Cache hit for subcategory spend");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached subcat spend: {}", e));
+        }
+
         use crate::models::chart::ChartDataSet;
 
-        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-        let start = start_date.unwrap_or_else(|| {
+        let end = end_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
             (Utc::now() - Duration::days(365))
                 .format("%Y-%m-%d")
                 .to_string()
         });
-        let period_val = period.unwrap_or_else(|| "1M".to_string());
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref())
@@ -1596,6 +1714,15 @@ impl FireflyClient {
                 .partial_cmp(&sum_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_subcategory_spend(
+                &parent_categories,
+                &subcategories,
+                start_date, end_date, period, account_ids, json,
+            );
+        }
 
         Ok(chart)
     }
