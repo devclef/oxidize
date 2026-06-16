@@ -123,6 +123,12 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN parent_categories TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+
+    // Migration: Add subcategories column if it doesn't exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN subcategories TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
 }
 
 // Helper function to deserialize chart options from JSON string
@@ -153,7 +159,7 @@ impl Storage {
         with_db(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, start_date, end_date, interval, chart_mode,
+                    "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
@@ -168,18 +174,19 @@ impl Storage {
                     let budget_ids_json: String = row.get(4)?;
                     let budget_names_json: String = row.get(5)?;
                     let parent_categories_json: String = row.get(6)?;
-                    let start_date: Option<String> = row.get(7)?;
-                    let end_date: Option<String> = row.get(8)?;
-                    let interval: Option<String> = row.get(9)?;
-                    let chart_mode: Option<String> = row.get(10)?;
-                    let widget_type: Option<String> = row.get(11)?;
-                    let chart_options_json: Option<String> = row.get(12)?;
-                    let display_order: i32 = row.get(13)?;
-                    let width: i32 = row.get(14)?;
-                    let chart_height: i32 = row.get(15)?;
-                    let created_at: Option<String> = row.get(16)?;
-                    let updated_at: Option<String> = row.get(17)?;
-                    let earned_chart_type: Option<String> = row.get(18)?;
+                    let subcategories_json: String = row.get(7)?;
+                    let start_date: Option<String> = row.get(8)?;
+                    let end_date: Option<String> = row.get(9)?;
+                    let interval: Option<String> = row.get(10)?;
+                    let chart_mode: Option<String> = row.get(11)?;
+                    let widget_type: Option<String> = row.get(12)?;
+                    let chart_options_json: Option<String> = row.get(13)?;
+                    let display_order: i32 = row.get(14)?;
+                    let width: i32 = row.get(15)?;
+                    let chart_height: i32 = row.get(16)?;
+                    let created_at: Option<String> = row.get(17)?;
+                    let updated_at: Option<String> = row.get(18)?;
+                    let earned_chart_type: Option<String> = row.get(19)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -196,6 +203,9 @@ impl Storage {
                     let parent_categories: Vec<String> =
                         serde_json::from_str(&parent_categories_json).unwrap_or_default();
 
+                    let subcategories: Vec<String> =
+                        serde_json::from_str(&subcategories_json).unwrap_or_default();
+
                     let chart_options =
                         deserialize_chart_options(chart_options_json.as_deref()).unwrap_or(None);
 
@@ -207,6 +217,7 @@ impl Storage {
                         budget_ids,
                         budget_names,
                         parent_categories,
+                        subcategories,
                         start_date,
                         end_date,
                         interval,
@@ -247,11 +258,14 @@ impl Storage {
         let parent_categories_json =
             serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
 
+        let subcategories_json =
+            serde_json::to_string(&widget.subcategories).map_err(|e| e.to_string())?;
+
         with_db(|conn| {
             conn.execute(
-                "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, start_date, end_date, interval,
+                "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -260,6 +274,7 @@ impl Storage {
                     &budget_ids_json,
                     &budget_names_json,
                     &parent_categories_json,
+                    &subcategories_json,
                     &widget.start_date,
                     &widget.end_date,
                     &widget.interval,
@@ -298,15 +313,18 @@ impl Storage {
         let parent_categories_json =
             serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
 
+        let subcategories_json =
+            serde_json::to_string(&widget.subcategories).map_err(|e| e.to_string())?;
+
         with_db(|conn| {
             let rows = conn
                 .execute(
                     "UPDATE widgets SET
-                    name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6,
-                    start_date = ?7, end_date = ?8, interval = ?9, chart_mode = ?10,
-                    widget_type = ?11, chart_options = ?12, earned_chart_type = ?13,
-                    display_order = ?14, width = ?15, chart_height = ?16, updated_at = ?17
-                 WHERE id = ?18",
+                    name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7,
+                    start_date = ?8, end_date = ?9, interval = ?10, chart_mode = ?11,
+                    widget_type = ?12, chart_options = ?13, earned_chart_type = ?14,
+                    display_order = ?15, width = ?16, chart_height = ?17, updated_at = ?18
+                 WHERE id = ?19",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -314,6 +332,7 @@ impl Storage {
                         &budget_ids_json,
                         &budget_names_json,
                         &parent_categories_json,
+                        &subcategories_json,
                         &widget.start_date,
                         &widget.end_date,
                         &widget.interval,

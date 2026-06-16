@@ -1000,6 +1000,9 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             // Add parent categories
             const parentCategories = widget.parent_categories || [];
             parentCategories.forEach(name => params.append('parent_categories[]', name));
+            // Add specific subcategories if any were selected
+            const widgetSubcategories = widget.subcategories || [];
+            widgetSubcategories.forEach(name => params.append('subcategories[]', name));
             // Add account IDs for filtering
             const groupIds = widget.group_ids || [];
             const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);

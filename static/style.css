@@ -1425,6 +1425,34 @@ button:hover {
     opacity: 1;
 }
 
+.category-card-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+
+.category-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    padding: 2px 4px;
+    line-height: 1;
+    transition: color var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.category-expand-btn:hover {
+    color: var(--accent-color);
+    background: none;
+}
+
+.category-expand-btn.expanded {
+    color: var(--accent-color);
+}
+
 .category-card input[type="checkbox"] {
     margin: 0;
     margin-top: 2px;
@@ -1464,6 +1492,60 @@ button:hover {
     flex-shrink: 0;
 }
 
+/* Subcategory preview pills (collapsed state) */
+.subcategory-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: 2px;
+}
+
+.subcat-more {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 1px var(--space-2);
+}
+
+/* Expanded subcategory list */
+.subcategory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: var(--space-2);
+    padding-left: var(--space-4);
+    border-left: 2px solid var(--border-light);
+}
+
+.subcategory-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.subcategory-item:hover {
+    background: var(--border-light);
+}
+
+.subcategory-item input[type="checkbox"] {
+    width: 13px;
+    height: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.subcategory-name {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Subcategory pills */
 .category-subcat-pills {
     display: flex;
     flex-wrap: wrap;
@@ -1479,9 +1561,15 @@ button:hover {
     border-radius: var(--radius-full);
     white-space: nowrap;
     cursor: default;
+    transition: all var(--transition-fast);
 }
 
 .subcat-pill:hover {
+    background: var(--accent-color);
+    color: white;
+}
+
+.subcat-pill.selected {
     background: var(--accent-color);
     color: white;
 }

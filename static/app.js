@@ -494,11 +494,19 @@ async function fetchChartData() {
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
 
-            // Add selected parent categories
-            const selectedCategoryCheckboxes = document.querySelectorAll('.category-select:checked');
-            const selectedCategoryNames = Array.from(selectedCategoryCheckboxes).map(cb => cb.value);
-            if (selectedCategoryNames.length === 0) {
-                chartErrorEl.innerHTML = '<div class="info">Please select at least one category.</div>';
+            // Collect selected parent categories and subcategories from state
+            const selectedParentCategories = [];
+            const selectedSubcatFullNames = [];
+            for (const [parent, subcatSet] of selectedSubcategories) {
+                if (subcatSet.size > 0) {
+                    selectedParentCategories.push(parent);
+                    for (const sub of subcatSet) {
+                        selectedSubcatFullNames.push(parent + ':' + sub);
+                    }
+                }
+            }
+            if (selectedParentCategories.length === 0) {
+                chartErrorEl.innerHTML = '<div class="info">Please select at least one subcategory.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
                     balanceChart.destroy();
@@ -506,7 +514,8 @@ async function fetchChartData() {
                 }
                 return;
             }
-            selectedCategoryNames.forEach(name => params.append('parent_categories[]', name));
+            selectedParentCategories.forEach(name => params.append('parent_categories[]', name));
+            selectedSubcatFullNames.forEach(name => params.append('subcategories[]', name));
 
             // Add account IDs for filtering
             const selectedAccountIds = getSelectedAccountIds();
@@ -2564,9 +2573,17 @@ async function saveGraphAsWidget() {
     const selectedBudgetIds = Array.from(selectedBudgetCheckboxes).map(cb => cb.value);
     const selectedBudgetNames = Array.from(selectedBudgetCheckboxes).map(cb => cb.dataset.name);
 
-    // Get selected parent categories
-    const selectedCategoryCheckboxes = document.querySelectorAll('.category-select:checked');
-    const selectedParentCategories = Array.from(selectedCategoryCheckboxes).map(cb => cb.value);
+    // Get selected parent categories and subcategories from state
+    const selectedParentCategories = [];
+    const selectedSubcatFullNames = [];
+    for (const [parent, subcatSet] of selectedSubcategories) {
+        if (subcatSet.size > 0) {
+            selectedParentCategories.push(parent);
+            for (const sub of subcatSet) {
+                selectedSubcatFullNames.push(parent + ':' + sub);
+            }
+        }
+    }
 
     // Only balance widget type requires accounts
     if (widgetType === 'balance' && selectedIds.length === 0) {
@@ -2617,6 +2634,7 @@ async function saveGraphAsWidget() {
         budget_ids: selectedBudgetIds,
         budget_names: selectedBudgetNames,
         parent_categories: selectedParentCategories,
+        subcategories: selectedSubcatFullNames,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -3262,10 +3280,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+
     // Category state
     let allCategories = [];
     let categorySearchFilter = '';
     let categorySortMode = 'subcat_desc';
+    // Track expanded state per category name
+    let categoryExpanded = {};
+    // Track selected subcategories: Map<parentName, Set<subcatName>>
+    let selectedSubcategories = new Map();
 
     async function fetchCategories() {
         try {
@@ -3290,6 +3313,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'subcat_asc':
                 sorted.sort((a, b) => a.subcategories.length - b.subcategories.length || a.name.localeCompare(b.name));
                 break;
+            case 'PLACEHOLDER_REMOVE':
+                sorted.sort((a, b) => a.subcategories.length - b.subcategories.length || a.name.localeCompare(b.name));
+                break;
             case 'name_desc':
                 sorted.sort((a, b) => b.name.localeCompare(a.name));
                 break;
@@ -3301,12 +3327,70 @@ document.addEventListener('DOMContentLoaded', () => {
         return sorted;
     }
 
+    function countSelectedSubcats() {
+        let total = 0;
+        for (const [, set] of selectedSubcategories) {
+            total += set.size;
+        }
+        return total;
+    }
+
+    function countTotalSubcats() {
+        return allCategories.reduce((sum, c) => sum + c.subcategories.length, 0);
+    }
+
     function updateCategoryBadge() {
         const badge = document.getElementById('categories-count-badge');
         if (!badge) return;
-        const total = allCategories.length;
-        const checked = document.querySelectorAll('.category-select:checked').length;
-        badge.textContent = checked > 0 ? `${checked}/${total} selected` : `${total} categories`;
+        const sel = countSelectedSubcats();
+        const total = countTotalSubcats();
+        const catsWithSelection = allCategories.filter(c => {
+            const set = selectedSubcategories.get(c.name);
+            return set && set.size > 0;
+        }).length;
+        if (sel > 0) {
+            badge.textContent = `${sel} subcat${sel !== 1 ? 's' : ''} in ${catsWithSelection} cat${catsWithSelection !== 1 ? 's' : ''}`;
+        } else {
+            badge.textContent = `${allCategories.length} categories`;
+        }
+    }
+
+    function toggleCategoryExpand(catName) {
+        categoryExpanded[catName] = !categoryExpanded[catName];
+        renderCategories();
+    }
+
+    function toggleParentCategory(catName) {
+        const cat = allCategories.find(c => c.name === catName);
+        if (!cat) return;
+        const set = selectedSubcategories.get(catName);
+        if (set && set.size === cat.subcategories.length) {
+            // Deselect all
+            selectedSubcategories.delete(catName);
+        } else {
+            // Select all
+            selectedSubcategories.set(catName, new Set(cat.subcategories));
+        }
+        renderCategories();
+        updateCategoryBadge();
+        fetchChartData();
+    }
+
+    function toggleSubcategory(parentName, subcatName) {
+        let set = selectedSubcategories.get(parentName);
+        if (!set) {
+            set = new Set();
+            selectedSubcategories.set(parentName, set);
+        }
+        if (set.has(subcatName)) {
+            set.delete(subcatName);
+            if (set.size === 0) selectedSubcategories.delete(parentName);
+        } else {
+            set.add(subcatName);
+        }
+        renderCategories();
+        updateCategoryBadge();
+        fetchChartData();
     }
 
     function renderCategories() {
@@ -3334,18 +3418,57 @@ document.addEventListener('DOMContentLoaded', () => {
         let html = '<div class="account-list">';
         filtered.forEach(cat => {
             const subcatCount = cat.subcategories.length;
-            const subcatPills = subcatCount > 0
-                ? `<div class="category-subcat-pills">${cat.subcategories.map(s => `<span class="subcat-pill">${s}</span>`).join('')}</div>`
-                : '<span class="subcat-count">No subcategories</span>';
+            const isExpanded = categoryExpanded[cat.name] || false;
+            const selectedSet = selectedSubcategories.get(cat.name) || new Set();
+            const selectedCount = selectedSet.size;
+            const allSelected = subcatCount > 0 && selectedCount === subcatCount;
+            const someSelected = selectedCount > 0 && selectedCount < subcatCount;
+            const noneSelected = selectedCount === 0;
+
+            // Parent checkbox state
+            const parentChecked = allSelected ? 'checked' : '';
+            const parentIndeterminate = someSelected ? 'data-indeterminate="true"' : '';
+
+            // Expand/collapse icon
+            const expandIcon = isExpanded ? '▼' : '▶';
+            const expandClass = isExpanded ? 'expanded' : '';
+
+            // Subcategory list (shown when expanded)
+            let subcatListHtml = '';
+            if (isExpanded && subcatCount > 0) {
+                subcatListHtml = '<div class="subcategory-list">';
+                cat.subcategories.forEach(subcat => {
+                    const subChecked = selectedSet.has(subcat) ? 'checked' : '';
+                    subcatListHtml += `
+                        <label class="subcategory-item">
+                            <input type="checkbox" class="subcategory-select" value="${subcat}" ${subChecked}>
+                            <span class="subcategory-name">${subcat}</span>
+                        </label>
+                    `;
+                });
+                subcatListHtml += '</div>';
+            } else if (!isExpanded && subcatCount > 0) {
+                // Show preview pills when collapsed
+                const preview = cat.subcategories.slice(0, 5);
+                const more = subcatCount > 5 ? ` <span class="subcat-more">+${subcatCount - 5} more</span>` : '';
+                subcatListHtml = `<div class="subcategory-preview">${preview.map(s => {
+                    const sel = selectedSet.has(s) ? ' selected' : '';
+                    return `<span class="subcat-pill${sel}">${s}</span>`;
+                }).join('')}${more}</div>`;
+            }
+
             html += `
                 <div class="account-card category-card" data-category-name="${cat.name}">
-                    <input type="checkbox" class="category-select" value="${cat.name}" data-name="${cat.name}">
+                    <div class="category-card-left">
+                        <button class="category-expand-btn ${expandClass}" title="Expand/collapse">${expandIcon}</button>
+                        <input type="checkbox" class="category-select" value="${cat.name}" data-name="${cat.name}" ${parentChecked} ${parentIndeterminate}>
+                    </div>
                     <div class="account-info">
                         <div class="category-header-row">
                             <span class="account-name">${cat.name}</span>
-                            <span class="subcat-count">${subcatCount} subcat${subcatCount !== 1 ? 's' : ''}</span>
+                            <span class="subcat-count">${selectedCount > 0 ? `${selectedCount}/` : ''}${subcatCount} subcat${subcatCount !== 1 ? 's' : ''}</span>
                         </div>
-                        ${subcatPills}
+                        ${subcatListHtml}
                     </div>
                 </div>
             `;
@@ -3353,25 +3476,51 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '</div>';
         container.innerHTML = html;
 
-        // Wire up checkbox change handlers for auto-refresh
+        // Wire up parent checkbox handlers
         container.querySelectorAll('.category-select').forEach(cb => {
             cb.addEventListener('change', () => {
-                updateCategoryBadge();
-                fetchChartData();
+                toggleParentCategory(cb.value);
             });
+        });
+
+        // Wire up subcategory checkbox handlers
+        container.querySelectorAll('.subcategory-select').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const card = cb.closest('.category-card');
+                const parentName = card ? card.dataset.categoryName : '';
+                toggleSubcategory(parentName, cb.value);
+            });
+        });
+
+        // Wire up expand button handlers
+        container.querySelectorAll('.category-expand-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const card = btn.closest('.category-card');
+                const parentName = card ? card.dataset.categoryName : '';
+                toggleCategoryExpand(parentName);
+            });
+        });
+
+        // Set indeterminate state for parent checkboxes
+        container.querySelectorAll('.category-select[data-indeterminate="true"]').forEach(cb => {
+            cb.indeterminate = true;
         });
 
         updateCategoryBadge();
     }
 
     function selectAllCategories() {
-        document.querySelectorAll('.category-select').forEach(cb => cb.checked = true);
+        allCategories.forEach(cat => {
+            selectedSubcategories.set(cat.name, new Set(cat.subcategories));
+        });
+        renderCategories();
         updateCategoryBadge();
         fetchChartData();
     }
 
     function deselectAllCategories() {
-        document.querySelectorAll('.category-select').forEach(cb => cb.checked = false);
+        selectedSubcategories.clear();
+        renderCategories();
         updateCategoryBadge();
         fetchChartData();
     }
@@ -3384,14 +3533,16 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Please enter a number >= 1');
             return;
         }
-        document.querySelectorAll('.category-select').forEach(cb => {
-            const card = cb.closest('.category-card');
-            const pills = card ? card.querySelectorAll('.subcat-pill').length : 0;
-            cb.checked = pills >= min;
+        allCategories.forEach(cat => {
+            if (cat.subcategories.length >= min) {
+                selectedSubcategories.set(cat.name, new Set(cat.subcategories));
+            }
         });
+        renderCategories();
         updateCategoryBadge();
         fetchChartData();
     }
+
     // Handle widget type change
     const widgetTypeSelect = document.getElementById('widget-type-select');
     if (widgetTypeSelect) {

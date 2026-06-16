@@ -1462,6 +1462,7 @@ impl FireflyClient {
     pub async fn get_subcategory_spend_chart(
         &self,
         parent_categories: Vec<String>,
+        subcategories: Vec<String>,
         start_date: Option<String>,
         end_date: Option<String>,
         period: Option<String>,
@@ -1484,6 +1485,11 @@ impl FireflyClient {
         // Build a set of parent categories for filtering
         let parent_set: std::collections::HashSet<String> =
             parent_categories.iter().cloned().collect();
+
+        // Build a set of specific subcategory filters (full "parent:subcat" names).
+        // When non-empty, only these exact subcategories are included.
+        let subcat_filter: std::collections::HashSet<String> =
+            subcategories.iter().cloned().collect();
 
         // Flatten transactions into journal entries
         let mut all_journals: Vec<serde_json::Value> = Vec::new();
@@ -1535,6 +1541,14 @@ impl FireflyClient {
             // Skip if parent category not in selected list
             if !parent_set.contains(parent) {
                 continue;
+            }
+
+            // If specific subcategories were requested, skip ones not in the filter
+            if !subcat_filter.is_empty() {
+                let full_name = format!("{}:{}", parent, subcat);
+                if !subcat_filter.contains(&full_name) {
+                    continue;
+                }
             }
 
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {

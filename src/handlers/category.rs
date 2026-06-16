@@ -36,6 +36,7 @@ pub async fn get_subcategory_spend(
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
     let mut parent_categories: Vec<String> = Vec::new();
+    let mut subcategories: Vec<String> = Vec::new();
     let mut account_ids: Vec<String> = Vec::new();
 
     for (k, v) in params {
@@ -46,20 +47,20 @@ pub async fn get_subcategory_spend(
             "parent_categories[]" | "parent_categories" => {
                 parent_categories.push(v);
             }
+            "subcategories[]" | "subcategories" => {
+                subcategories.push(v);
+            }
             "accounts[]" | "accounts" => {
                 account_ids.push(v);
             }
-            _ => {
-                if k == "parent_categories%5B%5D" {
-                    parent_categories.push(v);
-                }
-            }
+            _ => {}
         }
     }
 
     match client
         .get_subcategory_spend_chart(
             parent_categories,
+            subcategories,
             start,
             end,
             period,

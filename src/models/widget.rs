@@ -13,6 +13,8 @@ pub struct Widget {
     pub budget_names: Vec<String>,
     #[serde(default)]
     pub parent_categories: Vec<String>,
+    #[serde(default)]
+    pub subcategories: Vec<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub interval: Option<String>,
