@@ -1410,7 +1410,11 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                             grid: { color: chartGridColor },
                             ticks: {
                                 color: chartTextColor,
-                                maxRotation: 45
+                                maxRotation: 45,
+                                callback: function(value) {
+                                    const date = new Date(value);
+                                    return isNaN(date.getTime()) ? value : date.toLocaleDateString();
+                                }
                             }
                         }
                     }
