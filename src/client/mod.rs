@@ -375,7 +375,7 @@ impl FireflyClient {
                             10..=12 => 10,
                             _ => 1,
                         };
-                        date.with_month(quarter_month)
+                        chrono::NaiveDate::from_ymd_opt(date.year(), quarter_month, 1)
                             .unwrap()
                             .format("%Y-%m-%dT00:00:00+00:00")
                             .to_string()
@@ -1014,7 +1014,7 @@ impl FireflyClient {
                         10..=12 => 10,
                         _ => 1,
                     };
-                    date.with_month(quarter_month)
+                    chrono::NaiveDate::from_ymd_opt(date.year(), quarter_month, 1)
                         .unwrap()
                         .format("%Y-%m-%dT00:00:00+00:00")
                         .to_string()
