@@ -33,6 +33,11 @@ pub struct DataCache {
     ttl_seconds: u64,
 }
 
+/// Cache version: increment to invalidate all existing cached entries.
+/// Bumped to 2 to clear entries created with the broken date parser that
+/// only accepted +00:00 timezone offsets.
+const CACHE_VERSION: &str = "2";
+
 impl DataCache {
     pub fn new(ttl_seconds: u64) -> Self {
         Self {
@@ -121,8 +126,8 @@ impl DataCache {
 
     fn account_key(type_filter: Option<&str>) -> String {
         match type_filter {
-            Some(t) => format!("accounts:{}", t),
-            None => "accounts:all".to_string(),
+            Some(t) => format!("v{}:accounts:{}", CACHE_VERSION, t),
+            None => format!("v{}:accounts:all", CACHE_VERSION),
         }
     }
 
@@ -151,7 +156,10 @@ impl DataCache {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
         let period = period.unwrap_or("default");
-        format!("balance:{}:{}:{}:{}", accounts, start, end, period)
+        format!(
+            "v{}:balance:{}:{}:{}:{}",
+            CACHE_VERSION, accounts, start, end, period
+        )
     }
 
     pub fn get_balance_history(
@@ -192,7 +200,7 @@ impl DataCache {
     fn budget_key(start_date: Option<&str>, end_date: Option<&str>) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
-        format!("budgets:{}:{}", start, end)
+        format!("v{}:budgets:{}:{}", CACHE_VERSION, start, end)
     }
 
     pub fn get_budgets(
@@ -214,7 +222,7 @@ impl DataCache {
     fn budget_spent_key(start_date: Option<&str>, end_date: Option<&str>) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
-        format!("budget_spent:{}:{}", start, end)
+        format!("v{}:budget_spent:{}:{}", CACHE_VERSION, start, end)
     }
 
     pub fn get_budget_spent(
@@ -252,8 +260,8 @@ impl DataCache {
             None => "all".to_string(),
         };
         format!(
-            "budget_spent_hist:{}:{}:{}:{}",
-            start, end, period, accounts
+            "v{}:budget_spent_hist:{}:{}:{}:{}",
+            CACHE_VERSION, start, end, period, accounts
         )
     }
 
@@ -305,7 +313,10 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
-        format!("earned_spent:{}:{}:{}:{}", start, end, period, accounts)
+        format!(
+            "v{}:earned_spent:{}:{}:{}:{}",
+            CACHE_VERSION, start, end, period, accounts
+        )
     }
 
     pub fn get_earned_spent(
@@ -356,7 +367,10 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
-        format!("expenses_cat:{}:{}:{}:{}", start, end, period, accounts)
+        format!(
+            "v{}:expenses_cat:{}:{}:{}:{}",
+            CACHE_VERSION, start, end, period, accounts
+        )
     }
 
     pub fn get_expenses_by_category(
@@ -402,7 +416,7 @@ impl DataCache {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
         let period = period.unwrap_or("default");
-        format!("net_worth:{}:{}:{}", start, end, period)
+        format!("v{}:net_worth:{}:{}:{}", CACHE_VERSION, start, end, period)
     }
 
     pub fn get_net_worth(
@@ -454,8 +468,8 @@ impl DataCache {
             None => "all".to_string(),
         };
         format!(
-            "subcat_spend:{}:{}:{}:{}:{}:{}",
-            parents, subcats, start, end, period, accounts
+            "v{}:subcat_spend:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION, parents, subcats, start, end, period, accounts
         )
     }
 
@@ -504,7 +518,7 @@ impl DataCache {
     // ── Categories ───────────────────────────────────────────────────
 
     fn categories_key() -> String {
-        "categories".to_string()
+        format!("v{}:categories", CACHE_VERSION)
     }
 
     pub fn get_categories(&self) -> Option<String> {
@@ -533,43 +547,70 @@ impl DataCache {
     }
 
     pub fn clear_accounts(&self) {
-        Self::clear_tiered(&self.accounts, Some("accounts:"));
+        Self::clear_tiered(
+            &self.accounts,
+            Some(&format!("v{}:accounts:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_balance_history(&self) {
-        Self::clear_tiered(&self.balance_history, Some("balance:"));
+        Self::clear_tiered(
+            &self.balance_history,
+            Some(&format!("v{}:balance:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_budgets(&self) {
-        Self::clear_tiered(&self.budgets, Some("budgets:"));
+        Self::clear_tiered(&self.budgets, Some(&format!("v{}:budgets:", CACHE_VERSION)));
     }
 
     pub fn clear_budget_spent(&self) {
-        Self::clear_tiered(&self.budget_spent, Some("budget_spent:"));
+        Self::clear_tiered(
+            &self.budget_spent,
+            Some(&format!("v{}:budget_spent:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_budget_spent_history(&self) {
-        Self::clear_tiered(&self.budget_spent_history, Some("budget_spent_hist:"));
+        Self::clear_tiered(
+            &self.budget_spent_history,
+            Some(&format!("v{}:budget_spent_hist:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_earned_spent(&self) {
-        Self::clear_tiered(&self.earned_spent, Some("earned_spent:"));
+        Self::clear_tiered(
+            &self.earned_spent,
+            Some(&format!("v{}:earned_spent:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_expenses_by_category(&self) {
-        Self::clear_tiered(&self.expenses_by_category, Some("expenses_cat:"));
+        Self::clear_tiered(
+            &self.expenses_by_category,
+            Some(&format!("v{}:expenses_cat:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_net_worth(&self) {
-        Self::clear_tiered(&self.net_worth, Some("net_worth:"));
+        Self::clear_tiered(
+            &self.net_worth,
+            Some(&format!("v{}:net_worth:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_subcategory_spend(&self) {
-        Self::clear_tiered(&self.subcategory_spend, Some("subcat_spend:"));
+        Self::clear_tiered(
+            &self.subcategory_spend,
+            Some(&format!("v{}:subcat_spend:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_categories(&self) {
-        Self::clear_tiered(&self.categories, Some("categories"));
+        Self::clear_tiered(
+            &self.categories,
+            Some(&format!("v{}:categories", CACHE_VERSION)),
+        );
     }
 }
 
