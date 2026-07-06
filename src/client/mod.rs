@@ -9,6 +9,26 @@ use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
 use std::sync::Arc;
 
+/// Parse a date string from Firefly III into a NaiveDateTime.
+/// Accepts ISO 8601 with any timezone offset (+HH:MM or +HHMM), 'Z', or plain date.
+fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
+    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%:z")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%#z"))
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f%:z")
+        })
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f%#z")
+        })
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ"))
+        .or_else(|_| {
+            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+        })
+        .ok()
+}
+
 pub struct FireflyClient {
     client: reqwest::Client,
     config: Config,
@@ -327,22 +347,6 @@ impl FireflyClient {
                 earned_entries.insert(key.clone(), 0.0);
                 spent_entries.insert(key, 0.0);
             }
-        }
-
-        fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
-            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
-                })
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
-                })
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
-                })
-                .ok()
         }
 
         let get_period_key = |date_str: &str, period: &str| -> String {
@@ -985,22 +989,6 @@ impl FireflyClient {
     }
 
     fn get_period_key(date_str: &str, period: &str) -> String {
-        fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
-            chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
-                })
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
-                })
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
-                })
-                .ok()
-        }
-
         if let Some(date) = parse_tx_date(date_str) {
             let key = match period {
                 "1M" => {

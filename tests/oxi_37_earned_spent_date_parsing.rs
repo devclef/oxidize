@@ -6,12 +6,17 @@
 mod tests {
     use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 
-    /// Simulates the parse_transaction_date function from the backend
+    /// Simulates the parse_transaction_date function from the backend.
+    /// Accepts ISO 8601 with any timezone offset (+HH:MM, +HHMM, Z) or plain date.
     fn parse_transaction_date(date_str: &str) -> Option<NaiveDateTime> {
-        chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S+00:00")
+        chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%:z")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%#z"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%SZ"))
             .or_else(|_| {
-                chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f+00:00")
+                chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f%:z")
+            })
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3f%#z")
             })
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.3fZ"))
             .or_else(|_| {
@@ -74,9 +79,15 @@ mod tests {
 
     #[test]
     fn test_parse_date_with_different_timezone() {
-        // Non-UTC timezone offset falls back to date-only parsing
+        // Non-UTC timezone offset is now parsed directly (no fallback needed)
         let result = parse_transaction_date("2026-01-15T10:30:00+05:30");
-        assert!(result.is_none());
+        assert!(result.is_some());
+        let date = result.unwrap();
+        assert_eq!(date.day(), 15);
+        assert_eq!(date.month(), 1);
+        assert_eq!(date.year(), 2026);
+        assert_eq!(date.hour(), 10);
+        assert_eq!(date.minute(), 30);
         let period_key = get_period_key("2026-01-15T10:30:00+05:30", "1D");
         assert_eq!(period_key, "2026-01-15T00:00:00+00:00");
     }
