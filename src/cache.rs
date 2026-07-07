@@ -624,14 +624,16 @@ impl Default for DataCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Once;
+    use std::sync::{Mutex, Once};
 
     static INIT: Once = Once::new();
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn init_test_data_dir() {
         INIT.call_once(|| {
-            // Use a temp directory for tests
             let test_dir = std::env::temp_dir().join("oxidize_test");
+            // Clean up any stale data from previous runs
+            let _ = std::fs::remove_dir_all(&test_dir);
             let _ = std::fs::create_dir_all(&test_dir);
             crate::storage::init_data_dir(test_dir.to_string_lossy().to_string());
         });
@@ -639,6 +641,7 @@ mod tests {
 
     #[test]
     fn test_account_cache() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         init_test_data_dir();
         let cache = DataCache::new(300);
         let accounts = r#"["account1", "account2"]"#.to_string();
@@ -651,6 +654,7 @@ mod tests {
 
     #[test]
     fn test_balance_history_cache() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         init_test_data_dir();
         let cache = DataCache::new(300);
         let data = r#"{"key": "value"}"#.to_string();
@@ -674,7 +678,10 @@ mod tests {
 
     #[test]
     fn test_cache_clear() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         init_test_data_dir();
+        // Clear persistent cache first to ensure isolation
+        crate::storage::PersistentCache::clear_all();
         let cache = DataCache::new(300);
         cache.set_accounts(Some("asset".to_string()), r#"["a"]"#.to_string());
 
