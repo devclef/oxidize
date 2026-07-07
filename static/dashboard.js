@@ -1120,41 +1120,10 @@ async function refreshWidget(widgetId) {
             ? widget.updated_at.split('T')[0]
             : null;
 
-        if (widgetType === 'earned_spent' && sinceDate) {
-            // Incremental refresh: fetch partial chart from since date, merge into existing
-            const params = new URLSearchParams();
-            params.append('since', sinceDate);
-            if (widget.end_date) params.append('end', widget.end_date);
-            if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
-            allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
-
-            const response = await fetch(`/api/earned-spent/since?${params.toString()}`);
-            if (!response.ok) {
-                throw new Error(`Error: ${response.status} ${response.statusText}`);
-            }
-
-            const partialChart = await response.json();
-
-            // Merge partial chart entries into existing chart data
-            let history;
-            const chartInstance = Chart.getChart(widgetId);
-            if (chartInstance) {
-                // Use existing chart data as base, overlay partial chart entries
-                history = mergePartialChartIntoExisting(chartInstance, partialChart);
-            } else {
-                // No existing chart, use partial data directly
-                history = partialChart;
-            }
-
-            // Re-render with merged data
-            const ctx = document.getElementById(widgetId).getContext('2d');
-            const labels = extractChartLabels(history);
-            const earnedChartType = widget.earned_chart_type || 'bars';
-            await renderEarnedSpentChart(ctx, widget, labels, history, widgetId, earnedChartType);
-        } else {
-            // Balance widgets or no since date: full re-fetch
-            await renderWidgetChart(widget, widgetId, allAccounts, allGroups);
-        }
+        // Always do a full re-fetch for all widget types.
+        // Incremental refresh was problematic: the backend seeds all period keys with 0.0,
+        // which overwrites existing data when merged via {...existing, ...partial}.
+        await renderWidgetChart(widget, widgetId, allAccounts, allGroups);
     } catch (e) {
         console.error('Failed to refresh widget:', e);
         alert(`Failed to refresh widget: ${e.message}`);
@@ -1412,8 +1381,9 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                                 color: chartTextColor,
                                 maxRotation: 45,
                                 callback: function(value) {
-                                    const date = new Date(value);
-                                    return isNaN(date.getTime()) ? value : date.toLocaleDateString();
+                                    const label = this.getLabelForValue(value);
+                                    const date = parseChartLabel(label);
+                                    return date.toLocaleDateString();
                                 }
                             }
                         }
@@ -1525,7 +1495,12 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
                             grid: { color: chartGridColor },
                             ticks: {
                                 color: chartTextColor,
-                                maxRotation: 45
+                                maxRotation: 45,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    const date = parseChartLabel(label);
+                                    return date.toLocaleDateString();
+                                }
                             }
                         }
                     }
