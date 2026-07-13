@@ -311,10 +311,24 @@ impl Storage {
             serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
         let subcategories_json =
             serde_json::to_string(&widget.subcategories).map_err(|e| e.to_string())?;
-        let dashboard_ids_json =
-            serde_json::to_string(&widget.dashboard_ids).map_err(|e| e.to_string())?;
-
         with_db(|conn| {
+            // If the widget has no dashboard_ids, auto-assign it to the default dashboard
+            let dashboard_ids_json = if widget.dashboard_ids.is_empty() {
+                let default_id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM dashboards WHERE id = 'default' LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                match default_id {
+                    Some(id) => serde_json::to_string(&[id]).map_err(|e| e.to_string())?,
+                    None => "[]".to_string(),
+                }
+            } else {
+                serde_json::to_string(&widget.dashboard_ids).map_err(|e| e.to_string())?
+            };
+
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, created_at, updated_at)
