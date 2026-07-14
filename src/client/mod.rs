@@ -1024,6 +1024,10 @@ impl FireflyClient {
                         date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
                     monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
+                "1Y" => chrono::NaiveDate::from_ymd_opt(date.year(), 1, 1)
+                    .unwrap()
+                    .format("%Y-%m-%dT00:00:00+00:00")
+                    .to_string(),
                 _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
             };
             return key;
