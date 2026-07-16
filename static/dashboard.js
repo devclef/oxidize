@@ -535,8 +535,12 @@ async function deleteWidget(id) {
 }
 
 async function updateWidgetOrder(widgetIds) {
+    // Fetch all widgets so we have the full objects (including fields not in the
+    // dashboard-scoped widgetsCache) and avoid corrupting order on other dashboards.
+    const allWidgets = await getDashboardWidgets();
+
     const updates = widgetIds.map((id, index) => {
-        const w = widgetsCache.find(w => w.id === id);
+        const w = allWidgets.find(w => w.id === id);
         if (!w) return null;
         w.display_order = index;
         w.updated_at = new Date().toISOString();
@@ -548,7 +552,9 @@ async function updateWidgetOrder(widgetIds) {
     }).filter(Boolean);
 
     await Promise.all(updates);
-    widgetsCache = widgetsCache.sort((a, b) => a.display_order - b.display_order);
+
+    // Refresh the cache so downstream code (width selector, etc.) has fresh data
+    widgetsCache = allWidgets;
 }
 
 function toggleWidgetSettings(id) {
