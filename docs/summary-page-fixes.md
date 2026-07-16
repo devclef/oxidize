@@ -6,7 +6,7 @@ Items are ordered by severity: **Critical** (produces wrong or broken data), **H
 
 ---
 
-## Critical
+## Critical (ALL FIXED)
 
 ### 1. Inverted filter logic in `sum_filtered_transaction_amounts`
 
@@ -80,7 +80,7 @@ Note: `fetch_all_transactions` currently doesn't accept a `type` parameter. It w
 
 ---
 
-## High
+## High (ALL FIXED)
 
 ### 4. `savings_rate` double-multiplied by 100 in frontend
 
@@ -149,7 +149,7 @@ Option (A) is simpler and matches user expectations: no filter = show everything
 
 ---
 
-## Medium
+## Medium (#10 REMAINING)
 
 ### 7. Account type filter has no effect on summary data
 
@@ -289,21 +289,22 @@ These should use CSS variables from `style.css` for consistency with the theme s
 ---
 
 ## Summary of Fixes (Priority Order)
+## Summary of Fixes (Priority Order)
 
-| # | Severity | Description | Effort |
+| # | Severity | Description | Status |
 |---|----------|-------------|--------|
-| 1 | Critical | Fix inverted filter logic in `sum_filtered_transaction_amounts` | Medium |
-| 2 | Critical | Remove unsupported API query params (`destination_id`, `source_id`, `account_type`) | Small |
-| 3 | Critical | Add pagination to fetch all transactions | Medium |
-| 4 | High | Fix double-multiplication of `savings_rate` | Small |
-| 5 | High | Make error container visible on errors | Small |
-| 6 | High | Handle "no accounts selected" case | Medium |
-| 7 | Medium | Make account type filter affect summary data | Medium |
-| 8 | Medium | Add loading state for data fetch | Small |
-| 9 | Medium | Return meaningful error messages | Small |
-| 10 | Medium | Add caching for monthly summary | Medium |
-| 11 | Low | Handle `amount` as number or string | Small |
-| 12 | Low | Validate month/year parameters | Small |
-| 13 | Low | Use CSS variables for error styles | Small |
-| 14 | Low | Use filesystem read for summary.html | Small |
-| 15 | Low | Move service worker registration | Small |
+| 1 | Critical | Fix inverted filter logic in `sum_filtered_transaction_amounts` | ✅ Fixed (a23a27d) |
+| 2 | Critical | Remove unsupported API query params | ✅ Fixed (c7666ad) |
+| 3 | Critical | Add pagination to fetch all transactions | ✅ Fixed (894b802) |
+| 4 | High | Fix double-multiplication of `savings_rate` | ✅ Fixed (9aadd2e) |
+| 5 | High | Make error container visible on errors | ✅ Fixed (adb5588) |
+| 6 | High | Handle "no accounts selected" case | ✅ Fixed (a23a27d, asset-only filtering) |
+| 7 | Medium | Make account type filter affect summary data | ✅ Fixed (backend account_type handling) |
+| 8 | Medium | Add loading state for data fetch | ✅ Fixed (adb5588) |
+| 9 | Medium | Return meaningful error messages | ✅ Fixed (adb5588) |
+| 10 | Medium | Add caching for monthly summary | ⏳ Remaining |
+| 11 | Low | Handle `amount` as number or string | ✅ Fixed (894b802) |
+| 12 | Low | Validate month/year parameters | ✅ Fixed (330513a) |
+| 13 | Low | Use CSS variables for error styles | ✅ Fixed (330513a) |
+| 14 | Low | Use filesystem read for summary.html | ✅ Fixed (330513a) |
+| 15 | Low | Move service worker registration | ✅ Fixed (330513a) |
