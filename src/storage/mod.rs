@@ -608,8 +608,33 @@ impl Storage {
                 return Err(format!("Dashboard with id {} not found", id));
             }
 
-            // Remove this dashboard_id from all widgets' dashboard_ids
-            // (handled on the frontend side, but we clean up here too)
+            // Remove this dashboard_id from all widgets' dashboard_ids arrays
+            let mut stmt = conn
+                .prepare("SELECT id, dashboard_ids FROM widgets")
+                .map_err(|e| e.to_string())?;
+            let widget_rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect::<Vec<_>>();
+
+            for (wid, dash_ids_json) in widget_rows {
+                let dash_ids: Vec<String> =
+                    serde_json::from_str(&dash_ids_json).unwrap_or_default();
+                let original_len = dash_ids.len();
+                let filtered: Vec<String> = dash_ids.into_iter().filter(|d| d != id).collect();
+                if filtered.len() != original_len {
+                    let new_json = serde_json::to_string(&filtered).map_err(|e| e.to_string())?;
+                    conn.execute(
+                        "UPDATE widgets SET dashboard_ids = ?1 WHERE id = ?2",
+                        params![new_json, wid],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+
             Ok(())
         })
     }
