@@ -395,10 +395,14 @@ function computeForecast(absoluteData, labels, forecastDays) {
         periodDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
     }
 
+    // Cap forecast points so they don't overwhelm the chart:
+    // never add more forecast points than existing data points.
+    const maxForecast = Math.min(forecastDays, absoluteData.length, 60);
+
     const forecastValues = [];
     const forecastLabels = [];
 
-    for (let i = 1; i <= forecastDays; i++) {
+    for (let i = 1; i <= maxForecast; i++) {
         const futureIndex = absoluteData.length - 1 + i;
         const predictedY = slope * futureIndex + intercept;
         forecastValues.push(isNaN(predictedY) ? null : predictedY);
