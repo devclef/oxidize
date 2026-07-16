@@ -873,8 +873,8 @@ function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
     const earnedDataset = history.find(ds => ds.label === 'earned');
     const spentDataset = history.find(ds => ds.label === 'spent');
 
-    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
-    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels) : new Array(labels.length).fill(0);
 
     // Earned is typically positive (income), spent is typically positive (expense)
     // We'll show earned in green and spent in red
@@ -965,8 +965,8 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
     const earnedDataset = history.find(ds => ds.label === 'earned');
     const spentDataset = history.find(ds => ds.label === 'spent');
 
-    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
-    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels) : new Array(labels.length).fill(0);
 
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
@@ -1053,8 +1053,8 @@ function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
     const earnedDataset = history.find(ds => ds.label === 'earned');
     const spentDataset = history.find(ds => ds.label === 'spent');
 
-    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels.length) : new Array(labels.length).fill(0);
-    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels.length) : new Array(labels.length).fill(0);
+    const earnedData = earnedDataset ? extractChartData(earnedDataset.entries, labels) : new Array(labels.length).fill(0);
+    const spentData = spentDataset ? extractChartData(spentDataset.entries, labels) : new Array(labels.length).fill(0);
 
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
@@ -1129,17 +1129,29 @@ function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
     });
 }
 
-function extractChartData(entries, length) {
+function extractChartData(entries, labels) {
+    // Build a lookup map from date key to numeric value
+    const valueMap = {};
     if (Array.isArray(entries)) {
-        return entries.map(e => parseFloat(e.value || 0));
-    } else {
-        return Object.values(entries).map(v => {
+        for (const e of entries) {
+            const key = e.key || e.date || e.timestamp || '';
+            valueMap[key] = parseFloat(e.value || 0);
+        }
+    } else if (typeof entries === 'object' && entries !== null) {
+        for (const [key, v] of Object.entries(entries)) {
             if (typeof v === 'object' && v !== null) {
-                return parseFloat(v.value || 0);
+                valueMap[key] = parseFloat(v.value || 0);
+            } else {
+                valueMap[key] = parseFloat(v);
             }
-            return parseFloat(v);
-        });
+        }
     }
+
+    // Align data to labels so each value lands at the correct x-axis position
+    return (labels || []).map(label => {
+        const val = valueMap[label];
+        return val === undefined ? 0 : (isNaN(val) ? 0 : val);
+    });
 }
 
 // Filter ChartLine datasets by budget names (matches by label)
