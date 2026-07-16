@@ -611,20 +611,29 @@ async function updateWidgetDateRange(widgetId) {
     if (chartMode !== undefined) widget.chart_mode = chartMode;
     widget.updated_at = new Date().toISOString();
 
-    // Update chart options
+    // Update chart options — read from DOM with null guards
+    const el = (id) => document.getElementById(id);
     if (widget.chart_options === undefined) {
         widget.chart_options = {};
     }
-    widget.chart_options.show_points = document.getElementById(`${widgetId}-show-points`).checked;
-    widget.chart_options.x_axis_limit = parseInt(document.getElementById(`${widgetId}-x-limit`).value);
-    widget.chart_options.y_axis_limit = parseInt(document.getElementById(`${widgetId}-y-limit`).value);
-    widget.chart_options.fill_area = document.getElementById(`${widgetId}-fill-area`).checked;
-    widget.chart_options.tension = parseFloat(document.getElementById(`${widgetId}-tension`).value);
-    widget.chart_options.begin_at_zero = document.getElementById(`${widgetId}-begin-zero`).checked;
-    widget.chart_options[PCT_ENABLED_KEY] = document.getElementById(`${widgetId}-show-pct`).checked;
-    widget.chart_options[PCT_MODE_KEY] = document.getElementById(`${widgetId}-pct-mode`).value;
-    const enableForecastEl = document.getElementById(`${widgetId}-enable-forecast`);
-    const forecastDaysEl = document.getElementById(`${widgetId}-forecast-days`);
+    const showPoints = el(`${widgetId}-show-points`);
+    if (showPoints) widget.chart_options.show_points = showPoints.checked;
+    const xLimit = el(`${widgetId}-x-limit`);
+    if (xLimit) widget.chart_options.x_axis_limit = parseInt(xLimit.value);
+    const yLimit = el(`${widgetId}-y-limit`);
+    if (yLimit) widget.chart_options.y_axis_limit = parseInt(yLimit.value);
+    const fillArea = el(`${widgetId}-fill-area`);
+    if (fillArea) widget.chart_options.fill_area = fillArea.checked;
+    const tension = el(`${widgetId}-tension`);
+    if (tension) widget.chart_options.tension = parseFloat(tension.value);
+    const beginZero = el(`${widgetId}-begin-zero`);
+    if (beginZero) widget.chart_options.begin_at_zero = beginZero.checked;
+    const showPct = el(`${widgetId}-show-pct`);
+    if (showPct) widget.chart_options[PCT_ENABLED_KEY] = showPct.checked;
+    const pctMode = el(`${widgetId}-pct-mode`);
+    if (pctMode) widget.chart_options[PCT_MODE_KEY] = pctMode.value;
+    const enableForecastEl = el(`${widgetId}-enable-forecast`);
+    const forecastDaysEl = el(`${widgetId}-forecast-days`);
     if (enableForecastEl) widget.chart_options.enable_forecast = enableForecastEl.checked;
     if (forecastDaysEl) widget.chart_options.forecast_days = parseInt(forecastDaysEl.value, 10) || 30;
 
