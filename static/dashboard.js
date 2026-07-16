@@ -332,14 +332,14 @@ function computePercentChange(data, mode) {
             if (first === null || first === undefined || isNaN(first) || first === 0) {
                 labels[i] = null;
             } else {
-                labels[i] = ((current - first) / Math.abs(first)) * 100;
+                labels[i] = ((current - first) / first) * 100;
             }
         } else {
             const previous = data[i - 1];
             if (previous === null || previous === undefined || isNaN(previous) || previous === 0) {
                 labels[i] = null;
             } else {
-                labels[i] = ((current - previous) / Math.abs(previous)) * 100;
+                labels[i] = ((current - previous) / previous) * 100;
             }
         }
     }
