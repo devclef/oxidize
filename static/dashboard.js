@@ -881,7 +881,7 @@ function getChartOptions(widget) {
     };
 }
 
-async function renderEarnedSpentChart(ctx, widget, labels, history, containerId, chartType = 'bars') {
+async function renderEarnedSpentChart(ctx, widget, labels, history, _canvasId, chartType = 'bars') {
     if (chartType === 'delta_line') {
         renderDeltaLineChartDashboard(ctx, widget, labels, history);
     } else if (chartType === 'delta_bar') {
@@ -1264,8 +1264,8 @@ function extractChartLabels(history) {
     return labels;
 }
 
-async function renderWidgetChart(widget, containerId, allAccounts, allGroups = []) {
-    const ctx = document.getElementById(containerId).getContext('2d');
+async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
 
     try {
         // Determine widget type (default to "balance" for backwards compatibility)
@@ -1358,7 +1358,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         }
 
         if (!history || history.length === 0) {
-            document.getElementById(`${containerId}-error`).textContent = 'No data available';
+            document.getElementById(`${canvasId}-error`).textContent = 'No data available';
             return;
         }
 
@@ -1368,7 +1368,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         // Handle earned vs spent widget type
         if (widgetType === 'earned_spent') {
             const earnedChartType = widget.earned_chart_type || 'bars';
-            await renderEarnedSpentChart(ctx, widget, labels, history, containerId, earnedChartType);
+            await renderEarnedSpentChart(ctx, widget, labels, history, canvasId, earnedChartType);
             return;
         }
 
@@ -1381,7 +1381,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             }
 
             if (!filteredHistory || filteredHistory.length === 0) {
-                document.getElementById(`${containerId}-error`).textContent = 'No budget data available';
+                document.getElementById(`${canvasId}-error`).textContent = 'No budget data available';
                 return;
             }
 
@@ -1497,7 +1497,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
             let filteredHistory = history;
 
             if (!filteredHistory || filteredHistory.length === 0) {
-                document.getElementById(`${containerId}-error`).textContent = 'No subcategory data available';
+                document.getElementById(`${canvasId}-error`).textContent = 'No subcategory data available';
                 return;
             }
 
@@ -1965,7 +1965,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
         }
     } catch (error) {
         console.error('Error rendering widget chart:', error);
-        const errorDiv = document.getElementById(`${containerId}-error`);
+        const errorDiv = document.getElementById(`${canvasId}-error`);
         if (errorDiv) {
             errorDiv.textContent = 'Error loading data';
         }
