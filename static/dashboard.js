@@ -2430,6 +2430,11 @@ async function renderDashboard() {
                     const clampedHeight = Math.max(150, Math.min(800, newHeight));
                     event.target.style.height = clampedHeight + 'px';
 
+                    // Resize the Chart.js instance to match new container height
+                    if (widgetCharts[widget.id]) {
+                        widgetCharts[widget.id].resize();
+                    }
+
                     const w = widgetsCache.find(w => w.id === widget.id);
                     if (w) {
                         w.chart_height = clampedHeight;
