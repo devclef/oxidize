@@ -358,23 +358,46 @@
             const year = yearSelect.value;
             const accountIds = getSelectedAccountIds();
             const selectedType = typeFilterSelect.value;
-            
+
             const accountIdsParam = accountIds.length > 0 ? accountIds.join(',') : '';
             const accountTypeParam = selectedType && selectedType !== 'all' ? `&account_type=${selectedType}` : '';
+
+            // Show loading state
+            const summaryCards = document.querySelectorAll('.summary-card .amount');
+            summaryCards.forEach(card => {
+                card.style.opacity = '0.4';
+                card.dataset.prev = card.textContent;
+            });
 
             try {
                 const url = `/api/summary/monthly?month=${month}&year=${year}${accountIdsParam ? '&account_ids=' + accountIdsParam : ''}${accountTypeParam}`;
                 const response = await fetch(url);
-                if (!response.ok) throw new Error();
+                // Hide error on any response
+                errorContainer.style.display = 'none';
+                if (!response.ok) {
+                    let errorMsg = `Failed to fetch summary data (HTTP ${response.status}).`;
+                    try {
+                        const errData = await response.json();
+                        if (errData.message) errorMsg = errData.message;
+                    } catch (_) {
+                        // Response body is not JSON, use status-based message
+                    }
+                    throw new Error(errorMsg);
+                }
                 const data = await response.json();
-                
+
                 updateSummaryUI(data);
             } catch (error) {
                 console.error('Failed to fetch summary:', error);
-                errorContainer.textContent = 'Failed to fetch summary data.';
+                errorContainer.textContent = error.message || 'Failed to fetch summary data.';
+                errorContainer.style.display = 'block';
+            } finally {
+                // Restore loading state
+                summaryCards.forEach(card => {
+                    card.style.opacity = '1';
+                });
             }
         }
-
         function updateSummaryUI(data) {
             const currencySymbol = data.currency_symbol;
             const currencyCode = data.currency_code;

@@ -37,7 +37,7 @@ pub async fn get_monthly_summary(
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),
-        Err(e) => HttpResponse::InternalServerError().body(e),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"message": e})),
     }
 }
 
