@@ -2440,14 +2440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         Chart.register(pctLabelPlugin);
     }
 
-    // Initialize theme
-    initTheme();
-
-    // Theme toggle button
-    const themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
-        themeToggle.addEventListener('click', toggleTheme);
-    }
+    // Theme init and toggle are handled by theme.js; avoid duplicate listeners.
 
     // Load dashboards and set up nav dropdown
     await loadDashboards();
