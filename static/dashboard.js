@@ -757,19 +757,16 @@ function renderSplitLegend(widgetId, accountInfo, datasets) {
 
     legendContainer.style.display = 'block';
 
-    // Reset visibility to all datasets (select all) on each render
-    widgetDatasetVisibility[widgetId] = {};
-    accountInfo.forEach((_, index) => {
-        widgetDatasetVisibility[widgetId][index] = true;
-    });
-
-    // Reset chart dataset visibility if chart exists
-    if (widgetCharts[widgetId]) {
-        widgetCharts[widgetId].data.datasets.forEach((ds) => {
-            ds.hidden = false;
-        });
-        widgetCharts[widgetId].update();
+    // Preserve existing visibility state; only initialise new entries.
+    // This prevents the user's toggle choices from being wiped on re-render.
+    if (!widgetDatasetVisibility[widgetId]) {
+        widgetDatasetVisibility[widgetId] = {};
     }
+    accountInfo.forEach((_, index) => {
+        if (widgetDatasetVisibility[widgetId][index] === undefined) {
+            widgetDatasetVisibility[widgetId][index] = true;
+        }
+    });
 
     // Add Select All / Deselect All buttons
     const controlRow = document.createElement('div');
