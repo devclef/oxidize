@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="manifest" href="/api/manifest">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oxidize - Budget Comparison</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        .comparison-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .comparison-header {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            flex-wrap: wrap;
+        }
+        .comparison-header label {
+            font-weight: 600;
+            font-size: 0.95em;
+            color: var(--text-muted);
+        }
+        .comparison-header select {
+            padding: 6px 10px;
+            font-size: 0.95em;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-color);
+            color: var(--text-color);
+        }
+        .budget-selector {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+        }
+        .budget-selector h3 {
+            margin: 0 0 12px 0;
+            font-size: 0.95em;
+            color: var(--text-muted);
+        }
+        .budget-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+            background: var(--bg-color);
+        }
+        .budget-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .budget-item:hover {
+            background: var(--card-bg);
+            border-radius: 4px;
+        }
+        .budget-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .budget-actions button {
+            padding: 6px 12px;
+            font-size: 0.85em;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+        .projection-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .proj-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s;
+        }
+        .proj-card:hover {
+            transform: translateY(-2px);
+        }
+        .proj-card h3 {
+            margin: 0 0 8px 0;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .proj-card .amount {
+            font-size: 1.6em;
+            font-weight: 700;
+            margin: 0;
+        }
+        .proj-card .sub {
+            font-size: 0.85em;
+            margin: 4px 0 0 0;
+            color: var(--text-muted);
+        }
+        .proj-card.ytd .amount { color: #2196f3; }
+        .proj-card.projected .amount { color: #9c27b0; }
+        .proj-card.last-year .amount { color: #ff9800; }
+        .proj-card.vs-limit .amount.on-track { color: #4caf50; }
+        .proj-card.vs-limit .amount.at-risk { color: #f44336; }
+        .proj-card.vs-limit .amount.close { color: #ff9800; }
+        .proj-card.vs-last-year .amount.lower { color: #4caf50; }
+        .proj-card.vs-last-year .amount.higher { color: #f44336; }
+        .chart-wrapper {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 24px;
+        }
+        .chart-wrapper h2 {
+            margin: 0 0 16px 0;
+            font-size: 1.1em;
+            color: var(--text-color);
+        }
+        .chart-area {
+            position: relative;
+            height: 350px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.1em;
+            color: var(--text-muted);
+        }
+        .error {
+            background: var(--error-bg);
+            color: var(--error-color);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--error-color);
+        }
+        .dark .error {
+            background: color-mix(in srgb, var(--error-bg) 60%, black);
+            color: var(--error-color);
+        }
+        .nav {
+            margin-bottom: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 1.5em;
+        }
+        .no-budget-msg {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="display: none;">
+            <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39-.39-1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39-.39-1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
+        </svg>
+        <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+        </svg>
+    </button>
+    <nav class="nav">
+        <a href="/">Graph Builder</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/summary">Summary</a>
+        <a href="/budget-comparison" class="active">Budget Comparison</a>
+    </nav>
+
+    <h1>Budget Comparison</h1>
+
+    <div class="comparison-container">
+        <div class="budget-selector">
+            <h3>Select Budgets</h3>
+            <div class="budget-actions">
+                <button id="select-all-budgets">Select All</button>
+                <button id="deselect-all-budgets">Deselect All</button>
+            </div>
+            <div class="budget-list" id="budget-list">
+                <div class="loading">Loading budgets...</div>
+            </div>
+        </div>
+
+        <div id="error-container" class="error" style="display: none;"></div>
+
+        <div id="comparison-content" style="display: none;">
+            <div class="projection-cards" id="projection-cards"></div>
+
+            <div class="chart-wrapper">
+                <h2>Monthly Spending Comparison</h2>
+                <div class="chart-area">
+                    <canvas id="monthlyChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-wrapper">
+                <h2>Cumulative Spending</h2>
+                <div class="chart-area">
+                    <canvas id="cumulativeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="no-budget-msg" class="no-budget-msg" style="display: none;">
+            Select at least one budget above to see the comparison.
+        </div>
+    </div>
+
+<script>
+    const THEME_KEY = 'oxidize_theme';
+
+    function showSunIcon() {
+        const s = document.getElementById('theme-icon-sun');
+        const m = document.getElementById('theme-icon-moon');
+        if (s) s.style.display = 'block';
+        if (m) m.style.display = 'none';
+    }
+    function showMoonIcon() {
+        const s = document.getElementById('theme-icon-sun');
+        const m = document.getElementById('theme-icon-moon');
+        if (s) s.style.display = 'none';
+        if (m) m.style.display = 'block';
+    }
+    function initTheme() {
+        const saved = localStorage.getItem(THEME_KEY);
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            showMoonIcon();
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            showSunIcon();
+        }
+    }
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem(THEME_KEY, next);
+        if (next === 'dark') { showMoonIcon(); } else { showSunIcon(); }
+        // Redraw charts with new theme colors
+        if (comparisonData) fetchComparisonData();
+    }
+
+    let comparisonData = null;
+    let monthlyChart = null;
+    let cumulativeChart = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.register("/static/sw.js");
+        }
+        loadBudgets();
+    });
+
+    async function loadBudgets() {
+        try {
+            const response = await fetch('/api/budgets/list');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const budgets = await response.json();
+            renderBudgetList(budgets);
+        } catch (e) {
+            document.getElementById('budget-list').innerHTML =
+                '<div class="error">Failed to load budgets: ' + e.message + '</div>';
+        }
+    }
+
+    function renderBudgetList(budgets) {
+        const container = document.getElementById('budget-list');
+        if (budgets.length === 0) {
+            container.innerHTML = '<div class="loading">No budgets found in Firefly III.</div>';
+            return;
+        }
+        container.innerHTML = budgets.map(b =>
+            `<div class="budget-item">
+                <input type="checkbox" value="${b.id}" data-name="${b.name}" class="budget-checkbox">
+                <label for="budget-${b.id}">${b.name}</label>
+            </div>`
+        ).join('');
+
+        container.querySelectorAll('.budget-checkbox').forEach(cb => {
+            cb.addEventListener('change', fetchComparisonData);
+        });
+    }
+
+    function getSelectedBudgets() {
+        const boxes = document.querySelectorAll('.budget-checkbox:checked');
+        return Array.from(boxes).map(cb => ({ id: cb.value, name: cb.dataset.name }));
+    }
+
+    async function fetchComparisonData() {
+        const selected = getSelectedBudgets();
+        const errorContainer = document.getElementById('error-container');
+        const content = document.getElementById('comparison-content');
+        const noMsg = document.getElementById('no-budget-msg');
+
+        if (selected.length === 0) {
+            content.style.display = 'none';
+            noMsg.style.display = 'block';
+            errorContainer.style.display = 'none';
+            return;
+        }
+
+        noMsg.style.display = 'none';
+        errorContainer.style.display = 'none';
+        content.style.display = 'block';
+
+        // Show loading
+        document.querySelectorAll('.chart-area').forEach(el => {
+            el.innerHTML = '<div class="loading">Loading comparison data...</div>';
+        });
+        document.getElementById('projection-cards').innerHTML = '<div class="loading">Loading...</div>';
+
+        const params = new URLSearchParams();
+        selected.forEach(b => params.append('budget_names', b.name));
+
+        try {
+            const response = await fetch('/api/budgets/comparison?' + params.toString());
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            comparisonData = data;
+            renderComparison(data);
+        } catch (e) {
+            console.error('Failed to fetch comparison:', e);
+            errorContainer.textContent = 'Failed to load comparison data: ' + e.message;
+            errorContainer.style.display = 'block';
+        }
+    }
+
+    function formatCurrency(amount, symbol, code) {
+        const s = symbol || code || '$';
+        return s + amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    function renderComparison(data) {
+        if (!data || data.length === 0) {
+            document.getElementById('projection-cards').innerHTML =
+                '<div class="loading">No comparison data available.</div>';
+            return;
+        }
+
+        // Use the first budget's data (or aggregate if multiple)
+        const budget = data[0];
+        const proj = budget.projections;
+        const symbol = budget.currency_symbol || budget.currency_code || '$';
+
+        // Determine vs-limit class
+        let vsLimitClass = 'on-track';
+        if (proj.vs_limit !== undefined && proj.vs_limit !== null) {
+            const num = parseFloat(proj.vs_limit);
+            if (num > 10) vsLimitClass = 'at-risk';
+            else if (num > 0) vsLimitClass = 'close';
+        }
+
+        // Determine vs-last-year class
+        let vsLastYearClass = 'lower';
+        if (proj.vs_last_year) {
+            const num = parseFloat(proj.vs_last_year);
+            if (num > 0) vsLastYearClass = 'higher';
+        }
+
+        document.getElementById('projection-cards').innerHTML = `
+            <div class="proj-card ytd">
+                <h3>Year-to-Date</h3>
+                <p class="amount">${formatCurrency(proj.current_year_total, symbol)}</p>
+            </div>
+            <div class="proj-card projected">
+                <h3>Projected Annual</h3>
+                <p class="amount">${formatCurrency(proj.current_year_projected, symbol)}</p>
+            </div>
+            <div class="proj-card last-year">
+                <h3>Previous Year</h3>
+                <p class="amount">${formatCurrency(proj.previous_year_total, symbol)}</p>
+            </div>
+            <div class="proj-card vs-limit">
+                <h3>vs Budget Limit</h3>
+                <p class="amount ${vsLimitClass}">${proj.vs_limit || 'No limit set'}</p>
+                <p class="sub">${proj.on_track ? 'On track' : 'Over budget risk'}</p>
+            </div>
+            <div class="proj-card vs-last-year">
+                <h3>vs Last Year</h3>
+                <p class="amount ${vsLastYearClass}">${proj.vs_last_year}</p>
+            </div>
+        `;
+
+        renderMonthlyChart(budget);
+        renderCumulativeChart(budget);
+    }
+
+    function getChartColors() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            textColor: isDark ? '#eaeaea' : '#333',
+            gridColor: isDark ? '#444' : '#ddd',
+        };
+    }
+
+    function renderMonthlyChart(budget) {
+        const ctx = document.getElementById('monthlyChart');
+        if (!ctx) return;
+        // Clear loading
+        ctx.parentElement.innerHTML = '';
+        const newCanvas = document.createElement('canvas');
+        newCanvas.id = 'monthlyChart';
+        ctx.parentElement.appendChild(newCanvas);
+        const chartCtx = newCanvas.getContext('2d');
+
+        if (monthlyChart) monthlyChart.destroy();
+
+        const colors = getChartColors();
+
+        const datasets = [
+            {
+                label: budget.current_year + ' Actual',
+                data: budget.current_year_spent.map(v => v || 0),
+                backgroundColor: '#4caf50cc',
+                borderColor: '#4caf50',
+                borderWidth: 1,
+            },
+            {
+                label: budget.previous_year + ' Actual',
+                data: budget.previous_year_spent.map(v => v || 0),
+                backgroundColor: '#2196f3cc',
+                borderColor: '#2196f3',
+                borderWidth: 1,
+            },
+        ];
+
+        if (budget.current_year_limit.some(v => v !== null && v !== undefined)) {
+            datasets.push({
+                label: budget.current_year + ' Limit',
+                data: budget.current_year_limit.map(v => v || 0),
+                backgroundColor: '#9e9e9e44',
+                borderColor: '#9e9e9e',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                type: 'line',
+                fill: false,
+                pointRadius: 2,
+                pointStyle: 'rect',
+                order: 0,
+            });
+        }
+
+        monthlyChart = new Chart(chartCtx, {
+            type: 'bar',
+            data: {
+                labels: budget.months,
+                datasets: datasets,
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: colors.textColor },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const val = ctx.parsed.y;
+                                return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: colors.textColor },
+                        grid: { color: colors.gridColor },
+                    },
+                    y: {
+                        ticks: {
+                            color: colors.textColor,
+                            callback: function(v) {
+                                return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                            }
+                        },
+                        grid: { color: colors.gridColor },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        });
+    }
+
+    function renderCumulativeChart(budget) {
+        const ctx = document.getElementById('cumulativeChart');
+        if (!ctx) return;
+        ctx.parentElement.innerHTML = '';
+        const newCanvas = document.createElement('canvas');
+        newCanvas.id = 'cumulativeChart';
+        ctx.parentElement.appendChild(newCanvas);
+        const chartCtx = newCanvas.getContext('2d');
+
+        if (cumulativeChart) cumulativeChart.destroy();
+
+        const colors = getChartColors();
+
+        cumulativeChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: budget.months,
+                datasets: [
+                    {
+                        label: budget.current_year + ' Cumulative',
+                        data: budget.current_year_running.map(v => v || null),
+                        borderColor: '#4caf50',
+                        backgroundColor: '#4caf5033',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        borderWidth: 2,
+                    },
+                    {
+                        label: budget.previous_year + ' Cumulative',
+                        data: budget.previous_year_running.map(v => v || null),
+                        borderColor: '#ff9800',
+                        backgroundColor: '#ff980033',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        borderWidth: 2,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: colors.textColor },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const val = ctx.parsed.y;
+                                return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: colors.textColor },
+                        grid: { color: colors.gridColor },
+                    },
+                    y: {
+                        ticks: {
+                            color: colors.textColor,
+                            callback: function(v) {
+                                return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                            }
+                        },
+                        grid: { color: colors.gridColor },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        });
+    }
+
+    document.getElementById('select-all-budgets').addEventListener('click', () => {
+        document.querySelectorAll('.budget-checkbox').forEach(cb => cb.checked = true);
+        fetchComparisonData();
+    });
+
+    document.getElementById('deselect-all-budgets').addEventListener('click', () => {
+        document.querySelectorAll('.budget-checkbox').forEach(cb => cb.checked = false);
+        fetchComparisonData();
+    });
+</script>
+</body>
+</html>

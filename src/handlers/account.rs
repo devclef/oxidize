@@ -359,3 +359,32 @@ pub async fn get_budget_list(client: web::Data<FireflyClient>, req: HttpRequest)
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+/// GET endpoint for budget comparison: current year vs previous year with projections
+#[get("/api/budgets/comparison")]
+pub async fn get_budget_comparison(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut budget_names: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "budget_names" => budget_names.push(v),
+            _ => {}
+        }
+    }
+
+    match client.get_budget_comparison(budget_names, start, end).await {
+        Ok(comparison) => HttpResponse::Ok().json(comparison),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}

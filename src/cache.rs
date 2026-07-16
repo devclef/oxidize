@@ -30,6 +30,7 @@ pub struct DataCache {
     net_worth: RwLock<HashMap<String, CacheEntry<String>>>,
     subcategory_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     categories: RwLock<HashMap<String, CacheEntry<String>>>,
+    budget_limit: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -51,6 +52,7 @@ impl DataCache {
             net_worth: RwLock::new(HashMap::new()),
             subcategory_spend: RwLock::new(HashMap::new()),
             categories: RwLock::new(HashMap::new()),
+            budget_limit: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -544,6 +546,7 @@ impl DataCache {
         self.clear_net_worth();
         self.clear_subcategory_spend();
         self.clear_categories();
+        self.clear_budget_limit();
     }
 
     pub fn clear_accounts(&self) {
@@ -610,6 +613,49 @@ impl DataCache {
         Self::clear_tiered(
             &self.categories,
             Some(&format!("v{}:categories", CACHE_VERSION)),
+        );
+    }
+
+    // ── Budget limit ───────────────────────────────────────────────────
+
+    fn budget_limit_key(
+        budget_id: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        format!(
+            "v{}:budget_limit:{}:{}:{}",
+            CACHE_VERSION, budget_id, start, end
+        )
+    }
+
+    pub fn get_budget_limit(
+        &self,
+        budget_id: &str,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Option<String> {
+        let key = Self::budget_limit_key(budget_id, start_date.as_deref(), end_date.as_deref());
+        Self::get_tiered(&self.budget_limit, &key)
+    }
+
+    pub fn set_budget_limit(
+        &self,
+        budget_id: &str,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        data: String,
+    ) {
+        let key = Self::budget_limit_key(budget_id, start_date.as_deref(), end_date.as_deref());
+        Self::set_tiered(&self.budget_limit, &key, &data, self.ttl_seconds);
+    }
+
+    pub fn clear_budget_limit(&self) {
+        Self::clear_tiered(
+            &self.budget_limit,
+            Some(&format!("v{}:budget_limit:", CACHE_VERSION)),
         );
     }
 }

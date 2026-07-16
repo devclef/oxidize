@@ -1,8 +1,9 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
-    AccountArray, BudgetListResponse, CategoryListResponse, ChartDataSet, ChartLine,
-    MonthlySummary, ParentCategory, SimpleAccount,
+    AccountArray, BudgetComparison, BudgetComparisonProjections, BudgetListResponse,
+    BudgetPeriodLimit, CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary,
+    ParentCategory, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -96,6 +97,10 @@ impl FireflyClient {
         info!("Budget spent history cache cleared");
     }
 
+    pub fn clear_budget_limit_cache(&self) {
+        self.cache.clear_budget_limit();
+        info!("Budget limit cache cleared");
+    }
     pub async fn get_accounts(
         &self,
         type_filter: Option<String>,
@@ -1165,6 +1170,353 @@ impl FireflyClient {
         Ok(chart)
     }
 
+    /// Fetch budget limit data from Firefly III for a specific budget and date range.
+    /// Returns a list of BudgetPeriodLimit entries (one per period within the range).
+    pub async fn get_budget_limit(
+        &self,
+        budget_id: &str,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<Vec<BudgetPeriodLimit>, String> {
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            chrono::NaiveDate::from_ymd_opt(Utc::now().year(), 1, 1)
+                .unwrap()
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Check cache
+        if let Some(cached) =
+            self.cache
+                .get_budget_limit(budget_id, Some(start.clone()), Some(end.clone()))
+        {
+            debug!("Cache hit for budget limit: budget {}", budget_id);
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached budget limit: {}", e));
+        }
+
+        let url = format!("{}/v1/budget/limit", self.config.firefly_url.as_str());
+        let query = vec![
+            ("start".to_string(), start.clone()),
+            ("end".to_string(), end.clone()),
+            ("budget_id".to_string(), budget_id.to_string()),
+        ];
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.get_headers())
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "API request for budget limit failed with status: {}",
+                response.status()
+            ));
+        }
+
+        let body = response.text().await.map_err(|e| e.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+
+        // Firefly III returns either a single object or an array of objects
+        let limits: Vec<BudgetPeriodLimit> = match &value {
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(BudgetPeriodLimit::from_value)
+                .collect(),
+            _ => {
+                if let Some(limit) = BudgetPeriodLimit::from_value(&value) {
+                    vec![limit]
+                } else {
+                    vec![]
+                }
+            }
+        };
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&limits) {
+            self.cache
+                .set_budget_limit(budget_id, Some(start), Some(end), json);
+        }
+
+        debug!(
+            "budget limit: {} periods for budget {}",
+            limits.len(),
+            budget_id
+        );
+
+        Ok(limits)
+    }
+
+    /// Build a BudgetComparison for the given budget names.
+    /// Fetches budget spent history for current and previous year,
+    /// budget limits, and computes projections.
+    pub async fn get_budget_comparison(
+        &self,
+        budget_names: Vec<String>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<Vec<BudgetComparison>, String> {
+        let now = Utc::now();
+        let current_year = now.year();
+        let previous_year = current_year - 1;
+
+        // Determine end date (default to end of current month)
+        let end = end_date.unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            chrono::NaiveDate::from_ymd_opt(current_year, 1, 1)
+                .unwrap()
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Previous year date range
+        let prev_start = chrono::NaiveDate::from_ymd_opt(previous_year, 1, 1)
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string();
+
+        // Parse end date to determine which months should have data
+        let end_naive =
+            chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").unwrap_or(now.date_naive());
+        let current_month = end_naive.month();
+
+        // Fetch budget list to get IDs
+        let budgets = self
+            .get_budgets(Some(prev_start.clone()), Some(end.clone()))
+            .await?;
+
+        // Fetch current year spent history
+        let current_spent = self
+            .get_budget_spent_history(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1M".to_string()),
+                None,
+            )
+            .await?;
+
+        // Fetch previous year spent history
+        let prev_end = chrono::NaiveDate::from_ymd_opt(previous_year, 12, 31)
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string();
+        let prev_spent = self
+            .get_budget_spent_history(
+                Some(prev_start.clone()),
+                Some(prev_end.clone()),
+                Some("1M".to_string()),
+                None,
+            )
+            .await?;
+
+        let months: Vec<String> = (1..=12)
+            .map(|m| {
+                chrono::NaiveDate::from_ymd_opt(current_year, m, 1)
+                    .unwrap()
+                    .format("%b")
+                    .to_string()
+            })
+            .collect();
+
+        // Build comparison for each budget
+        let mut results: Vec<BudgetComparison> = Vec::new();
+
+        for budget in &budgets {
+            // Skip if budget_names filter is specified and this budget is not in it
+            if !budget_names.is_empty() && !budget_names.contains(&budget.name) {
+                continue;
+            }
+
+            // Extract current year monthly spent
+            let current_ds = current_spent.iter().find(|ds| ds.label == budget.name);
+            let mut current_spent: Vec<Option<f64>> = vec![None; 12];
+            if let Some(ds) = current_ds {
+                if let Some(entries) = ds.entries.as_object() {
+                    for (date_key, value) in entries {
+                        if let Some(month_idx) = Self::month_index_from_date_key(date_key) {
+                            let val = value
+                                .as_f64()
+                                .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
+                                .map(|v| v.abs());
+                            current_spent[month_idx as usize] = val;
+                        }
+                    }
+                }
+            }
+
+            // Extract previous year monthly spent
+            let prev_ds = prev_spent.iter().find(|ds| ds.label == budget.name);
+            let mut prev_spent: Vec<Option<f64>> = vec![None; 12];
+            if let Some(ds) = prev_ds {
+                if let Some(entries) = ds.entries.as_object() {
+                    for (date_key, value) in entries {
+                        if let Some(month_idx) = Self::month_index_from_date_key(date_key) {
+                            let val = value
+                                .as_f64()
+                                .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
+                                .map(|v| v.abs());
+                            prev_spent[month_idx as usize] = val;
+                        }
+                    }
+                }
+            }
+
+            // Fetch and extract limits for this budget
+            let mut current_limit: Vec<Option<f64>> = vec![None; 12];
+            let mut prev_limit: Vec<Option<f64>> = vec![None; 12];
+
+            if let Ok(limits) = self
+                .get_budget_limit(&budget.id, Some(start.clone()), Some(end.clone()))
+                .await
+            {
+                for limit in &limits {
+                    if let (Some(month_idx), Some(year)) = (limit.month_index(), limit.year()) {
+                        if year == current_year {
+                            current_limit[month_idx as usize] = Some(limit.period_limit);
+                        }
+                    }
+                }
+            }
+
+            if let Ok(limits) = self
+                .get_budget_limit(&budget.id, Some(prev_start.clone()), Some(prev_end.clone()))
+                .await
+            {
+                for limit in &limits {
+                    if let (Some(month_idx), Some(year)) = (limit.month_index(), limit.year()) {
+                        if year == previous_year {
+                            prev_limit[month_idx as usize] = Some(limit.period_limit);
+                        }
+                    }
+                }
+            }
+
+            // Build running totals
+            let mut current_running: Vec<Option<f64>> = vec![None; 12];
+            let mut running_sum: f64 = 0.0;
+            let mut has_any = false;
+            for i in 0..12 {
+                if let Some(val) = current_spent[i] {
+                    running_sum += val;
+                    current_running[i] = Some(running_sum);
+                    has_any = true;
+                } else if has_any {
+                    current_running[i] = Some(running_sum);
+                }
+            }
+
+            let mut prev_running: Vec<Option<f64>> = vec![None; 12];
+            running_sum = 0.0;
+            has_any = false;
+            for i in 0..12 {
+                if let Some(val) = prev_spent[i] {
+                    running_sum += val;
+                    prev_running[i] = Some(running_sum);
+                    has_any = true;
+                } else if has_any {
+                    prev_running[i] = Some(running_sum);
+                }
+            }
+
+            // Zero out months beyond current month for current year
+            for i in current_month as usize..12 {
+                current_spent[i] = None;
+                current_running[i] = None;
+            }
+
+            // Calculate projections
+            let ytd_total: f64 = current_spent.iter().filter_map(|v| *v).sum();
+            let prev_total: f64 = prev_spent.iter().filter_map(|v| *v).sum();
+            let current_limit_total: Option<f64> = if current_limit.iter().any(|v| v.is_some()) {
+                Some(current_limit.iter().filter_map(|v| *v).sum())
+            } else {
+                None
+            };
+            let prev_limit_total: Option<f64> = if prev_limit.iter().any(|v| v.is_some()) {
+                Some(prev_limit.iter().filter_map(|v| *v).sum())
+            } else {
+                None
+            };
+
+            let months_elapsed = current_month as f64;
+            let avg_monthly = if months_elapsed > 0.0 {
+                ytd_total / months_elapsed
+            } else {
+                0.0
+            };
+            let projected_annual = avg_monthly * 12.0;
+
+            let vs_last_year = if prev_total > 0.0 {
+                let pct = ((projected_annual / prev_total) - 1.0) * 100.0;
+                format!("{:+.1}%", pct)
+            } else if projected_annual > 0.0 {
+                "N/A (no previous data)".to_string()
+            } else {
+                "0.0%".to_string()
+            };
+
+            let vs_limit: Option<String> = current_limit_total.and_then(|limit| {
+                if limit > 0.0 {
+                    let pct = ((projected_annual / limit) - 1.0) * 100.0;
+                    Some(format!("{:+.1}%", pct))
+                } else {
+                    None
+                }
+            });
+
+            let on_track = current_limit_total
+                .map(|limit| projected_annual <= limit)
+                .unwrap_or(true);
+
+            // Get currency from chart data
+            let currency_symbol = current_ds
+                .and_then(|ds| ds.currency_symbol.clone())
+                .or_else(|| prev_ds.and_then(|ds| ds.currency_symbol.clone()));
+            let currency_code = current_ds
+                .and_then(|ds| ds.currency_code.clone())
+                .or_else(|| prev_ds.and_then(|ds| ds.currency_code.clone()));
+
+            results.push(BudgetComparison {
+                budget_name: budget.name.clone(),
+                current_year,
+                previous_year,
+                months: months.clone(),
+                current_year_spent: current_spent,
+                previous_year_spent: prev_spent,
+                current_year_limit: current_limit,
+                previous_year_limit: prev_limit,
+                current_year_running: current_running,
+                previous_year_running: prev_running,
+                projections: BudgetComparisonProjections {
+                    current_year_total: ytd_total,
+                    current_year_projected: projected_annual,
+                    previous_year_total: prev_total,
+                    current_year_limit_total: current_limit_total,
+                    previous_year_limit_total: prev_limit_total,
+                    vs_last_year,
+                    vs_limit,
+                    on_track,
+                },
+                currency_symbol,
+                currency_code,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// Extract a month index (0-based, 0=January) from a date key string.
+    /// Handles formats like "2026-01-01T00:00:00+00:00", "2026-01-01", etc.
+    fn month_index_from_date_key(date_key: &str) -> Option<u32> {
+        let date_str = date_key.split('T').next()?;
+        let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
+        Some(date.month() - 1) // 0-indexed
+    }
     fn get_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         if !self.config.firefly_token.is_empty() {

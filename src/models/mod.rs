@@ -7,7 +7,10 @@ pub mod group;
 pub mod widget;
 
 pub use account::{AccountArray, SimpleAccount};
-pub use budget::{BudgetListResponse, BudgetRead};
+pub use budget::{
+    BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
+    BudgetRead,
+};
 pub use category::{CategoryListResponse, CategoryRead, ParentCategory};
 pub use chart::{ChartDataSet, ChartLine};
 pub use dashboard::Dashboard;
