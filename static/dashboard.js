@@ -226,16 +226,27 @@ async function deleteDashboardConfirm(id, name) {
         const res = await fetch(`/api/dashboards/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(await res.text());
         dashboardsCache = await fetchDashboards();
+
         // If we deleted the current one, switch to first available
         if (id === currentDashboardId) {
-            currentDashboardId = dashboardsCache[0] ? dashboardsCache[0].id : null;
-            localStorage.setItem('oxidize_current_dashboard', currentDashboardId);
-            const titleEl = document.getElementById('dashboard-title');
-            if (titleEl) {
-                const d = dashboardsCache.find(dd => dd.id === currentDashboardId);
-                titleEl.textContent = d ? d.name : 'Dashboard';
+            if (dashboardsCache.length > 0) {
+                currentDashboardId = dashboardsCache[0].id;
+                localStorage.setItem('oxidize_current_dashboard', currentDashboardId);
+                const titleEl = document.getElementById('dashboard-title');
+                if (titleEl) {
+                    const d = dashboardsCache.find(dd => dd.id === currentDashboardId);
+                    titleEl.textContent = d ? d.name : 'Dashboard';
+                }
+                await renderDashboard();
+            } else {
+                // No dashboards left — clear state gracefully
+                currentDashboardId = null;
+                localStorage.removeItem('oxidize_current_dashboard');
+                const titleEl = document.getElementById('dashboard-title');
+                if (titleEl) titleEl.textContent = 'Dashboard';
+                document.getElementById('dashboard-container').innerHTML =
+                    '<div class="empty-dashboard"><h3>No Dashboards</h3><p>Create a new dashboard to get started.</p></div>';
             }
-            await renderDashboard();
         }
         renderNavDropdown();
         renderManageList();
