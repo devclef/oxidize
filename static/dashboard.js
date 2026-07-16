@@ -531,6 +531,17 @@ async function getDashboardWidgets() {
     }
 }
 
+async function getWidgetsForDashboard(dashboardId) {
+    try {
+        const response = await fetch(`/api/dashboards/${dashboardId}/widgets`);
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error('Failed to fetch widgets for dashboard:', e);
+        return [];
+    }
+}
+
 async function deleteWidget(id) {
     if (!confirm('Delete this widget?')) return;
 
@@ -1950,15 +1961,7 @@ async function renderWidgetChart(widget, containerId, allAccounts, allGroups = [
 
 async function renderDashboard() {
     const container = document.getElementById('dashboard-container');
-    const allWidgets = await getDashboardWidgets();
-
-    // Filter widgets by current dashboard
-    let widgets = allWidgets.filter(w => (w.dashboard_ids || []).includes(currentDashboardId));
-
-    // Ensure dashboard_ids exists on all widgets
-    allWidgets.forEach(w => {
-        if (!w.dashboard_ids) w.dashboard_ids = [];
-    });
+    const widgets = await getWidgetsForDashboard(currentDashboardId);
 
     if (widgets.length === 0) {
         const dashName = dashboardsCache.find(d => d.id === currentDashboardId)?.name || 'this dashboard';
