@@ -6,7 +6,7 @@ Review date: 2026-07-16
 
 ## Critical
 
-### 1. XSS vulnerability in dashboard management inline handlers
+### 1. ✅ FIXED ([9a4aba7](https://github.com/devclef/oxidize/commit/9a4aba7)) XSS vulnerability in dashboard management inline handlers
 
 **Files:** `static/dashboard.js` — `renderManageList()` (line ~147)
 
@@ -22,7 +22,7 @@ A dashboard name containing `"; alert(1);//` or similar payloads can break out o
 
 ---
 
-### 2. `widgetsCache` scope mismatch with `updateWidgetOrder` — cross-dashboard ordering corruption
+### 2. ✅ FIXED ([8fe7823](https://github.com/devclef/oxidize/commit/8fe7823)) `widgetsCache` scope mismatch with `updateWidgetOrder` — cross-dashboard ordering corruption
 
 **Files:** `static/dashboard.js` — `renderDashboard()` (line ~1960), `updateWidgetOrder()` (line ~508)
 
@@ -34,7 +34,7 @@ If two dashboards share the same widget, reordering on Dashboard A assigns `disp
 
 ---
 
-### 3. `deleteDashboardConfirm` — null access when last dashboard is deleted
+### 3. ✅ FIXED ([9a11d28](https://github.com/devclef/oxidize/commit/9a11d28)) `deleteDashboardConfirm` — null access when last dashboard is deleted
 
 **Files:** `static/dashboard.js` — `deleteDashboardConfirm()` (line ~183)
 
@@ -49,7 +49,7 @@ The backend prevents deleting the last dashboard, but if the backend check races
 
 ## High
 
-### 4. `renderSplitLegend` resets visibility on every render — user toggles are lost
+### 4. ✅ FIXED ([ea82134](https://github.com/devclef/oxidize/commit/ea82134)) `renderSplitLegend` resets visibility on every render — user toggles are lost
 
 **Files:** `static/dashboard.js` — `renderSplitLegend()` (line ~770)
 
@@ -68,7 +68,7 @@ If a user toggles off an account in the split legend and then clicks "Update" in
 
 ---
 
-### 5. Dashboard deletion doesn't clean up widget `dashboard_ids`
+### 5. ✅ FIXED ([daf083e](https://github.com/devclef/oxidize/commit/daf083e)) Dashboard deletion doesn't clean up widget `dashboard_ids`
 
 **Files:** `src/storage/mod.rs` — `delete_dashboard()` (line ~490)
 
@@ -78,7 +78,7 @@ When a dashboard is deleted, the backend removes it from the `dashboards` table 
 
 ---
 
-### 6. `extractChartData` assumes array length matches label count
+### 6. ✅ FIXED ([eda5226](https://github.com/devclef/oxidize/commit/eda5226)) `extractChartData` assumes array length matches label count
 
 **Files:** `static/dashboard.js` — `extractChartData()` (line ~1170), used in earned/spent chart renderers
 
@@ -98,7 +98,7 @@ The `length` parameter is passed but never used. If the API returns fewer/more e
 
 ---
 
-### 7. `computePercentChange` uses `Math.abs()` for denominator — wrong sign for negative values
+### 7. ✅ FIXED ([39d0687](https://github.com/devclef/oxidize/commit/39d0687)) `computePercentChange` uses `Math.abs()` for denominator — wrong sign for negative values
 
 **Files:** `static/dashboard.js` — `computePercentChange()` (line ~237)
 
@@ -112,7 +112,7 @@ Using `Math.abs(first)` as denominator discards the sign of the base value. For 
 
 ---
 
-### 8. `linearRegression` — no guard against division by zero
+### 8. ✅ FIXED ([d34441a](https://github.com/devclef/oxidize/commit/d34441a)) `linearRegression` — no guard against division by zero
 
 **Files:** `static/dashboard.js` — `linearRegression()` (line ~264)
 
@@ -128,7 +128,7 @@ If all x values are identical (e.g. all data points have the same index), the de
 
 ## Medium
 
-### 9. `/api/dashboards/{id}/widgets` endpoint exists but is never used by frontend
+### 9. ✅ FIXED ([2420529](https://github.com/devclef/oxidize/commit/2420529)) `/api/dashboards/{id}/widgets` endpoint exists but is never used by frontend
 
 **Files:** `src/handlers/dashboard_api.rs` (line ~18), `static/dashboard.js` — `getDashboardWidgets()` (line ~480)
 
@@ -138,7 +138,7 @@ The backend has a `GET /api/dashboards/{id}/widgets` endpoint that returns widge
 
 ---
 
-### 10. `saveGraphAsWidget` from main page doesn't set `dashboard_ids`
+### 10. ✅ FIXED ([097c712](https://github.com/devclef/oxidize/commit/097c712)) `saveGraphAsWidget` from main page doesn't set `dashboard_ids`
 
 **Files:** `static/app.js` — `saveGraphAsWidget()` (line ~2590)
 
@@ -151,7 +151,7 @@ The widget object built in `saveGraphAsWidget()` doesn't include `dashboard_ids`
 
 ---
 
-### 11. Theme toggle event listener registered twice
+### 11. ✅ FIXED ([348b316](https://github.com/devclef/oxidize/commit/348b316)) Theme toggle event listener registered twice
 
 **Files:** `static/theme.js` (line ~34), `static/dashboard.js` (line ~2376)
 
@@ -161,7 +161,7 @@ Both `theme.js` and `dashboard.js` add a `DOMContentLoaded` listener that attach
 
 ---
 
-### 12. Responsive grid missing for small widget widths on mobile
+### 12. ✅ FIXED ([893de79](https://github.com/devclef/oxidize/commit/893de79)) Responsive grid missing for small widget widths on mobile
 
 **Files:** `static/style.css` (line ~868)
 
@@ -177,7 +177,7 @@ Only `data-cols="6"` gets a mobile override. Widgets with widths 1, 2, 3, and 4 
 
 ---
 
-### 13. `updateWidgetDateRange` reads from DOM elements that may not exist
+### 13. ✅ FIXED ([8dd56a6](https://github.com/devclef/oxidize/commit/8dd56a6)) `updateWidgetDateRange` reads from DOM elements that may not exist
 
 **Files:** `static/dashboard.js` — `updateWidgetDateRange()` (line ~523)
 
@@ -189,7 +189,7 @@ Some fields are guarded (`chartModeEl ? chartModeEl.value : undefined`, `enableF
 
 ---
 
-### 14. `computeForecast` can add up to 365 forecast points — overwhelms chart
+### 14. ✅ FIXED ([8fdb859](https://github.com/devclef/oxidize/commit/8fdb859)) `computeForecast` can add up to 365 forecast points — overwhelms chart
 
 **Files:** `static/dashboard.js` — `computeForecast()` (line ~280)
 
@@ -209,7 +209,7 @@ The function toggles `style.display` between `'none'` and `'flex'`. After `rende
 
 ---
 
-### 16. `renderWidgetChart` parameter named `containerId` but used as canvas ID
+### 16. ✅ FIXED ([3cb43f3](https://github.com/devclef/oxidize/commit/3cb43f3)) `renderWidgetChart` parameter named `containerId` but used as canvas ID
 
 **Files:** `static/dashboard.js` — `renderWidgetChart()` (line ~1195)
 
@@ -240,7 +240,7 @@ After updating a widget, the settings panel is closed and focus is lost. Keyboar
 
 ---
 
-### 18. Widget chart canvas doesn't resize after interact.js height change
+### 18. ✅ FIXED ([9ccbb66](https://github.com/devclef/oxidize/commit/9ccbb66)) Widget chart canvas doesn't resize after interact.js height change
 
 **Files:** `static/dashboard.js` — interact.js `onend` handler (line ~2340)
 
