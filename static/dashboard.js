@@ -360,7 +360,9 @@ function linearRegression(points) {
     for (const p of points) {
         sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x;
     }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const denom = n * sumXX - sumX * sumX;
+    if (denom === 0) return null; // all x values identical — no meaningful slope
+    const slope = (n * sumXY - sumX * sumY) / denom;
     const intercept = (sumY - slope * sumX) / n;
     return { slope, intercept };
 }
@@ -381,7 +383,9 @@ function computeForecast(absoluteData, labels, forecastDays) {
 
     if (points.length < 2) return null;
 
-    const { slope, intercept } = linearRegression(points);
+    const regression = linearRegression(points);
+    if (!regression) return null;
+    const { slope, intercept } = regression;
 
     const lastDate = parseChartLabel(labels[labels.length - 1]);
     let periodDays = 1;
