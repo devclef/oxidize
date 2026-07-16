@@ -302,7 +302,7 @@ impl FireflyClient {
         let period_val = period.unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
             .await?;
 
         // Build a set of selected account IDs for transfer filtering
@@ -513,7 +513,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -750,17 +750,6 @@ impl FireflyClient {
                 .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
         };
 
-        let income_query = vec![
-            ("start".to_string(), start_date.clone()),
-            ("end".to_string(), end_date.clone()),
-            ("type".to_string(), "deposit".to_string()),
-        ];
-        let expense_query = vec![
-            ("start".to_string(), start_date.clone()),
-            ("end".to_string(), end_date.clone()),
-            ("type".to_string(), "withdrawal".to_string()),
-        ];
-
         let mut selected_account_ids = std::collections::HashSet::new();
         if let Some(ref ids) = account_ids {
             for id in ids {
@@ -788,41 +777,41 @@ impl FireflyClient {
             }
         }
 
-        let url = format!("{}/v1/transactions", self.config.firefly_url.as_str());
-        let income_response = self
-            .client
-            .get(&url)
-            .headers(self.get_headers())
-            .query(&income_query)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        let income_data: serde_json::Value =
-            income_response.json().await.map_err(|e| e.to_string())?;
-
-        let expense_response = self
-            .client
-            .get(&url)
-            .headers(self.get_headers())
-            .query(&expense_query)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        let expense_data: serde_json::Value =
-            expense_response.json().await.map_err(|e| e.to_string())?;
+        let income_txs = self
+            .fetch_all_transactions(
+                &start_date,
+                &end_date,
+                account_ids.as_ref(),
+                Some("deposit"),
+            )
+            .await?;
+        let expense_txs = self
+            .fetch_all_transactions(
+                &start_date,
+                &end_date,
+                account_ids.as_ref(),
+                Some("withdrawal"),
+            )
+            .await?;
 
         let total_income =
-            Self::sum_filtered_transaction_amounts(&income_data, &selected_account_ids, true);
+            Self::sum_transactions_from_list(&income_txs, &selected_account_ids, true);
         let total_expenses =
-            Self::sum_filtered_transaction_amounts(&expense_data, &selected_account_ids, false);
+            Self::sum_transactions_from_list(&expense_txs, &selected_account_ids, false);
         let savings = total_income - total_expenses;
         let savings_rate = if total_income > 0.0 {
             (savings / total_income) * 100.0
         } else {
             0.0
         };
-        let (currency_symbol, currency_code) =
-            Self::get_currency_from_transactions(&income_data, &expense_data);
+        let (currency_symbol, currency_code) = {
+            let c = Self::get_currency_from_transaction_list(&income_txs);
+            if c.0.is_some() || c.1.is_some() {
+                c
+            } else {
+                Self::get_currency_from_transaction_list(&expense_txs)
+            }
+        };
 
         let month_name = match month {
             1 => "January",
@@ -1055,7 +1044,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -1236,6 +1225,7 @@ impl FireflyClient {
         start: &str,
         end: &str,
         account_ids: Option<&Vec<String>>,
+        type_filter: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, String> {
         let chunks = Self::chunk_date_range(start, end)?;
         let mut all_transactions = std::collections::HashMap::new();
@@ -1246,12 +1236,15 @@ impl FireflyClient {
             let page_size = 500;
 
             loop {
-                let params = vec![
+                let mut params = vec![
                     ("start".to_string(), chunk_start.clone()),
                     ("end".to_string(), chunk_end.clone()),
                     ("limit".to_string(), "500".to_string()),
                     ("offset".to_string(), offset.to_string()),
                 ];
+                if let Some(t) = type_filter {
+                    params.push(("type".to_string(), t.to_string()));
+                }
 
                 let response = self
                     .client
@@ -1413,64 +1406,50 @@ impl FireflyClient {
         Ok(keys)
     }
 
-    fn sum_filtered_transaction_amounts(
-        data: &serde_json::Value,
+    fn sum_transactions_from_list(
+        txs: &[serde_json::Value],
         selected_account_ids: &std::collections::HashSet<String>,
         is_income: bool,
     ) -> f64 {
-        data.get("data")
-            .and_then(|d| d.as_array())
-            .map(|transactions| {
-                transactions
-                    .iter()
-                    .filter_map(|t| t.get("attributes"))
-                    .filter_map(|attr| attr.get("transactions"))
-                    .filter_map(|trans_array| trans_array.as_array())
-                    .flatten()
-                    .filter(|t| {
-                        if is_income {
-                            // For income (deposits), ignore if destination is a selected account
-                            let dest_id = t.get("destination_id").and_then(|s| s.as_str());
-                            if let Some(id) = dest_id {
-                                return !selected_account_ids.contains(id);
-                            }
-                        } else {
-                            // For expenses (withdrawals), ignore if source is a selected account
-                            let source_id = t.get("source_id").and_then(|d| d.as_str());
-                            if let Some(id) = source_id {
-                                return !selected_account_ids.contains(id);
-                            }
-                        }
-                        true
-                    })
-                    .filter_map(|trans| trans.get("amount"))
-                    .filter_map(|amt| amt.as_str())
-                    .filter_map(|amt_str| amt_str.parse::<f64>().ok())
-                    .sum()
+        txs.iter()
+            .filter_map(|t| t.get("attributes"))
+            .filter_map(|attr| attr.get("transactions"))
+            .filter_map(|trans_array| trans_array.as_array())
+            .flatten()
+            .filter(|t| {
+                if is_income {
+                    // For income (deposits), ignore if destination is a selected account
+                    let dest_id = t.get("destination_id").and_then(|d| d.as_str());
+                    if let Some(id) = dest_id {
+                        return !selected_account_ids.contains(id);
+                    }
+                } else {
+                    // For expenses (withdrawals), ignore if source is a selected account
+                    let source_id = t.get("source_id").and_then(|s| s.as_str());
+                    if let Some(id) = source_id {
+                        return !selected_account_ids.contains(id);
+                    }
+                }
+                true
             })
-            .unwrap_or(0.0)
+            .filter_map(|trans| trans.get("amount"))
+            .filter_map(|amt| {
+                amt.as_f64()
+                    .or_else(|| amt.as_str().and_then(|s| s.parse::<f64>().ok()))
+            })
+            .sum()
     }
 
-    fn get_currency_from_transactions(
-        income_data: &serde_json::Value,
-        expense_data: &serde_json::Value,
+    /// Extract currency info from a list of transaction objects (from fetch_all_transactions).
+    fn get_currency_from_transaction_list(
+        txs: &[serde_json::Value],
     ) -> (Option<String>, Option<String>) {
-        let currency = Self::extract_currency(income_data);
-        if currency.0.is_some() || currency.1.is_some() {
-            return currency;
-        }
-        Self::extract_currency(expense_data)
-    }
-
-    fn extract_currency(data: &serde_json::Value) -> (Option<String>, Option<String>) {
-        data.get("data")
-            .and_then(|d| d.as_array())
-            .and_then(|transactions| transactions.first())
-            .and_then(|t| t.get("attributes"))
-            .and_then(|attr| attr.get("transactions"))
-            .and_then(|trans_array| trans_array.as_array())
-            .and_then(|trans| trans.first())
-            .map(|trans| {
+        txs.iter()
+            .filter_map(|t| t.get("attributes"))
+            .filter_map(|attr| attr.get("transactions"))
+            .filter_map(|trans_array| trans_array.as_array())
+            .flatten()
+            .find_map(|trans| {
                 let symbol = trans
                     .get("currency_symbol")
                     .and_then(|s| s.as_str())
@@ -1479,7 +1458,11 @@ impl FireflyClient {
                     .get("currency_code")
                     .and_then(|s| s.as_str())
                     .map(String::from);
-                (symbol, code)
+                if symbol.is_some() || code.is_some() {
+                    Some((symbol, code))
+                } else {
+                    None
+                }
             })
             .unwrap_or((None, None))
     }
@@ -1584,7 +1567,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref())
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
             .await?;
 
         // Build a set of parent categories for filtering
