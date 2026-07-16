@@ -750,28 +750,16 @@ impl FireflyClient {
                 .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
         };
 
-        let mut income_query = vec![
+        let income_query = vec![
             ("start".to_string(), start_date.clone()),
             ("end".to_string(), end_date.clone()),
             ("type".to_string(), "deposit".to_string()),
         ];
-        let mut expense_query = vec![
+        let expense_query = vec![
             ("start".to_string(), start_date.clone()),
             ("end".to_string(), end_date.clone()),
             ("type".to_string(), "withdrawal".to_string()),
         ];
-
-        if let Some(ref ids) = account_ids {
-            if !ids.is_empty() {
-                income_query.push(("destination_id".to_string(), ids.join(",")));
-                expense_query.push(("source_id".to_string(), ids.join(",")));
-            }
-        } else if let Some(ref t) = account_type {
-            if t != "all" {
-                income_query.push(("account_type".to_string(), t.clone()));
-                expense_query.push(("account_type".to_string(), t.clone()));
-            }
-        }
 
         let mut selected_account_ids = std::collections::HashSet::new();
         if let Some(ref ids) = account_ids {
