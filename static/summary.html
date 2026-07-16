@@ -382,7 +382,7 @@
             document.getElementById('total-income').textContent = formatCurrency(data.total_income, currencySymbol, currencyCode);
             document.getElementById('total-expenses').textContent = formatCurrency(data.total_expenses, currencySymbol, currencyCode);
             document.getElementById('savings').textContent = formatCurrency(data.savings, currencySymbol, currencyCode);
-            document.getElementById('savings-rate').textContent = (data.savings_rate * 100).toFixed(1) + '%';
+            document.getElementById('savings-rate').textContent = data.savings_rate.toFixed(1) + '%';
         }
 
         // Event Listeners
