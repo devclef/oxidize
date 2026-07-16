@@ -2650,7 +2650,8 @@ async function saveGraphAsWidget() {
         chart_mode: chartMode,
         earned_chart_type: earnedChartType,
         widget_type: widgetType,
-        chart_options: chartOptions
+        chart_options: chartOptions,
+        dashboard_ids: ['default']
     };
 
     try {
