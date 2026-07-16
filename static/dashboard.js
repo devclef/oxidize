@@ -135,26 +135,66 @@ async function renderManageList() {
     const dashboards = dashboardsCache;
     const allWidgets = await getDashboardWidgets();
 
-    let html = '';
+    container.innerHTML = '';
     dashboards.forEach(d => {
         const widgetCount = allWidgets.filter(w => (w.dashboard_ids || []).includes(d.id)).length;
         const isCurrent = d.id === currentDashboardId;
         const isDefault = d.id === 'default';
-        html += `
-            <div class="manage-dashboard-item ${isCurrent ? 'active' : ''}">
-                <div class="manage-dashboard-info">
-                    <span class="manage-dashboard-name">${d.name}</span>
-                    <span class="manage-dashboard-count">${widgetCount} widget${widgetCount !== 1 ? 's' : ''}</span>
-                </div>
-                <div class="manage-dashboard-actions">
-                    ${!isCurrent ? `<button class="btn btn-sm" onclick="switchDashboard('${d.id}'); closeManageModal();">Switch</button>` : '<span class="current-badge">Current</span>'}
-                    <button class="btn btn-sm btn-secondary" onclick="renameDashboard('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Rename</button>
-                    ${!isDefault ? `<button class="btn btn-sm btn-danger" onclick="deleteDashboardConfirm('${d.id}', '${d.name.replace(/'/g, "\\'")}')">Delete</button>` : ''}
-                </div>
-            </div>
-        `;
+
+        const item = document.createElement('div');
+        item.className = 'manage-dashboard-item' + (isCurrent ? ' active' : '');
+
+        const info = document.createElement('div');
+        info.className = 'manage-dashboard-info';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'manage-dashboard-name';
+        nameSpan.textContent = d.name;
+
+        const countSpan = document.createElement('span');
+        countSpan.className = 'manage-dashboard-count';
+        countSpan.textContent = `${widgetCount} widget${widgetCount !== 1 ? 's' : ''}`;
+
+        info.appendChild(nameSpan);
+        info.appendChild(countSpan);
+
+        const actions = document.createElement('div');
+        actions.className = 'manage-dashboard-actions';
+
+        if (!isCurrent) {
+            const switchBtn = document.createElement('button');
+            switchBtn.className = 'btn btn-sm';
+            switchBtn.textContent = 'Switch';
+            switchBtn.addEventListener('click', () => {
+                switchDashboard(d.id);
+                closeManageModal();
+            });
+            actions.appendChild(switchBtn);
+        } else {
+            const badge = document.createElement('span');
+            badge.className = 'current-badge';
+            badge.textContent = 'Current';
+            actions.appendChild(badge);
+        }
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-secondary';
+        renameBtn.textContent = 'Rename';
+        renameBtn.addEventListener('click', () => renameDashboard(d.id, d.name));
+        actions.appendChild(renameBtn);
+
+        if (!isDefault) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-sm btn-danger';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.addEventListener('click', () => deleteDashboardConfirm(d.id, d.name));
+            actions.appendChild(deleteBtn);
+        }
+
+        item.appendChild(info);
+        item.appendChild(actions);
+        container.appendChild(item);
     });
-    container.innerHTML = html;
 }
 
 async function renameDashboard(id, oldName) {
