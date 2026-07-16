@@ -786,14 +786,14 @@ impl FireflyClient {
                     }
                 }
             } else {
-                if let Ok(accounts) = self.get_accounts(None).await {
+                if let Ok(accounts) = self.get_accounts(Some("asset".to_string())).await {
                     for acc in accounts {
                         selected_account_ids.insert(acc.id);
                     }
                 }
             }
         } else {
-            if let Ok(accounts) = self.get_accounts(None).await {
+            if let Ok(accounts) = self.get_accounts(Some("asset".to_string())).await {
                 for acc in accounts {
                     selected_account_ids.insert(acc.id);
                 }
@@ -1441,15 +1441,15 @@ impl FireflyClient {
                     .flatten()
                     .filter(|t| {
                         if is_income {
-                            // For income (deposits), ignore if source is a selected account
-                            let source_id = t.get("source_id").and_then(|s| s.as_str());
-                            if let Some(id) = source_id {
+                            // For income (deposits), ignore if destination is a selected account
+                            let dest_id = t.get("destination_id").and_then(|s| s.as_str());
+                            if let Some(id) = dest_id {
                                 return !selected_account_ids.contains(id);
                             }
                         } else {
-                            // For expenses (withdrawals), ignore if destination is a selected account
-                            let dest_id = t.get("destination_id").and_then(|d| d.as_str());
-                            if let Some(id) = dest_id {
+                            // For expenses (withdrawals), ignore if source is a selected account
+                            let source_id = t.get("source_id").and_then(|d| d.as_str());
+                            if let Some(id) = source_id {
                                 return !selected_account_ids.contains(id);
                             }
                         }
