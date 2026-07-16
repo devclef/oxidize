@@ -24,6 +24,18 @@ pub async fn get_monthly_summary(
     let month = query.month.unwrap_or(now.month());
     let year = query.year.unwrap_or(now.year());
 
+    // Validate month/year
+    if !(1..=12).contains(&month) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": format!("Invalid month: {}. Must be between 1 and 12.", month)
+        }));
+    }
+    if !(1900..=2100).contains(&year) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "message": format!("Invalid year: {}. Must be between 1900 and 2100.", year)
+        }));
+    }
+
     // Parse account IDs if provided
     let account_ids = query.account_ids.as_ref().map(|ids| {
         ids.split(',')
@@ -44,7 +56,9 @@ pub async fn get_monthly_summary(
 /// GET endpoint for the summary page
 #[get("/summary")]
 pub async fn summary(config: web::Data<Config>) -> HttpResponse {
-    let html = include_str!("../../static/summary.html");
+    // Read HTML from filesystem at runtime (consistent with index.rs)
+    let html = std::fs::read_to_string("static/summary.html")
+        .unwrap_or_else(|_| include_str!("../../static/summary.html").to_string());
 
     // Inject config as a script tag before the closing head tag
     let config_script = format!(
