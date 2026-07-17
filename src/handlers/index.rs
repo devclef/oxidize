@@ -1,5 +1,5 @@
 use crate::config::Config;
-use actix_web::{web, HttpResponse};
+use actix_web::{get, web, HttpResponse};
 
 pub async fn index(config: web::Data<Config>) -> HttpResponse {
     let html = std::fs::read_to_string("./static/index.html")
@@ -37,4 +37,11 @@ pub async fn manifest() -> HttpResponse {
         .insert_header(("Access-Control-Allow-Origin", "*"))
         .insert_header(("Cache-Control", "public, max-age=3600"))
         .body(content)
+}
+
+#[get("/favicon.ico")]
+pub async fn favicon() -> HttpResponse {
+    // Return a minimal valid favicon.ico (16x16 transparent PNG as ICO)
+    // Actually, just return 204 No Content to suppress the 404
+    HttpResponse::NoContent().finish()
 }

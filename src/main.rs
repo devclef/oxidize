@@ -61,6 +61,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::dashboard_api::delete_dashboard)
             .route("/", web::get().to(handlers::index::index))
             .route("/api/manifest", web::get().to(handlers::index::manifest))
+            .service(handlers::index::favicon)
             .service(actix_files::Files::new("/static", "./static"))
     })
     .bind((host, port))?
