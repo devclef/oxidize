@@ -560,7 +560,12 @@ impl FireflyClient {
 
             // In parent mode, extract just the part before ":" as the label
             let category_name = if is_parent_mode {
-                full_category.split(':').next().unwrap_or(&full_category).trim().to_string()
+                full_category
+                    .split(':')
+                    .next()
+                    .unwrap_or(&full_category)
+                    .trim()
+                    .to_string()
             } else {
                 full_category
             };
@@ -610,8 +615,14 @@ impl FireflyClient {
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&chart) {
-            self.cache
-                .set_expenses_by_category(start_date, end_date, period, account_ids, graph_mode, json);
+            self.cache.set_expenses_by_category(
+                start_date,
+                end_date,
+                period,
+                account_ids,
+                graph_mode,
+                json,
+            );
         }
 
         Ok(chart)
