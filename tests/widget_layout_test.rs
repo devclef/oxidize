@@ -85,6 +85,7 @@ fn test_widget_serialization_includes_new_fields() {
         budget_names: vec![],
         parent_categories: vec![],
         subcategories: vec![],
+        category_graph_mode: None,
         start_date: None,
         end_date: None,
         interval: None,

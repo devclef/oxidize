@@ -15,6 +15,9 @@ pub struct Widget {
     pub parent_categories: Vec<String>,
     #[serde(default)]
     pub subcategories: Vec<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_graph_mode: Option<String>, // "subcategory" (default) or "parent"
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub interval: Option<String>,

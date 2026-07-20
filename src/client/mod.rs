@@ -492,13 +492,16 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
     ) -> Result<ChartLine, String> {
+        let is_parent_mode = graph_mode.as_deref() == Some("parent");
         // Check cache first
         if let Some(cached_json) = self.cache.get_expenses_by_category(
             start_date.clone(),
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            graph_mode.clone(),
         ) {
             debug!("Cache hit for expenses by category");
             return serde_json::from_str(&cached_json)
@@ -549,11 +552,18 @@ impl FireflyClient {
                 continue;
             }
 
-            let category_name = journal
+            let full_category = journal
                 .get("category_name")
                 .and_then(|c| c.as_str())
                 .map(String::from)
                 .unwrap_or_else(|| "Uncategorized".to_string());
+
+            // In parent mode, extract just the part before ":" as the label
+            let category_name = if is_parent_mode {
+                full_category.split(':').next().unwrap_or(&full_category).trim().to_string()
+            } else {
+                full_category
+            };
 
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
                 if let Ok(amount) = amount_str.parse::<f64>() {
@@ -601,7 +611,7 @@ impl FireflyClient {
         // Cache the result
         if let Ok(json) = serde_json::to_string(&chart) {
             self.cache
-                .set_expenses_by_category(start_date, end_date, period, account_ids, json);
+                .set_expenses_by_category(start_date, end_date, period, account_ids, graph_mode, json);
         }
 
         Ok(chart)
@@ -1882,7 +1892,8 @@ impl FireflyClient {
     }
 
     /// Get subcategory spend chart data for selected parent categories.
-    /// Returns a ChartLine with one ChartDataSet per subcategory.
+    /// When graph_mode is "parent", groups by parent category (one line per parent).
+    /// Otherwise (default), groups by subcategory (one line per "parent > subcat").
     pub async fn get_subcategory_spend_chart(
         &self,
         parent_categories: Vec<String>,
@@ -1891,7 +1902,9 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
     ) -> Result<ChartLine, String> {
+        let is_parent_mode = graph_mode.as_deref() == Some("parent");
         // Check cache first
         if let Some(cached_json) = self.cache.get_subcategory_spend(
             &parent_categories,
@@ -1900,6 +1913,7 @@ impl FireflyClient {
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            graph_mode.clone(),
         ) {
             debug!("Cache hit for subcategory spend");
             return serde_json::from_str(&cached_json)
@@ -1996,8 +2010,12 @@ impl FireflyClient {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
                         let period_key = Self::get_period_key(date, &period_val);
 
-                        // Use "parent > subcat" as the label for clarity
-                        let label = format!("{} > {}", parent, subcat);
+                        // In parent mode, group by parent only; otherwise by "parent > subcat"
+                        let label = if is_parent_mode {
+                            parent.to_string()
+                        } else {
+                            format!("{} > {}", parent, subcat)
+                        };
 
                         let entries = subcat_entries.entry(label).or_default();
                         *entries.entry(period_key).or_insert(0.0) += amount;
@@ -2046,6 +2064,7 @@ impl FireflyClient {
                 end_date,
                 period,
                 account_ids,
+                graph_mode,
                 json,
             );
         }

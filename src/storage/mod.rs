@@ -144,6 +144,11 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN dashboard_ids TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+    // Migration: Add category_graph_mode column if it does not exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN category_graph_mode TEXT DEFAULT 'subcategory'",
+        [],
+    );
     // Initialize persistent chart cache table
     PersistentCache::init(conn);
 }
@@ -204,7 +209,7 @@ impl Storage {
         with_db(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, start_date, end_date, interval, chart_mode,
+                    "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
@@ -220,19 +225,20 @@ impl Storage {
                     let budget_names_json: String = row.get(5)?;
                     let parent_categories_json: String = row.get(6)?;
                     let subcategories_json: String = row.get(7)?;
-                    let start_date: Option<String> = row.get(8)?;
-                    let end_date: Option<String> = row.get(9)?;
-                    let interval: Option<String> = row.get(10)?;
-                    let chart_mode: Option<String> = row.get(11)?;
-                    let widget_type: Option<String> = row.get(12)?;
-                    let chart_options_json: Option<String> = row.get(13)?;
-                    let display_order: i32 = row.get(14)?;
-                    let width: i32 = row.get(15)?;
-                    let chart_height: i32 = row.get(16)?;
-                    let created_at: Option<String> = row.get(17)?;
-                    let updated_at: Option<String> = row.get(18)?;
-                    let earned_chart_type: Option<String> = row.get(19)?;
-                    let dashboard_ids_json: String = row.get(20)?;
+                    let category_graph_mode: Option<String> = row.get(8)?;
+                    let start_date: Option<String> = row.get(9)?;
+                    let end_date: Option<String> = row.get(10)?;
+                    let interval: Option<String> = row.get(11)?;
+                    let chart_mode: Option<String> = row.get(12)?;
+                    let widget_type: Option<String> = row.get(13)?;
+                    let chart_options_json: Option<String> = row.get(14)?;
+                    let display_order: i32 = row.get(15)?;
+                    let width: i32 = row.get(16)?;
+                    let chart_height: i32 = row.get(17)?;
+                    let created_at: Option<String> = row.get(18)?;
+                    let updated_at: Option<String> = row.get(19)?;
+                    let earned_chart_type: Option<String> = row.get(20)?;
+                    let dashboard_ids_json: String = row.get(21)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -260,6 +266,7 @@ impl Storage {
                         budget_names,
                         parent_categories,
                         subcategories,
+                        category_graph_mode,
                         start_date,
                         end_date,
                         interval,
@@ -330,9 +337,9 @@ impl Storage {
             };
 
             conn.execute(
-                "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, start_date, end_date, interval,
+                "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -342,6 +349,7 @@ impl Storage {
                     &budget_names_json,
                     &parent_categories_json,
                     &subcategories_json,
+                    &widget.category_graph_mode,
                     &widget.start_date,
                     &widget.end_date,
                     &widget.interval,
@@ -388,11 +396,11 @@ impl Storage {
             let rows = conn
                 .execute(
                     "UPDATE widgets SET
-                    name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7,
-                    start_date = ?8, end_date = ?9, interval = ?10, chart_mode = ?11,
-                    widget_type = ?12, chart_options = ?13, earned_chart_type = ?14,
-                    display_order = ?15, width = ?16, chart_height = ?17, dashboard_ids = ?18, updated_at = ?19
-                 WHERE id = ?20",
+                    name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7, category_graph_mode = ?8,
+                    start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
+                    widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
+                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, updated_at = ?20
+                 WHERE id = ?21",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -401,6 +409,7 @@ impl Storage {
                         &budget_names_json,
                         &parent_categories_json,
                         &subcategories_json,
+                        &widget.category_graph_mode,
                         &widget.start_date,
                         &widget.end_date,
                         &widget.interval,

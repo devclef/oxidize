@@ -1327,6 +1327,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             // Add specific subcategories if any were selected
             const widgetSubcategories = widget.subcategories || [];
             widgetSubcategories.forEach(name => params.append('subcategories[]', name));
+            // Add graph mode (parent or subcategory)
+            const graphMode = widget.category_graph_mode || 'subcategory';
+            params.append('graph_mode', graphMode);
             // Add account IDs for filtering
             const groupIds = widget.group_ids || [];
             const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
@@ -1336,6 +1339,27 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
 
             const url = `/api/categories/subcategory-spend?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            history = await response.json();
+      } else if (widgetType === 'expenses_by_category') {
+            // For expenses by category, use the expenses-by-category endpoint
+            const params = new URLSearchParams();
+            if (widget.start_date) params.append('start', widget.start_date);
+            if (widget.end_date) params.append('end', widget.end_date);
+            if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+            if (widget.category_graph_mode) params.append('graph_mode', widget.category_graph_mode);
+            // Add account IDs for filtering
+            const groupIds = widget.group_ids || [];
+            const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+            const groupAccountIds = new Set();
+            widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+            const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+            allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+
+            const url = `/api/expenses-by-category?${params.toString()}`;
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
@@ -1491,6 +1515,116 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
         }
 
 
+        // Handle expenses_by_category widget type - time-series line chart with dates on X-axis, one line per category
+        if (widgetType === 'expenses_by_category') {
+            if (!history || history.length === 0) {
+                document.getElementById(`${canvasId}-error`).textContent = 'No category expense data available';
+                return;
+            }
+
+            // Collect all unique dates across all category datasets
+            const dateSet = new Set();
+            history.forEach(ds => {
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
+                }
+            });
+            const allDates = Array.from(dateSet).sort();
+
+            const opts = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#eaeaea' : '#333';
+            const chartGridColor = isDark ? '#444' : '#ddd';
+
+            // Generate colors for categories
+            const colors = generateColors(history.length);
+
+            // Build Chart.js datasets - one per category
+            const datasets = [];
+            const legendInfo = [];
+
+            history.forEach((ds, i) => {
+                const data = allDates.map(date => {
+                    const val = ds.entries?.[date];
+                    if (val === undefined || val === null) return 0;
+                    let num = 0;
+                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                        num = parseFloat(val.value);
+                    } else {
+                        num = parseFloat(val);
+                    }
+                    return isNaN(num) ? 0 : Math.abs(num);
+                });
+                datasets.push({
+                    label: ds.label,
+                    data: data,
+                    borderColor: colors[i],
+                    backgroundColor: colors[i] + '33',
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2,
+                    order: 1
+                });
+                legendInfo.push({ name: ds.label });
+            });
+
+            if (widgetCharts[widget.id]) {
+                widgetCharts[widget.id].destroy();
+            }
+
+            widgetCharts[widget.id] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: opts.beginAtZero,
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                maxRotation: 45,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    const date = parseChartLabel(label);
+                                    return date.toLocaleDateString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Render interactive split legend below chart
+            renderSplitLegend(widget.id, legendInfo, datasets);
+            return;
+        }
         // Handle category_subcat widget type - time-series line chart with dates on X-axis, one line per subcategory
         if (widgetType === 'category_subcat') {
             const parentCategories = widget.parent_categories || [];
@@ -2048,8 +2182,12 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge earned-spent">Earned vs Spent</span>';
         } else if (widgetType === 'budget_spent') {
             widgetTypeBadge = '<span class="widget-type-badge budget-spent">Budget Spent</span>';
+        } else if (widgetType === 'expenses_by_category') {
+            const expMode = widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Expenses';
+            widgetTypeBadge = `<span class="widget-type-badge category-subcat">${expMode}</span>`;
         } else if (widgetType === 'category_subcat') {
-            widgetTypeBadge = '<span class="widget-type-badge category-subcat">Category Subcategories</span>';
+            const catMode = widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Subcategories';
+            widgetTypeBadge = `<span class="widget-type-badge category-subcat">${catMode}</span>`;
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }

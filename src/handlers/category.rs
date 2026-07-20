@@ -35,6 +35,7 @@ pub async fn get_subcategory_spend(
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
+    let mut graph_mode: Option<String> = None;
     let mut parent_categories: Vec<String> = Vec::new();
     let mut subcategories: Vec<String> = Vec::new();
     let mut account_ids: Vec<String> = Vec::new();
@@ -44,6 +45,7 @@ pub async fn get_subcategory_spend(
             "start" => start = Some(v),
             "end" => end = Some(v),
             "period" => period = Some(v),
+            "graph_mode" => graph_mode = Some(v),
             "parent_categories[]" | "parent_categories" => {
                 parent_categories.push(v);
             }
@@ -69,6 +71,7 @@ pub async fn get_subcategory_spend(
             } else {
                 Some(account_ids)
             },
+            graph_mode,
         )
         .await
     {

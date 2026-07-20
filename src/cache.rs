@@ -361,6 +361,7 @@ impl DataCache {
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        graph_mode: Option<&str>,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -369,9 +370,10 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
+        let mode = graph_mode.unwrap_or("subcategory");
         format!(
-            "v{}:expenses_cat:{}:{}:{}:{}",
-            CACHE_VERSION, start, end, period, accounts
+            "v{}:expenses_cat:{}:{}:{}:{}:{}",
+            CACHE_VERSION, start, end, period, accounts, mode
         )
     }
 
@@ -381,12 +383,14 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
     ) -> Option<String> {
         let key = Self::expenses_category_key(
             start_date.as_deref(),
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            graph_mode.as_deref(),
         );
         Self::get_tiered(&self.expenses_by_category, &key)
     }
@@ -397,6 +401,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
         data: String,
     ) {
         let key = Self::expenses_category_key(
@@ -404,6 +409,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            graph_mode.as_deref(),
         );
         Self::set_tiered(&self.expenses_by_category, &key, &data, self.ttl_seconds);
     }
@@ -459,6 +465,7 @@ impl DataCache {
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        graph_mode: Option<&str>,
     ) -> String {
         let parents = parent_categories.join(",");
         let subcats = subcategories.join(",");
@@ -469,9 +476,10 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
+        let mode = graph_mode.unwrap_or("subcategory");
         format!(
-            "v{}:subcat_spend:{}:{}:{}:{}:{}:{}",
-            CACHE_VERSION, parents, subcats, start, end, period, accounts
+            "v{}:subcat_spend:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION, parents, subcats, start, end, period, accounts, mode
         )
     }
 
@@ -483,6 +491,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
     ) -> Option<String> {
         let key = Self::subcategory_spend_key(
             parent_categories,
@@ -491,6 +500,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            graph_mode.as_deref(),
         );
         Self::get_tiered(&self.subcategory_spend, &key)
     }
@@ -504,6 +514,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        graph_mode: Option<String>,
         data: String,
     ) {
         let key = Self::subcategory_spend_key(
@@ -513,6 +524,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            graph_mode.as_deref(),
         );
         Self::set_tiered(&self.subcategory_spend, &key, &data, self.ttl_seconds);
     }

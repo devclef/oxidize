@@ -206,6 +206,7 @@ pub async fn get_expenses_by_category(
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
+    let mut graph_mode: Option<String> = None;
     let mut account_ids: Vec<String> = Vec::new();
 
     for (k, v) in params {
@@ -213,6 +214,7 @@ pub async fn get_expenses_by_category(
             "start" => start = Some(v),
             "end" => end = Some(v),
             "period" => period = Some(v),
+            "graph_mode" => graph_mode = Some(v),
             "accounts[]" | "accounts" => {
                 account_ids.push(v);
             }
@@ -232,7 +234,7 @@ pub async fn get_expenses_by_category(
     };
 
     match client
-        .get_expenses_by_category(start, end, period, account_ids_opt)
+        .get_expenses_by_category(start, end, period, account_ids_opt, graph_mode)
         .await
     {
         Ok(categories) => HttpResponse::Ok().json(categories),

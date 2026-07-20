@@ -17,6 +17,8 @@ let categorySortMode = 'subcat_desc';
 let categoryExpanded = {};
 // Track selected subcategories: Map<parentName, Set<subcatName>>
 let selectedSubcategories = new Map();
+// Graph mode: "subcategory" (default) or "parent"
+let categoryGraphMode = 'subcategory';
 
 // Parse a chart label that may be a date string or quarterly format like "2025-Q1"
 function parseChartLabel(label) {
@@ -298,6 +300,7 @@ async function fetchChartData() {
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
+            if (categoryGraphMode) params.append('graph_mode', categoryGraphMode);
 
             let url = '/api/expenses-by-category';
             if (params.toString()) {
@@ -515,7 +518,7 @@ async function fetchChartData() {
                 }
             }
             if (selectedParentCategories.length === 0) {
-                chartErrorEl.innerHTML = '<div class="info">Please select at least one subcategory.</div>';
+                chartErrorEl.innerHTML = '<div class="info">Please select at least one category.</div>';
                 chartContainer.style.display = 'block';
                 if (balanceChart) {
                     balanceChart.destroy();
@@ -525,6 +528,9 @@ async function fetchChartData() {
             }
             selectedParentCategories.forEach(name => params.append('parent_categories[]', name));
             selectedSubcatFullNames.forEach(name => params.append('subcategories[]', name));
+
+            // Add graph mode
+            params.append('graph_mode', categoryGraphMode);
 
             // Add account IDs for filtering
             const selectedAccountIds = getSelectedAccountIds();
@@ -2644,6 +2650,7 @@ async function saveGraphAsWidget() {
         budget_names: selectedBudgetNames,
         parent_categories: selectedParentCategories,
         subcategories: selectedSubcatFullNames,
+        category_graph_mode: (widgetType === 'category_subcat' || widgetType === 'expenses_by_category') ? categoryGraphMode : null,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -3555,10 +3562,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const titles = {
                     'balance': 'Account Balance History',
                     'earned_spent': 'Earned vs Spent',
-                    'expenses_by_category': 'Expenses by Category Over Time',
+                    'expenses_by_category': categoryGraphMode === 'parent'
+                        ? 'Expenses by Main Category'
+                        : 'Expenses by Category Over Time',
                     'net_worth': 'Net Worth',
                     'budget_spent': 'Budget Spent Over Time',
-                    'category_subcat': 'Category Subcategory Spend'
+                    'category_subcat': categoryGraphMode === 'parent'
+                        ? 'Category Spend by Main Category'
+                        : 'Category Subcategory Spend'
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -3597,9 +3608,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
+            // Show/hide category graph mode toggle (visible for expenses_by_category and category_subcat)
+            const graphModeToggle = document.getElementById('category-graph-mode-selector');
+            if (graphModeToggle) {
+                graphModeToggle.style.display = (widgetType === 'expenses_by_category' || widgetType === 'category_subcat') ? 'flex' : 'none';
+            }
             fetchChartData();
         });
     }
+
+    // Handle category graph mode change
+    document.querySelectorAll('input[name="category-graph-mode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            categoryGraphMode = radio.value;
+            fetchChartData();
+        });
+    });
 
     // Handle earned chart type change
     document.querySelectorAll('input[name="earned-chart-type"]').forEach(radio => {
