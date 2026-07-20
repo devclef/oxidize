@@ -1,11 +1,12 @@
-const CACHE_NAME = 'oxidize-cache-v2';
+const CACHE_NAME = 'oxidize-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/style.css',
   '/static/dashboard.js',
   '/static/summary.html',
   '/static/dashboard.html',
-  '/static/manifest.json'
+  '/static/manifest.json',
+  '/budget-comparison'
 ];
 
 self.addEventListener('install', (event) => {

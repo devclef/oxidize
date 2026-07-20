@@ -173,6 +173,17 @@
             font-size: 1.1em;
         }
     
+        
+        .chart-error-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--error-color);
+            font-size: 0.9em;
+            padding: 20px;
+        }
         .chart-loading-overlay {
             position: absolute;
             top: 0;
@@ -441,184 +452,208 @@
     }
 
     function renderMonthlyChart(budget) {
+        const container = document.querySelector('#monthlyChart').parentElement;
         try {
-            // Remove loading overlay
-            const container = document.querySelector('#monthlyChart').parentElement;
-            const overlay = container.querySelector('.chart-loading-overlay');
-            if (overlay) overlay.remove();
-            container.style.position = '';
+            if (typeof Chart === 'undefined') {
+                throw new Error('Chart.js library not loaded');
+            }
 
             const canvas = document.getElementById('monthlyChart');
             if (!canvas) {
-                console.error('monthlyChart canvas not found');
-                return;
+                throw new Error('Chart canvas element not found');
             }
             const chartCtx = canvas.getContext('2d');
 
             if (monthlyChart) monthlyChart.destroy();
 
-        const colors = getChartColors();
+            const colors = getChartColors();
 
-        const datasets = [
-            {
-                label: budget.current_year + ' Actual',
-                data: budget.current_year_spent.map(v => v || 0),
-                backgroundColor: '#4caf50cc',
-                borderColor: '#4caf50',
-                borderWidth: 1,
-            },
-            {
-                label: budget.previous_year + ' Actual',
-                data: budget.previous_year_spent.map(v => v || 0),
-                backgroundColor: '#2196f3cc',
-                borderColor: '#2196f3',
-                borderWidth: 1,
-            },
-        ];
+            const datasets = [
+                {
+                    label: budget.current_year + ' Actual',
+                    data: budget.current_year_spent.map(v => v || 0),
+                    backgroundColor: '#4caf50cc',
+                    borderColor: '#4caf50',
+                    borderWidth: 1,
+                },
+                {
+                    label: budget.previous_year + ' Actual',
+                    data: budget.previous_year_spent.map(v => v || 0),
+                    backgroundColor: '#2196f3cc',
+                    borderColor: '#2196f3',
+                    borderWidth: 1,
+                },
+            ];
 
-        if (budget.current_year_limit.some(v => v !== null && v !== undefined)) {
-            datasets.push({
-                label: budget.current_year + ' Limit',
-                data: budget.current_year_limit.map(v => v || 0),
-                backgroundColor: '#9e9e9e44',
-                borderColor: '#9e9e9e',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                type: 'line',
-                fill: false,
-                pointRadius: 2,
-                pointStyle: 'rect',
-                order: 0,
-            });
-        }
+            if (budget.current_year_limit.some(v => v !== null && v !== undefined)) {
+                datasets.push({
+                    label: budget.current_year + ' Limit',
+                    data: budget.current_year_limit.map(v => v || 0),
+                    backgroundColor: '#9e9e9e44',
+                    borderColor: '#9e9e9e',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    type: 'line',
+                    fill: false,
+                    pointRadius: 2,
+                    pointStyle: 'rect',
+                    order: 0,
+                });
+            }
 
-        monthlyChart = new Chart(chartCtx, {
-            type: 'bar',
-            data: {
-                labels: budget.months,
-                datasets: datasets,
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: { color: colors.textColor },
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                const val = ctx.parsed.y;
-                                return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+            monthlyChart = new Chart(chartCtx, {
+                type: 'bar',
+                data: {
+                    labels: budget.months,
+                    datasets: datasets,
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: colors.textColor },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    const val = ctx.parsed.y;
+                                    return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                                }
                             }
                         }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: { color: colors.textColor },
-                        grid: { color: colors.gridColor },
                     },
-                    y: {
-                        ticks: {
-                            color: colors.textColor,
-                            callback: function(v) {
-                                return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
-                            }
+                    scales: {
+                        x: {
+                            ticks: { color: colors.textColor },
+                            grid: { color: colors.gridColor },
                         },
-                        grid: { color: colors.gridColor },
-                        beginAtZero: true,
+                        y: {
+                            ticks: {
+                                color: colors.textColor,
+                                callback: function(v) {
+                                    return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                                }
+                            },
+                            grid: { color: colors.gridColor },
+                            beginAtZero: true,
+                        },
                     },
                 },
-            },
-        });
+            });
+
+            // Remove loading overlay only after successful chart creation
+            const overlay = container.querySelector('.chart-loading-overlay');
+            if (overlay) overlay.remove();
+            container.style.position = '';
         } catch (e) {
             console.error('Error rendering monthly chart:', e);
+            const overlay = container.querySelector('.chart-loading-overlay');
+            if (overlay) {
+                overlay.textContent = 'Failed to render chart: ' + e.message;
+            } else {
+                const err = document.createElement('div');
+                err.className = 'chart-error-display';
+                err.textContent = 'Failed to render chart';
+                container.appendChild(err);
+            }
         }
     }
 
     function renderCumulativeChart(budget) {
+        const container = document.querySelector('#cumulativeChart').parentElement;
         try {
-            // Remove loading overlay
-            const container = document.querySelector('#cumulativeChart').parentElement;
-            const overlay = container.querySelector('.chart-loading-overlay');
-            if (overlay) overlay.remove();
-            container.style.position = '';
+            if (typeof Chart === 'undefined') {
+                throw new Error('Chart.js library not loaded');
+            }
 
             const canvas = document.getElementById('cumulativeChart');
             if (!canvas) {
-                console.error('cumulativeChart canvas not found');
-                return;
+                throw new Error('Chart canvas element not found');
             }
             const chartCtx = canvas.getContext('2d');
 
             if (cumulativeChart) cumulativeChart.destroy();
 
-        const colors = getChartColors();
+            const colors = getChartColors();
 
-        cumulativeChart = new Chart(chartCtx, {
-            type: 'line',
-            data: {
-                labels: budget.months,
-                datasets: [
-                    {
-                        label: budget.current_year + ' Cumulative',
-                        data: budget.current_year_running.map(v => v || null),
-                        borderColor: '#4caf50',
-                        backgroundColor: '#4caf5033',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        borderWidth: 2,
-                    },
-                    {
-                        label: budget.previous_year + ' Cumulative',
-                        data: budget.previous_year_running.map(v => v || null),
-                        borderColor: '#ff9800',
-                        backgroundColor: '#ff980033',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        borderWidth: 2,
-                    },
-                ],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: { color: colors.textColor },
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                const val = ctx.parsed.y;
-                                return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+            cumulativeChart = new Chart(chartCtx, {
+                type: 'line',
+                data: {
+                    labels: budget.months,
+                    datasets: [
+                        {
+                            label: budget.current_year + ' Cumulative',
+                            data: budget.current_year_running.map(v => v || null),
+                            borderColor: '#4caf50',
+                            backgroundColor: '#4caf5033',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            borderWidth: 2,
+                        },
+                        {
+                            label: budget.previous_year + ' Cumulative',
+                            data: budget.previous_year_running.map(v => v || null),
+                            borderColor: '#ff9800',
+                            backgroundColor: '#ff980033',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            borderWidth: 2,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: colors.textColor },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    const val = ctx.parsed.y;
+                                    return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                                }
                             }
                         }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: { color: colors.textColor },
-                        grid: { color: colors.gridColor },
                     },
-                    y: {
-                        ticks: {
-                            color: colors.textColor,
-                            callback: function(v) {
-                                return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
-                            }
+                    scales: {
+                        x: {
+                            ticks: { color: colors.textColor },
+                            grid: { color: colors.gridColor },
                         },
-                        grid: { color: colors.gridColor },
-                        beginAtZero: true,
+                        y: {
+                            ticks: {
+                                color: colors.textColor,
+                                callback: function(v) {
+                                    return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                                }
+                            },
+                            grid: { color: colors.gridColor },
+                            beginAtZero: true,
+                        },
                     },
                 },
-            },
-        });
+            });
+
+            // Remove loading overlay only after successful chart creation
+            const overlay = container.querySelector('.chart-loading-overlay');
+            if (overlay) overlay.remove();
+            container.style.position = '';
         } catch (e) {
             console.error('Error rendering cumulative chart:', e);
+            const overlay = container.querySelector('.chart-loading-overlay');
+            if (overlay) {
+                overlay.textContent = 'Failed to render chart: ' + e.message;
+            } else {
+                const err = document.createElement('div');
+                err.className = 'chart-error-display';
+                err.textContent = 'Failed to render chart';
+                container.appendChild(err);
+            }
         }
     }
 
