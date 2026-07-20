@@ -1894,6 +1894,7 @@ impl FireflyClient {
     /// Get subcategory spend chart data for selected parent categories.
     /// When graph_mode is "parent", groups by parent category (one line per parent).
     /// Otherwise (default), groups by subcategory (one line per "parent > subcat").
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_subcategory_spend_chart(
         &self,
         parent_categories: Vec<String>,

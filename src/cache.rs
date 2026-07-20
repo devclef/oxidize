@@ -483,6 +483,7 @@ impl DataCache {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn get_subcategory_spend(
         &self,
         parent_categories: &[String],
