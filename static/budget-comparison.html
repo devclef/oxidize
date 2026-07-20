@@ -494,6 +494,7 @@
             const symbol = data[0].currency_symbol || data[0].currency_code || '$';
 
             // Build datasets: one per budget for current year, one per budget for previous year
+            // Each group shares a stack key so they stack vertically
             const datasets = [];
             data.forEach((b, i) => {
                 const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
@@ -503,6 +504,7 @@
                     backgroundColor: c.bg,
                     borderColor: c.main,
                     borderWidth: 1,
+                    stack: 'current',
                 });
                 datasets.push({
                     label: b.budget_name + ' (' + b.previous_year + ')',
@@ -511,6 +513,7 @@
                     borderColor: c.main + '99',
                     borderWidth: 1,
                     borderDash: [3, 3],
+                    stack: 'previous',
                 });
             });
 
@@ -555,10 +558,12 @@
                     },
                     scales: {
                         x: {
+                            stacked: true,
                             ticks: { color: colors.textColor },
                             grid: { color: colors.gridColor },
                         },
                         y: {
+                            stacked: true,
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
@@ -625,6 +630,7 @@
                                 tension: 0.3,
                                 pointRadius: 4,
                                 borderWidth: 2,
+                                stack: 'current',
                             },
                             {
                                 label: b.budget_name + ' ' + b.previous_year,
@@ -636,6 +642,7 @@
                                 pointRadius: 3,
                                 borderWidth: 1.5,
                                 borderDash: [4, 4],
+                                stack: 'previous',
                             },
                         ];
                     }),
@@ -658,10 +665,12 @@
                     },
                     scales: {
                         x: {
+                            stacked: true,
                             ticks: { color: colors.textColor },
                             grid: { color: colors.gridColor },
                         },
                         y: {
+                            stacked: true,
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
