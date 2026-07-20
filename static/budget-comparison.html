@@ -395,52 +395,69 @@
             return;
         }
 
-        // Use the first budget's data (or aggregate if multiple)
-        const budget = data[0];
-        const proj = budget.projections;
-        const symbol = budget.currency_symbol || budget.currency_code || '$';
+        // Aggregate projections across all selected budgets
+        const symbol = data[0].currency_symbol || data[0].currency_code || '$';
+        let totalYtd = 0, totalProjected = 0, totalLastYear = 0;
+        let totalLimit = 0, hasLimit = false;
+        let anyOnTrack = false, onTrackCount = 0;
+        data.forEach(b => {
+            const p = b.projections;
+            totalYtd += p.current_year_total || 0;
+            totalProjected += p.current_year_projected || 0;
+            totalLastYear += p.previous_year_total || 0;
+            if (p.current_year_limit_total !== null && p.current_year_limit_total !== undefined) {
+                totalLimit += p.current_year_limit_total || 0;
+                hasLimit = true;
+            }
+            if (p.on_track) onTrackCount++;
+        });
+        anyOnTrack = onTrackCount === data.length && data.length > 0;
 
         // Determine vs-limit class
         let vsLimitClass = 'on-track';
-        if (proj.vs_limit !== undefined && proj.vs_limit !== null) {
-            const num = parseFloat(proj.vs_limit);
-            if (num > 10) vsLimitClass = 'at-risk';
-            else if (num > 0) vsLimitClass = 'close';
+        let vsLimitText = 'No limit set';
+        if (hasLimit && totalLimit > 0) {
+            const pct = (((totalProjected - totalLimit) / totalLimit) * 100).toFixed(1);
+            vsLimitText = (pct > 0 ? '+' : '') + pct + '%';
+            if (parseFloat(pct) > 10) vsLimitClass = 'at-risk';
+            else if (parseFloat(pct) > 0) vsLimitClass = 'close';
         }
 
         // Determine vs-last-year class
         let vsLastYearClass = 'lower';
-        if (proj.vs_last_year) {
-            const num = parseFloat(proj.vs_last_year);
-            if (num > 0) vsLastYearClass = 'higher';
+        let vsLastYearText = '0.0%';
+        if (totalLastYear > 0) {
+            const pct = (((totalProjected - totalLastYear) / totalLastYear) * 100).toFixed(1);
+            vsLastYearText = (pct > 0 ? '+' : '') + pct + '%';
+            if (parseFloat(pct) > 0) vsLastYearClass = 'higher';
         }
 
         document.getElementById('projection-cards').innerHTML = `
             <div class="proj-card ytd">
                 <h3>Year-to-Date</h3>
-                <p class="amount">${formatCurrency(proj.current_year_total, symbol)}</p>
+                <p class="amount">${formatCurrency(totalYtd, symbol)}</p>
             </div>
             <div class="proj-card projected">
                 <h3>Projected Annual</h3>
-                <p class="amount">${formatCurrency(proj.current_year_projected, symbol)}</p>
+                <p class="amount">${formatCurrency(totalProjected, symbol)}</p>
             </div>
             <div class="proj-card last-year">
                 <h3>Previous Year</h3>
-                <p class="amount">${formatCurrency(proj.previous_year_total, symbol)}</p>
+                <p class="amount">${formatCurrency(totalLastYear, symbol)}</p>
             </div>
             <div class="proj-card vs-limit">
                 <h3>vs Budget Limit</h3>
-                <p class="amount ${vsLimitClass}">${proj.vs_limit || 'No limit set'}</p>
-                <p class="sub">${proj.on_track ? 'On track' : 'Over budget risk'}</p>
+                <p class="amount ${vsLimitClass}">${vsLimitText}</p>
+                <p class="sub">${anyOnTrack ? 'On track' : 'Over budget risk'}</p>
             </div>
             <div class="proj-card vs-last-year">
                 <h3>vs Last Year</h3>
-                <p class="amount ${vsLastYearClass}">${proj.vs_last_year}</p>
+                <p class="amount ${vsLastYearClass}">${vsLastYearText}</p>
             </div>
         `;
 
-        renderMonthlyChart(budget);
-        renderCumulativeChart(budget);
+        renderMonthlyChart(data);
+        renderCumulativeChart(data);
     }
 
     function getChartColors() {
@@ -451,7 +468,14 @@
         };
     }
 
-    function renderMonthlyChart(budget) {
+    // Distinct colors for multiple budgets
+    const BUDGET_COLORS = [
+        { main: '#4caf50', bg: '#4caf50cc', fill: '#4caf5033' },
+        { main: '#2196f3', bg: '#2196f3cc', fill: '#2196f333' },
+        { main: '#ff9800', bg: '#ff9800cc', fill: '#ff980033' },
+    ];
+
+    function renderMonthlyChart(data) {
         const container = document.querySelector('#monthlyChart').parentElement;
         try {
             if (typeof Chart === 'undefined') {
@@ -467,28 +491,34 @@
             if (monthlyChart) monthlyChart.destroy();
 
             const colors = getChartColors();
+            const symbol = data[0].currency_symbol || data[0].currency_code || '$';
 
-            const datasets = [
-                {
-                    label: budget.current_year + ' Actual',
-                    data: budget.current_year_spent.map(v => v || 0),
-                    backgroundColor: '#4caf50cc',
-                    borderColor: '#4caf50',
-                    borderWidth: 1,
-                },
-                {
-                    label: budget.previous_year + ' Actual',
-                    data: budget.previous_year_spent.map(v => v || 0),
-                    backgroundColor: '#2196f3cc',
-                    borderColor: '#2196f3',
-                    borderWidth: 1,
-                },
-            ];
-
-            if (budget.current_year_limit.some(v => v !== null && v !== undefined)) {
+            // Build datasets: one per budget for current year, one per budget for previous year
+            const datasets = [];
+            data.forEach((b, i) => {
+                const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
                 datasets.push({
-                    label: budget.current_year + ' Limit',
-                    data: budget.current_year_limit.map(v => v || 0),
+                    label: b.budget_name + ' (' + b.current_year + ')',
+                    data: b.current_year_spent.map(v => v || 0),
+                    backgroundColor: c.bg,
+                    borderColor: c.main,
+                    borderWidth: 1,
+                });
+                datasets.push({
+                    label: b.budget_name + ' (' + b.previous_year + ')',
+                    data: b.previous_year_spent.map(v => v || 0),
+                    backgroundColor: c.bg.replace(/cc$/, '66'),
+                    borderColor: c.main + '99',
+                    borderWidth: 1,
+                    borderDash: [3, 3],
+                });
+            });
+
+            // Add limit line from the first budget
+            if (data[0].current_year_limit.some(v => v !== null && v !== undefined)) {
+                datasets.push({
+                    label: data[0].current_year + ' Limit',
+                    data: data[0].current_year_limit.map(v => v || 0),
                     backgroundColor: '#9e9e9e44',
                     borderColor: '#9e9e9e',
                     borderWidth: 2,
@@ -504,7 +534,7 @@
             monthlyChart = new Chart(chartCtx, {
                 type: 'bar',
                 data: {
-                    labels: budget.months,
+                    labels: data[0].months,
                     datasets: datasets,
                 },
                 options: {
@@ -518,7 +548,7 @@
                             callbacks: {
                                 label: function(ctx) {
                                     const val = ctx.parsed.y;
-                                    return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                                    return ctx.dataset.label + ': ' + formatCurrency(val, symbol);
                                 }
                             }
                         }
@@ -532,7 +562,7 @@
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
-                                    return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                                    return formatCurrency(v, symbol);
                                 }
                             },
                             grid: { color: colors.gridColor },
@@ -560,7 +590,7 @@
         }
     }
 
-    function renderCumulativeChart(budget) {
+    function renderCumulativeChart(data) {
         const container = document.querySelector('#cumulativeChart').parentElement;
         try {
             if (typeof Chart === 'undefined') {
@@ -575,34 +605,40 @@
 
             if (cumulativeChart) cumulativeChart.destroy();
 
+            const symbol = data[0].currency_symbol || data[0].currency_code || '$';
+
             const colors = getChartColors();
 
             cumulativeChart = new Chart(chartCtx, {
                 type: 'line',
                 data: {
-                    labels: budget.months,
-                    datasets: [
-                        {
-                            label: budget.current_year + ' Cumulative',
-                            data: budget.current_year_running.map(v => v || null),
-                            borderColor: '#4caf50',
-                            backgroundColor: '#4caf5033',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 4,
-                            borderWidth: 2,
-                        },
-                        {
-                            label: budget.previous_year + ' Cumulative',
-                            data: budget.previous_year_running.map(v => v || null),
-                            borderColor: '#ff9800',
-                            backgroundColor: '#ff980033',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 4,
-                            borderWidth: 2,
-                        },
-                    ],
+                    labels: data[0].months,
+                    datasets: data.flatMap((b, i) => {
+                        const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
+                        return [
+                            {
+                                label: b.budget_name + ' ' + b.current_year,
+                                data: b.current_year_running.map(v => v || null),
+                                borderColor: c.main,
+                                backgroundColor: c.fill,
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 4,
+                                borderWidth: 2,
+                            },
+                            {
+                                label: b.budget_name + ' ' + b.previous_year,
+                                data: b.previous_year_running.map(v => v || null),
+                                borderColor: c.main + '99',
+                                backgroundColor: c.fill + '22',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 3,
+                                borderWidth: 1.5,
+                                borderDash: [4, 4],
+                            },
+                        ];
+                    }),
                 },
                 options: {
                     responsive: true,
@@ -614,8 +650,8 @@
                         tooltip: {
                             callbacks: {
                                 label: function(ctx) {
-                                    const val = ctx.parsed.y;
-                                    return ctx.dataset.label + ': ' + formatCurrency(val, budget.currency_symbol || budget.currency_code || '$');
+                                    const val = ctx.raw;
+                                    return ctx.dataset.label + ': ' + formatCurrency(val, symbol);
                                 }
                             }
                         }
@@ -629,7 +665,7 @@
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
-                                    return formatCurrency(v, budget.currency_symbol || budget.currency_code || '$');
+                                    return formatCurrency(v, symbol);
                                 }
                             },
                             grid: { color: colors.gridColor },
