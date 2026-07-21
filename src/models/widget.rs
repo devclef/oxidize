@@ -39,6 +39,11 @@ pub struct Widget {
     pub chart_height: i32,
     #[serde(default)]
     pub dashboard_ids: Vec<String>,
+    /// "dashboard" means use the dashboard-level date range;
+    /// "custom" (or absent) means use the widget's own start_date/end_date.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_range_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

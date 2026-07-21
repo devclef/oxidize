@@ -7,6 +7,7 @@ let dashboardsCache = [];
 let currentDashboardId = null;
 let dashboardLocked = true;
 let dashboardGrid = null;
+let dashboardDates = { start: null, end: null };
 
 // ── Dashboard management ──────────────────────────────────────────────
 
@@ -62,12 +63,100 @@ async function switchDashboard(id) {
     const titleEl = document.getElementById('dashboard-title');
     if (titleEl) titleEl.textContent = current ? current.name : 'Dashboard';
 
+    await loadDashboardDates();
+    populateDashboardDateInputs();
     await renderDashboard();
 }
 
 function closeNavDropdown() {
     const menu = document.getElementById('nav-dropdown-menu');
     if (menu) menu.classList.remove('open');
+}
+
+// ── Dashboard-level date range ────────────────────────────────────────
+
+async function loadDashboardDates() {
+    if (!currentDashboardId) return;
+    try {
+        const res = await fetch('/api/dashboards');
+        if (!res.ok) return;
+        const dashboards = await res.json();
+        const dash = dashboards.find(d => d.id === currentDashboardId);
+        if (dash) {
+            dashboardDates.start = dash.start_date || null;
+            dashboardDates.end = dash.end_date || null;
+        }
+    } catch (e) {
+        console.error('Failed to load dashboard dates:', e);
+    }
+}
+
+async function saveDashboardDates() {
+    if (!currentDashboardId) return;
+    const startEl = document.getElementById('dashboard-start-date');
+    const endEl = document.getElementById('dashboard-end-date');
+    const start = startEl ? startEl.value || null : null;
+    const end = endEl ? endEl.value || null : null;
+
+    dashboardDates.start = start;
+    dashboardDates.end = end;
+
+    try {
+        const dashboards = await fetchDashboards();
+        const dash = dashboards.find(d => d.id === currentDashboardId);
+        if (!dash) return;
+
+        dash.start_date = start;
+        dash.end_date = end;
+
+        const res = await fetch(`/api/dashboards/${currentDashboardId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dash)
+        });
+        if (!res.ok) throw new Error(await res.text());
+    } catch (e) {
+        console.error('Failed to save dashboard dates:', e);
+        alert('Failed to save date range: ' + e.message);
+    }
+}
+
+function applyDashboardDateRange() {
+    saveDashboardDates();
+    // Refresh date inputs on all widgets that use dashboard range
+    refreshDashboardDateInputs();
+    // Refresh charts for widgets using dashboard range
+    refreshWidgetsUsingDashboardRange();
+}
+
+function refreshDashboardDateInputs() {
+    if (!widgetsCache) return;
+    widgetsCache.forEach(w => {
+        const source = w.date_range_source || 'custom';
+        if (source === 'dashboard') {
+            const startEl = document.getElementById(`${w.id}-start`);
+            const endEl = document.getElementById(`${w.id}-end`);
+            if (startEl) startEl.value = dashboardDates.start || '';
+            if (endEl) endEl.value = dashboardDates.end || '';
+        }
+    });
+}
+
+async function refreshWidgetsUsingDashboardRange() {
+    const allAccounts = await fetchAccounts();
+    const allGroups = await fetchDashboardGroups();
+    for (const w of widgetsCache) {
+        if ((w.date_range_source || 'custom') === 'dashboard') {
+            await renderWidgetChart(w, w.id, allAccounts, allGroups);
+        }
+    }
+}
+
+function populateDashboardDateInputs() {
+    const startEl = document.getElementById('dashboard-start-date');
+    const endEl = document.getElementById('dashboard-end-date');
+    if (startEl) startEl.value = dashboardDates.start || '';
+    if (endEl) endEl.value = dashboardDates.end || '';
 }
 
 // ── New dashboard modal ───────────────────────────────────────────────
@@ -609,6 +698,11 @@ async function updateWidgetDateRange(widgetId) {
     if (widgetIndex === -1) return;
 
     const widget = widgets[widgetIndex];
+    // Read date_range_source from the radio toggle
+    const dateSourceRadio = document.querySelector(`input[name="${widgetId}-date-source"]:checked`);
+    if (dateSourceRadio) {
+        widget.date_range_source = dateSourceRadio.value === 'dashboard' ? 'dashboard' : 'custom';
+    }
     widget.start_date = startDate || null;
     widget.end_date = endDate || null;
     widget.interval = interval || null;
@@ -1267,6 +1361,11 @@ function extractChartLabels(history) {
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     const ctx = document.getElementById(canvasId).getContext('2d');
 
+    // Compute effective dates: use dashboard dates if the widget is set to inherit
+    const source = widget.date_range_source || 'custom';
+    const effectiveStart = source === 'dashboard' ? (dashboardDates.start || widget.start_date) : widget.start_date;
+    const effectiveEnd = source === 'dashboard' ? (dashboardDates.end || widget.end_date) : widget.end_date;
+
     try {
         // Determine widget type (default to "balance" for backwards compatibility)
         const widgetType = widget.widget_type || 'balance';
@@ -1285,8 +1384,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             if (allWidgetAccountIds && Array.isArray(allWidgetAccountIds)) {
                 allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
             }
-            if (widget.start_date) params.append('start', widget.start_date);
-            if (widget.end_date) params.append('end', widget.end_date);
+            if (effectiveStart) params.append('start', effectiveStart);
+            if (effectiveEnd) params.append('end', effectiveEnd);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
 
             const url = `/api/earned-spent?${params.toString()}`;
@@ -1298,8 +1397,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
       } else if (widgetType === 'budget_spent') {
             // For budget spent history, use the spent-history endpoint
             const params = new URLSearchParams();
-            if (widget.start_date) params.append('start', widget.start_date);
-            if (widget.end_date) params.append('end', widget.end_date);
+            if (effectiveStart) params.append('start', effectiveStart);
+            if (effectiveEnd) params.append('end', effectiveEnd);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
             // Add account IDs for filtering
             const groupIds = widget.group_ids || [];
@@ -1318,8 +1417,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
       } else if (widgetType === 'category_subcat') {
             // For category subcategory spend, use the subcategory-spend endpoint
             const params = new URLSearchParams();
-            if (widget.start_date) params.append('start', widget.start_date);
-            if (widget.end_date) params.append('end', widget.end_date);
+            if (effectiveStart) params.append('start', effectiveStart);
+            if (effectiveEnd) params.append('end', effectiveEnd);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
             // Add parent categories
             const parentCategories = widget.parent_categories || [];
@@ -1347,8 +1446,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
       } else if (widgetType === 'expenses_by_category') {
             // For expenses by category, use the expenses-by-category endpoint
             const params = new URLSearchParams();
-            if (widget.start_date) params.append('start', widget.start_date);
-            if (widget.end_date) params.append('end', widget.end_date);
+            if (effectiveStart) params.append('start', effectiveStart);
+            if (effectiveEnd) params.append('end', effectiveEnd);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
             if (widget.category_graph_mode) params.append('graph_mode', widget.category_graph_mode);
             // Add account IDs for filtering
@@ -1375,8 +1474,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             history = await fetchChartData(
                 allWidgetAccountIds,
-                widget.start_date,
-                widget.end_date,
+                effectiveStart,
+                effectiveEnd,
                 widget.interval
             );
         }
@@ -2169,8 +2268,13 @@ async function renderDashboard() {
             ...(widget.budget_names || []).map(b => `<span class="widget-account-tag budget-tag">${b}</span>`)
         ].join('');
 
-        const startDate = widget.start_date || '';
-        const endDate = widget.end_date || '';
+        const dateSource = widget.date_range_source || 'custom';
+        const startDate = dateSource === 'dashboard'
+            ? (dashboardDates.start || widget.start_date || '')
+            : (widget.start_date || '');
+        const endDate = dateSource === 'dashboard'
+            ? (dashboardDates.end || widget.end_date || '')
+            : (widget.end_date || '');
         const interval = widget.interval || 'auto';
 
         // Get chart options with defaults
@@ -2212,6 +2316,16 @@ async function renderDashboard() {
                 <div class="widget-settings" id="${widget.id}-settings" style="display: none;">
                     <div class="widget-settings-section">
                         <strong>Date Range</strong>
+                        <div class="widget-date-range-source">
+                            <label>
+                                <input type="radio" name="${widget.id}-date-source" value="dashboard" ${widget.date_range_source === 'dashboard' ? 'checked' : ''}>
+                                Use dashboard range
+                            </label>
+                            <label>
+                                <input type="radio" name="${widget.id}-date-source" value="custom" ${widget.date_range_source !== 'dashboard' ? 'checked' : ''}>
+                                Custom
+                            </label>
+                        </div>
                         <label>Time Range:
                             <select id="${widget.id}-time-range">
                                 <option value="__none__">Custom</option>
@@ -2513,6 +2627,32 @@ async function renderDashboard() {
                 }
             });
         }
+
+        // Date range source radio toggle: show/hide custom date fields
+        const dateSourceRadios = document.querySelectorAll(`input[name="${widget.id}-date-source"]`);
+        const startInput = document.getElementById(`${widget.id}-start`);
+        const endInput = document.getElementById(`${widget.id}-end`);
+
+        function updateDateInputsForSource(source) {
+            if (source === 'dashboard') {
+                startInput.value = dashboardDates.start || '';
+                endInput.value = dashboardDates.end || '';
+                startInput.disabled = true;
+                endInput.disabled = true;
+            } else {
+                startInput.disabled = false;
+                endInput.disabled = false;
+            }
+        }
+
+        // Initialize disabled state
+        updateDateInputsForSource(widget.date_range_source || 'custom');
+
+        dateSourceRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                updateDateInputsForSource(radio.value);
+            });
+        });
     });
 
     // Initialize SortableJS for drag-and-drop reordering (only if unlocked)
@@ -2600,6 +2740,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load dashboards and set up nav dropdown
     await loadDashboards();
+
+    // Load and display dashboard date range
+    await loadDashboardDates();
+    populateDashboardDateInputs();
+
+    // Dashboard date range Apply button
+    const applyDateRangeBtn = document.getElementById('dashboard-apply-date-range');
+    if (applyDateRangeBtn) {
+        applyDateRangeBtn.addEventListener('click', applyDashboardDateRange);
+    }
 
     // Set dashboard title
     const current = dashboardsCache.find(d => d.id === currentDashboardId);

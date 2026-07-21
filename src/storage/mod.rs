@@ -149,6 +149,14 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN category_graph_mode TEXT DEFAULT 'subcategory'",
         [],
     );
+    // Migration: Add date_range_source column to widgets if it does not exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN date_range_source TEXT DEFAULT 'custom'",
+        [],
+    );
+    // Migration: Add start_date and end_date columns to dashboards if they do not exist
+    let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN start_date TEXT", []);
+    let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN end_date TEXT", []);
     // Initialize persistent chart cache table
     PersistentCache::init(conn);
 }
@@ -210,7 +218,7 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
-                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids
+                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -239,6 +247,7 @@ impl Storage {
                     let updated_at: Option<String> = row.get(19)?;
                     let earned_chart_type: Option<String> = row.get(20)?;
                     let dashboard_ids_json: String = row.get(21)?;
+                    let date_range_source: Option<String> = row.get(22)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -278,6 +287,7 @@ impl Storage {
                         width,
                         chart_height,
                         dashboard_ids,
+                        date_range_source,
                         created_at,
                         updated_at,
                     })
@@ -399,8 +409,8 @@ impl Storage {
                     name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7, category_graph_mode = ?8,
                     start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
                     widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
-                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, updated_at = ?20
-                 WHERE id = ?21",
+                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, updated_at = ?21
+                 WHERE id = ?22",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -421,6 +431,7 @@ impl Storage {
                         &widget.width,
                         &widget.chart_height,
                         &dashboard_ids_json,
+                        &widget.date_range_source,
                         &now,
                         &widget.id
                     ],
@@ -545,7 +556,7 @@ impl Storage {
         with_db(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, created_at, updated_at FROM dashboards ORDER BY created_at ASC",
+                    "SELECT id, name, start_date, end_date, created_at, updated_at FROM dashboards ORDER BY created_at ASC",
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -553,11 +564,15 @@ impl Storage {
                 .query_map([], |row| {
                     let id: String = row.get(0)?;
                     let name: String = row.get(1)?;
-                    let created_at: Option<String> = row.get(2)?;
-                    let updated_at: Option<String> = row.get(3)?;
+                    let start_date: Option<String> = row.get(2)?;
+                    let end_date: Option<String> = row.get(3)?;
+                    let created_at: Option<String> = row.get(4)?;
+                    let updated_at: Option<String> = row.get(5)?;
                     Ok(Dashboard {
                         id,
                         name,
+                        start_date,
+                        end_date,
                         created_at,
                         updated_at,
                     })
@@ -574,8 +589,16 @@ impl Storage {
         let now = chrono::Utc::now().to_rfc3339();
         with_db(|conn| {
             conn.execute(
-                "INSERT INTO dashboards (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
-                params![&dashboard.id, &dashboard.name, &now, &now],
+                "INSERT INTO dashboards (id, name, start_date, end_date, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    &dashboard.id,
+                    &dashboard.name,
+                    &dashboard.start_date,
+                    &dashboard.end_date,
+                    &now,
+                    &now
+                ],
             )
             .map_err(|e| e.to_string())?;
             Ok(())
@@ -587,8 +610,8 @@ impl Storage {
         with_db(|conn| {
             let rows = conn
                 .execute(
-                    "UPDATE dashboards SET name = ?1, updated_at = ?2 WHERE id = ?3",
-                    params![&dashboard.name, &now, &dashboard.id],
+                    "UPDATE dashboards SET name = ?1, start_date = ?2, end_date = ?3, updated_at = ?4 WHERE id = ?5",
+                    params![&dashboard.name, &dashboard.start_date, &dashboard.end_date, &now, &dashboard.id],
                 )
                 .map_err(|e| e.to_string())?;
 

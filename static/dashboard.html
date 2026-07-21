@@ -46,6 +46,16 @@
             <span class="dashboard-widget-count" id="dashboard-widget-count"></span>
         </div>
         <div class="dashboard-header-right">
+            <div class="dashboard-date-range">
+                <label>
+                    <input type="date" id="dashboard-start-date">
+                </label>
+                <span class="dashboard-date-range-sep">to</span>
+                <label>
+                    <input type="date" id="dashboard-end-date">
+                </label>
+                <button id="dashboard-apply-date-range" class="btn btn-sm">Apply</button>
+            </div>
             <button id="dashboard-lock-toggle" class="dashboard-lock-btn" title="Unlock dashboard to reorder widgets">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             </button>
