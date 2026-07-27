@@ -1,17 +1,8 @@
-use actix_web::{get, web, HttpResponse};
-use serde::Deserialize;
+use actix_web::{get, web, HttpRequest, HttpResponse};
 
 use crate::client::FireflyClient;
 use crate::config::Config;
 use crate::models::AvgCostMode;
-
-#[derive(Deserialize)]
-pub struct AvgCostQuery {
-    budget_names: Vec<String>,
-    mode: Option<String>,
-    months: Option<u32>,
-    account_ids: Option<String>,
-}
 
 /// GET endpoint for the average cost page
 #[get("/avg-cost")]
@@ -39,28 +30,49 @@ pub async fn avg_cost_page(config: web::Data<Config>) -> HttpResponse {
 
 /// GET endpoint for average cost API data
 #[get("/api/budgets/avg-cost")]
-pub async fn get_avg_cost(
-    client: web::Data<FireflyClient>,
-    query: web::Query<AvgCostQuery>,
-) -> HttpResponse {
-    let mode = match query.mode.as_deref() {
+pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) -> HttpResponse {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut budget_names: Vec<String> = Vec::new();
+    let mut mode: Option<String> = None;
+    let mut months: Option<u32> = None;
+    let mut account_ids: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "budget_names" => budget_names.push(v),
+            "mode" => mode = Some(v),
+            "months" => {
+                if let Ok(m) = v.parse::<u32>() {
+                    months = Some(m);
+                }
+            }
+            "account_ids" => {
+                for id in v.split(',').filter(|s| !s.trim().is_empty()) {
+                    account_ids.push(id.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let avg_mode = match mode.as_deref() {
         Some("previous_year_same_month") => AvgCostMode::PreviousYearSameMonth,
         _ => AvgCostMode::LastNMonths,
     };
 
-    let months_count = query.months.unwrap_or(6);
+    let months_count = months.unwrap_or(6);
 
-    let account_ids = query.account_ids.as_ref().map(|ids| {
-        ids.split(',')
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>()
-    });
-
-    let budget_names = query.budget_names.clone();
+    let account_ids_opt = if account_ids.is_empty() {
+        None
+    } else {
+        Some(account_ids)
+    };
 
     match client
-        .get_avg_cost(budget_names, mode, months_count, account_ids)
+        .get_avg_cost(budget_names, avg_mode, months_count, account_ids_opt)
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),
