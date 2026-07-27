@@ -1,4 +1,5 @@
 pub mod account;
+pub mod avg_cost;
 pub mod budget_comparison;
 pub mod category;
 pub mod dashboard;

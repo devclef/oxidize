@@ -285,3 +285,142 @@ mod tests {
         assert_eq!(parsed["projections"]["on_track"], true);
     }
 }
+
+/// Test AvgCostMode serialization
+#[test]
+fn test_avg_cost_mode_serialization() {
+    let mode_last_n = oxidize::models::AvgCostMode::LastNMonths;
+    let json = serde_json::to_string(&mode_last_n).expect("should serialize");
+    assert_eq!(json, "\"last_n_months\"");
+
+    let mode_prev = oxidize::models::AvgCostMode::PreviousYearSameMonth;
+    let json = serde_json::to_string(&mode_prev).expect("should serialize");
+    assert_eq!(json, "\"previous_year_same_month\"");
+}
+
+/// Test AvgCostMode deserialization
+#[test]
+fn test_avg_cost_mode_deserialization() {
+    let mode: oxidize::models::AvgCostMode =
+        serde_json::from_str("\"last_n_months\"").expect("should deserialize");
+    match mode {
+        oxidize::models::AvgCostMode::LastNMonths => {}
+        _ => panic!("expected LastNMonths"),
+    }
+
+    let mode: oxidize::models::AvgCostMode =
+        serde_json::from_str("\"previous_year_same_month\"").expect("should deserialize");
+    match mode {
+        oxidize::models::AvgCostMode::PreviousYearSameMonth => {}
+        _ => panic!("expected PreviousYearSameMonth"),
+    }
+}
+
+/// Test AvgCostBudget serialization
+#[test]
+fn test_avg_cost_budget_serialization() {
+    let budget = oxidize::models::AvgCostBudget {
+        budget_name: "Groceries".to_string(),
+        mode: oxidize::models::AvgCostMode::LastNMonths,
+        months_count: 6,
+        monthly_data: vec![
+            oxidize::models::AvgCostMonthlyPoint {
+                label: "Jan 2026".to_string(),
+                amount: 450.0,
+            },
+            oxidize::models::AvgCostMonthlyPoint {
+                label: "Feb 2026".to_string(),
+                amount: 520.0,
+            },
+        ],
+        average_cost: 485.0,
+        total_spend: 970.0,
+        min_spend: 450.0,
+        max_spend: 520.0,
+        currency_symbol: Some("$".to_string()),
+        currency_code: Some("USD".to_string()),
+    };
+
+    let json = serde_json::to_string(&budget).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+
+    assert_eq!(parsed["budget_name"], "Groceries");
+    assert_eq!(parsed["mode"], "last_n_months");
+    assert_eq!(parsed["months_count"], 6);
+    assert_eq!(parsed["average_cost"], 485.0);
+    assert_eq!(parsed["total_spend"], 970.0);
+    assert_eq!(parsed["monthly_data"].as_array().unwrap().len(), 2);
+    assert_eq!(parsed["monthly_data"][0]["label"], "Jan 2026");
+    assert_eq!(parsed["monthly_data"][0]["amount"], 450.0);
+}
+
+/// Test AvgCostResponse serialization
+#[test]
+fn test_avg_cost_response_serialization() {
+    let response = oxidize::models::AvgCostResponse {
+        budgets: vec![oxidize::models::AvgCostBudget {
+            budget_name: "Groceries".to_string(),
+            mode: oxidize::models::AvgCostMode::LastNMonths,
+            months_count: 6,
+            monthly_data: vec![],
+            average_cost: 500.0,
+            total_spend: 3000.0,
+            min_spend: 400.0,
+            max_spend: 600.0,
+            currency_symbol: Some("$".to_string()),
+            currency_code: Some("USD".to_string()),
+        }],
+        mode: oxidize::models::AvgCostMode::LastNMonths,
+        months_count: 6,
+        start_date: "2026-01-01".to_string(),
+        end_date: "2026-06-30".to_string(),
+    };
+
+    let json = serde_json::to_string(&response).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+
+    assert_eq!(parsed["budgets"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["mode"], "last_n_months");
+    assert_eq!(parsed["months_count"], 6);
+    assert_eq!(parsed["start_date"], "2026-01-01");
+    assert_eq!(parsed["end_date"], "2026-06-30");
+}
+
+/// Test AvgCostBudget with empty monthly data
+#[test]
+fn test_avg_cost_budget_empty_data() {
+    let budget = oxidize::models::AvgCostBudget {
+        budget_name: "Unused".to_string(),
+        mode: oxidize::models::AvgCostMode::PreviousYearSameMonth,
+        months_count: 7,
+        monthly_data: vec![],
+        average_cost: 0.0,
+        total_spend: 0.0,
+        min_spend: 0.0,
+        max_spend: 0.0,
+        currency_symbol: Some("$".to_string()),
+        currency_code: Some("USD".to_string()),
+    };
+
+    let json = serde_json::to_string(&budget).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+
+    assert_eq!(parsed["average_cost"], 0.0);
+    assert_eq!(parsed["total_spend"], 0.0);
+    assert!(parsed["monthly_data"].as_array().unwrap().is_empty());
+}
+
+/// Test AvgCostMonthlyPoint serialization
+#[test]
+fn test_avg_cost_monthly_point_serialization() {
+    let point = oxidize::models::AvgCostMonthlyPoint {
+        label: "Mar 2025".to_string(),
+        amount: 375.50,
+    };
+
+    let json = serde_json::to_string(&point).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+
+    assert_eq!(parsed["label"], "Mar 2025");
+    assert!((parsed["amount"].as_f64().unwrap() - 375.50).abs() < f64::EPSILON);
+}

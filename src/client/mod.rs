@@ -1,9 +1,9 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::{
-    AccountArray, BudgetComparison, BudgetComparisonProjections, BudgetListResponse,
-    BudgetPeriodLimit, CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary,
-    ParentCategory, SimpleAccount,
+    AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
+    BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
+    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -2082,6 +2082,174 @@ impl FireflyClient {
         }
 
         Ok(chart)
+    }
+
+    /// Calculate average cost per budget with configurable mode and account filtering.
+    /// - LastNMonths: average monthly spend over the last N months
+    /// - PreviousYearSameMonth: spend from the same months in the previous year (YTD)
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_avg_cost(
+        &self,
+        budget_names: Vec<String>,
+        mode: AvgCostMode,
+        months_count: u32,
+        account_ids: Option<Vec<String>>,
+    ) -> Result<AvgCostResponse, String> {
+        let now = Utc::now();
+        let current_year = now.year();
+        let current_month = now.month();
+
+        // Determine date range based on mode
+        let (start_date, end_date, data_period_months) = match &mode {
+            AvgCostMode::LastNMonths => {
+                let n = months_count.clamp(1, 24);
+                // Go back N months manually
+                let mut year = current_year;
+                let mut month = current_month as i32;
+                for _ in 0..n {
+                    month -= 1;
+                    if month < 1 {
+                        month = 12;
+                        year -= 1;
+                    }
+                }
+                let start = chrono::NaiveDate::from_ymd_opt(year, month as u32, 1)
+                    .ok_or_else(|| "Failed to compute start date".to_string())?
+                    .format("%Y-%m-%d")
+                    .to_string();
+                let end_str = now.format("%Y-%m-%d").to_string();
+                (start, end_str, n)
+            }
+            AvgCostMode::PreviousYearSameMonth => {
+                let prev_year = current_year - 1;
+                let start = format!("{}-01-01", prev_year);
+                // End of current month in previous year
+                let next_month = current_month + 1;
+                let (end_year, end_month) = if next_month > 12 {
+                    (prev_year + 1, 1)
+                } else {
+                    (prev_year, next_month)
+                };
+                // Last day of previous month
+                let end = chrono::NaiveDate::from_ymd_opt(end_year, end_month, 1)
+                    .ok_or_else(|| "Failed to compute end date".to_string())?
+                    - chrono::Duration::days(1);
+                let end_str = end.format("%Y-%m-%d").to_string();
+                (start, end_str, current_month)
+            }
+        };
+
+        // Fetch budget spent history for the date range with monthly granularity
+        let spent_history = self
+            .get_budget_spent_history(
+                Some(start_date.clone()),
+                Some(end_date.clone()),
+                Some("1M".to_string()),
+                account_ids.clone(),
+            )
+            .await?;
+
+        let month_labels = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ];
+
+        // Build per-budget results
+        let mut results: Vec<AvgCostBudget> = Vec::new();
+
+        for dataset in &spent_history {
+            // Filter by budget names if specified
+            if !budget_names.is_empty() && !budget_names.contains(&dataset.label) {
+                continue;
+            }
+
+            let entries = match &dataset.entries {
+                serde_json::Value::Object(map) => map,
+                _ => continue,
+            };
+
+            // Extract monthly data points: parse date keys and amounts
+            let mut monthly_points: Vec<(i32, u32, String, f64)> = Vec::new();
+            for (date_key, value) in entries {
+                // Date keys are in format "2026-01-01T00:00:00+00:00" or "2026-01-31T..."
+                if date_key.len() < 7 {
+                    continue;
+                }
+                let year_str = &date_key[..4];
+                let month_str = &date_key[5..7];
+                let year = year_str.parse::<i32>().unwrap_or(0);
+                let month = month_str.parse::<u32>().unwrap_or(0);
+                if year == 0 || month == 0 || month > 12 {
+                    continue;
+                }
+                let amount = value
+                    .as_f64()
+                    .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
+                    .unwrap_or(0.0);
+                let label = format!("{} {}", month_labels[(month - 1) as usize], year);
+                monthly_points.push((year, month, label, amount));
+            }
+
+            // Sort by date
+            monthly_points.sort_by_key(|(y, m, _, _)| (*y as u64) * 100 + (*m as u64));
+
+            // Build serialized monthly data
+            let monthly_data: Vec<AvgCostMonthlyPoint> = monthly_points
+                .iter()
+                .map(|(_, _, label, amount)| AvgCostMonthlyPoint {
+                    label: label.clone(),
+                    amount: *amount,
+                })
+                .collect();
+
+            let total: f64 = monthly_points.iter().map(|(_, _, _, a)| a).sum();
+            let count = monthly_points.len() as f64;
+            let average = if count > 0.0 { total / count } else { 0.0 };
+            let min_spend = monthly_points
+                .iter()
+                .map(|(_, _, _, a)| *a)
+                .fold(f64::MAX, f64::min);
+            let max_spend = monthly_points
+                .iter()
+                .map(|(_, _, _, a)| *a)
+                .fold(0.0_f64, f64::max);
+
+            results.push(AvgCostBudget {
+                budget_name: dataset.label.clone(),
+                mode: mode.clone(),
+                months_count: data_period_months,
+                monthly_data,
+                average_cost: average,
+                total_spend: total,
+                min_spend: if count > 0.0 { min_spend } else { 0.0 },
+                max_spend: if count > 0.0 { max_spend } else { 0.0 },
+                currency_symbol: dataset.currency_symbol.clone(),
+                currency_code: dataset.currency_code.clone(),
+            });
+        }
+
+        // Sort by average cost descending
+        results.sort_by(|a, b| {
+            b.average_cost
+                .partial_cmp(&a.average_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        debug!(
+            "avg_cost: {} budgets, mode={:?}, months={}, range={} to {}",
+            results.len(),
+            mode,
+            months_count,
+            start_date,
+            end_date
+        );
+
+        Ok(AvgCostResponse {
+            budgets: results,
+            mode,
+            months_count: data_period_months,
+            start_date,
+            end_date,
+        })
     }
 }
 

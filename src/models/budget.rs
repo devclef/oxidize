@@ -173,3 +173,64 @@ pub struct BudgetComparison {
     /// Currency code
     pub currency_code: Option<String>,
 }
+
+// ── Average Cost ───────────────────────────────────────────────────────
+
+/// Calculation mode for average cost per budget
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AvgCostMode {
+    /// Average monthly spend over the last N months
+    LastNMonths,
+    /// Spend from the same months in the previous year (YTD)
+    PreviousYearSameMonth,
+}
+
+/// Average cost result for a single budget
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvgCostBudget {
+    /// Budget name
+    pub budget_name: String,
+    /// Calculation mode used
+    pub mode: AvgCostMode,
+    /// Number of months used (for LastNMonths) or current month (for PreviousYearSameMonth)
+    pub months_count: u32,
+    /// Monthly spend data points used in the calculation (month_label -> amount)
+    pub monthly_data: Vec<AvgCostMonthlyPoint>,
+    /// Computed average cost per month
+    pub average_cost: f64,
+    /// Total spend across all months used
+    pub total_spend: f64,
+    /// Minimum monthly spend in the data set
+    pub min_spend: f64,
+    /// Maximum monthly spend in the data set
+    pub max_spend: f64,
+    /// Currency symbol
+    pub currency_symbol: Option<String>,
+    /// Currency code
+    pub currency_code: Option<String>,
+}
+
+/// Single monthly data point for average cost display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvgCostMonthlyPoint {
+    /// Month label, e.g. "2026-01" or "Jan 2026"
+    pub label: String,
+    /// Spend amount for that month
+    pub amount: f64,
+}
+
+/// Full response for the average cost API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvgCostResponse {
+    /// Per-budget results
+    pub budgets: Vec<AvgCostBudget>,
+    /// Calculation mode
+    pub mode: AvgCostMode,
+    /// Number of months parameter (N for LastNMonths, current month for PreviousYearSameMonth)
+    pub months_count: u32,
+    /// Start date of the data range
+    pub start_date: String,
+    /// End date of the data range
+    pub end_date: String,
+}

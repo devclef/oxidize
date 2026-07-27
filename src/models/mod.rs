@@ -8,8 +8,8 @@ pub mod widget;
 
 pub use account::{AccountArray, SimpleAccount};
 pub use budget::{
-    BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    BudgetRead,
+    AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse, BudgetComparison,
+    BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit, BudgetRead,
 };
 pub use category::{CategoryListResponse, CategoryRead, ParentCategory};
 pub use chart::{ChartDataSet, ChartLine};
