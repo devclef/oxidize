@@ -64,6 +64,8 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(handlers::index::index))
             .route("/api/manifest", web::get().to(handlers::index::manifest))
             .service(handlers::index::favicon)
+            .service(handlers::sankey::sankey_page)
+            .service(handlers::sankey::get_sankey_flows)
             .service(actix_files::Files::new("/static", "./static"))
     })
     .bind((host, port))?

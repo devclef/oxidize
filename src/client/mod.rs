@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SimpleAccount,
+    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -2250,6 +2250,300 @@ impl FireflyClient {
             start_date,
             end_date,
         })
+    }
+
+    /// Calculate Sankey flow data for selected source accounts.
+    /// Flow types:
+    /// - Budget: groups withdrawals by budget assignment
+    /// - Category: groups withdrawals by main category (before ":")
+    /// - Subcategory: groups withdrawals by full "Parent > Subcat" name
+    /// - Destination: groups all transactions by destination account name
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_sankey_flows(
+        &self,
+        account_ids: Vec<String>,
+        flow_type: SankeyFlowType,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<SankeyFlowData, String> {
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Check cache first
+        if let Some(cached_json) = self.cache.get_sankey_flow(
+            &account_ids,
+            &flow_type,
+            Some(&start),
+            Some(&end),
+        ) {
+            debug!("Cache hit for sankey flow");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached sankey flow: {}", e));
+        }
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .await?;
+
+        let flow_type_label = match &flow_type {
+            SankeyFlowType::Budget => "budget".to_string(),
+            SankeyFlowType::Category => "category".to_string(),
+            SankeyFlowType::Subcategory => "subcategory".to_string(),
+            SankeyFlowType::Destination => "destination".to_string(),
+        };
+
+        // Flatten transactions into journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        let links = match &flow_type {
+            SankeyFlowType::Destination => {
+                self.aggregate_sankey_destination(&all_journals, &account_ids)
+            }
+            SankeyFlowType::Budget => {
+                self.aggregate_sankey_budget(&all_journals, &account_ids)
+            }
+            SankeyFlowType::Category => {
+                self.aggregate_sankey_category(&all_journals, &account_ids)
+            }
+            SankeyFlowType::Subcategory => {
+                self.aggregate_sankey_subcategory(&all_journals, &account_ids)
+            }
+        };
+
+        // Extract currency from the transaction list
+        let (currency_symbol, currency_code) =
+            Self::get_currency_from_transaction_list(&all_transactions);
+
+        let total: f64 = links.iter().map(|l| l.amount).sum();
+
+        let result = SankeyFlowData {
+            nodes: Vec::new(), // populated by frontend from unique names
+            links,
+            total,
+            currency_symbol,
+            currency_code,
+            flow_type: flow_type_label,
+        };
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache
+                .set_sankey_flow(&account_ids, &flow_type, start.clone(), end.clone(), json);
+        }
+
+        Ok(result)
+    }
+
+    /// Aggregate for "destination" flow type: all transaction types grouped by destination account.
+    fn aggregate_sankey_destination(
+        &self,
+        journals: &[serde_json::Value],
+        source_account_ids: &[String],
+    ) -> Vec<SankeyLink> {
+        let source_set: std::collections::HashSet<String> =
+            source_account_ids.iter().cloned().collect();
+        self.aggregate_sankey_by_names(journals, &source_set, |journal, source_set| {
+            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            if !source_set.contains(source_id) {
+                return None;
+            }
+            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            let dest_name = journal.get("destination_name").and_then(|d| d.as_str()).unwrap_or("");
+            if dest_name.is_empty() || source_name.is_empty() {
+                return None;
+            }
+            let amount = journal
+                .get("amount")
+                .and_then(|a| a.as_str())
+                .unwrap_or("0")
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            Some((source_name.to_string(), dest_name.to_string(), amount))
+        })
+    }
+
+    /// Aggregate for "budget" flow type: withdrawals grouped by budget name.
+    fn aggregate_sankey_budget(
+        &self,
+        journals: &[serde_json::Value],
+        source_account_ids: &[String],
+    ) -> Vec<SankeyLink> {
+        let source_set: std::collections::HashSet<String> =
+            source_account_ids.iter().cloned().collect();
+        self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if journal_type != "withdrawal" {
+                return None;
+            }
+            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            if !ss.contains(source_id) {
+                return None;
+            }
+            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            if source_name.is_empty() {
+                return None;
+            }
+            let budget_name = journal
+                .get("budget_name")
+                .and_then(|b| b.as_str())
+                .unwrap_or("Unbudgeted");
+            let amount = journal
+                .get("amount")
+                .and_then(|a| a.as_str())
+                .unwrap_or("0")
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            Some((
+                source_name.to_string(),
+                budget_name.to_string(),
+                amount,
+            ))
+        })
+    }
+
+    /// Aggregate for "category" flow type: withdrawals grouped by main category (before ":").
+    fn aggregate_sankey_category(
+        &self,
+        journals: &[serde_json::Value],
+        source_account_ids: &[String],
+    ) -> Vec<SankeyLink> {
+        let source_set: std::collections::HashSet<String> =
+            source_account_ids.iter().cloned().collect();
+        self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if journal_type != "withdrawal" {
+                return None;
+            }
+            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            if !ss.contains(source_id) {
+                return None;
+            }
+            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            if source_name.is_empty() {
+                return None;
+            }
+            let full_category = journal
+                .get("category_name")
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            let parts: Vec<&str> = full_category.splitn(2, ':').collect();
+            let cat_name = if parts[0].trim().is_empty() {
+                "Uncategorized"
+            } else {
+                parts[0].trim()
+            };
+            let amount = journal
+                .get("amount")
+                .and_then(|a| a.as_str())
+                .unwrap_or("0")
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            Some((
+                source_name.to_string(),
+                cat_name.to_string(),
+                amount,
+            ))
+        })
+    }
+
+    /// Aggregate for "subcategory" flow type: withdrawals grouped by "Parent > Subcat".
+    fn aggregate_sankey_subcategory(
+        &self,
+        journals: &[serde_json::Value],
+        source_account_ids: &[String],
+    ) -> Vec<SankeyLink> {
+        let source_set: std::collections::HashSet<String> =
+            source_account_ids.iter().cloned().collect();
+        self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if journal_type != "withdrawal" {
+                return None;
+            }
+            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            if !ss.contains(source_id) {
+                return None;
+            }
+            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            if source_name.is_empty() {
+                return None;
+            }
+            let full_category = journal
+                .get("category_name")
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            let parts: Vec<&str> = full_category.splitn(2, ':').collect();
+            let parent = if parts[0].trim().is_empty() {
+                "Uncategorized"
+            } else {
+                parts[0].trim()
+            };
+            let subcat = if parts.len() > 1 && !parts[1].trim().is_empty() {
+                parts[1].trim()
+            } else {
+                "Other"
+            };
+            let cat_name = format!("{} > {}", parent, subcat);
+            let amount = journal
+                .get("amount")
+                .and_then(|a| a.as_str())
+                .unwrap_or("0")
+                .parse::<f64>()
+                .unwrap_or(0.0);
+            Some((
+                source_name.to_string(),
+                cat_name.to_string(),
+                amount,
+            ))
+        })
+    }
+
+    /// Generic aggregator: iterate journals, apply selector, aggregate by (source, target) name.
+    fn aggregate_sankey_by_names<F>(
+        &self,
+        journals: &[serde_json::Value],
+        source_set: &std::collections::HashSet<String>,
+        selector: F,
+    ) -> Vec<SankeyLink>
+    where
+        F: Fn(&serde_json::Value, &std::collections::HashSet<String>) -> Option<(String, String, f64)>,
+    {
+        let mut links_map: std::collections::HashMap<(String, String), f64> =
+            std::collections::HashMap::new();
+
+        for journal in journals {
+            if let Some((source, target, amount)) = selector(journal, source_set) {
+                let key = (source, target);
+                let entry = links_map.entry(key).or_insert(0.0);
+                *entry += amount;
+            }
+        }
+
+        let mut links: Vec<SankeyLink> = links_map
+            .into_iter()
+            .map(|((source, target), amount)| SankeyLink {
+                source,
+                target,
+                amount,
+            })
+            .collect();
+
+        links.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+        links
     }
 }
 

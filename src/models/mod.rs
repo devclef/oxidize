@@ -18,3 +18,6 @@ pub use group::Group;
 pub use widget::Widget;
 pub mod summary;
 pub use summary::MonthlySummary;
+
+pub mod sankey;
+pub use sankey::{SankeyFlowData, SankeyFlowType, SankeyLink, SankeyNode};

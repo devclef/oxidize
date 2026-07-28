@@ -671,6 +671,67 @@ impl DataCache {
             Some(&format!("v{}:budget_limit:", CACHE_VERSION)),
         );
     }
+
+    // ── Sankey flow ──────────────────────────────────────────────────
+
+    fn sankey_flow_key(
+        account_ids: &[String],
+        flow_type: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let accounts = if account_ids.is_empty() {
+            "all".to_string()
+        } else {
+            account_ids.join(",")
+        };
+        format!(
+            "v{}:sankey:{}:{}:{}:{}",
+            CACHE_VERSION, accounts, flow_type, start, end
+        )
+    }
+
+    pub fn get_sankey_flow(
+        &self,
+        account_ids: &[String],
+        flow_type: &crate::models::SankeyFlowType,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> Option<String> {
+        let key = Self::sankey_flow_key(
+            account_ids,
+            &serde_json::to_string(flow_type).unwrap_or_default(),
+            start_date,
+            end_date,
+        );
+        Self::get_tiered(&self.accounts, &key)
+    }
+
+    pub fn set_sankey_flow(
+        &self,
+        account_ids: &[String],
+        flow_type: &crate::models::SankeyFlowType,
+        start_date: String,
+        end_date: String,
+        data: String,
+    ) {
+        let key = Self::sankey_flow_key(
+            account_ids,
+            &serde_json::to_string(flow_type).unwrap_or_default(),
+            Some(&start_date),
+            Some(&end_date),
+        );
+        Self::set_tiered(&self.accounts, &key, &data, self.ttl_seconds);
+    }
+
+    pub fn clear_sankey_flow(&self) {
+        Self::clear_tiered(
+            &self.accounts,
+            Some(&format!("v{}:sankey:", CACHE_VERSION)),
+        );
+    }
 }
 
 impl Default for DataCache {

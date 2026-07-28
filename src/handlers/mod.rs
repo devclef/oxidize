@@ -8,3 +8,5 @@ pub mod group;
 pub mod index;
 pub mod summary;
 pub mod widget;
+
+pub mod sankey;
