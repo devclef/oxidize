@@ -19,8 +19,7 @@ fn test_sankey_link_serialization() {
 #[test]
 fn test_sankey_link_deserialization() {
     let json = r#"{"source":"Savings","target":"Rent","amount":1200.0}"#;
-    let link: oxidize::models::SankeyLink =
-        serde_json::from_str(json).expect("should deserialize");
+    let link: oxidize::models::SankeyLink = serde_json::from_str(json).expect("should deserialize");
 
     assert_eq!(link.source, "Savings");
     assert_eq!(link.target, "Rent");
@@ -45,9 +44,15 @@ fn test_sankey_node_serialization() {
 fn test_sankey_flow_data_full_serialization() {
     let data = oxidize::models::SankeyFlowData {
         nodes: vec![
-            oxidize::models::SankeyNode { name: "Checking".to_string() },
-            oxidize::models::SankeyNode { name: "Groceries".to_string() },
-            oxidize::models::SankeyNode { name: "Transport".to_string() },
+            oxidize::models::SankeyNode {
+                name: "Checking".to_string(),
+            },
+            oxidize::models::SankeyNode {
+                name: "Groceries".to_string(),
+            },
+            oxidize::models::SankeyNode {
+                name: "Transport".to_string(),
+            },
         ],
         links: vec![
             oxidize::models::SankeyLink {
@@ -81,8 +86,12 @@ fn test_sankey_flow_data_full_serialization() {
 fn test_sankey_flow_data_roundtrip() {
     let original = oxidize::models::SankeyFlowData {
         nodes: vec![
-            oxidize::models::SankeyNode { name: "A".to_string() },
-            oxidize::models::SankeyNode { name: "B".to_string() },
+            oxidize::models::SankeyNode {
+                name: "A".to_string(),
+            },
+            oxidize::models::SankeyNode {
+                name: "B".to_string(),
+            },
         ],
         links: vec![oxidize::models::SankeyLink {
             source: "A".to_string(),
@@ -183,7 +192,8 @@ fn test_sankey_total_calculation() {
 #[test]
 fn test_sankey_query_param_parsing() {
     // Simulate the query parameter parsing in the sankey handler
-    let query_string = "accounts[]=1&accounts[]=2&flow_type=category&start=2025-01-01&end=2025-12-31";
+    let query_string =
+        "accounts[]=1&accounts[]=2&flow_type=category&start=2025-01-01&end=2025-12-31";
 
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).expect("should parse");

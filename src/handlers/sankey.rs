@@ -30,7 +30,10 @@ pub async fn sankey_page(config: web::Data<Config>) -> HttpResponse {
 
 /// GET endpoint for sankey flow data
 #[get("/api/sankey/flows")]
-pub async fn get_sankey_flows(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {
+pub async fn get_sankey_flows(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();

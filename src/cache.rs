@@ -727,10 +727,7 @@ impl DataCache {
     }
 
     pub fn clear_sankey_flow(&self) {
-        Self::clear_tiered(
-            &self.accounts,
-            Some(&format!("v{}:sankey:", CACHE_VERSION)),
-        );
+        Self::clear_tiered(&self.accounts, Some(&format!("v{}:sankey:", CACHE_VERSION)));
     }
 }
 

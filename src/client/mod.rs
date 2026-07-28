@@ -3,7 +3,8 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SimpleAccount,
+    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SankeyFlowData,
+    SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -2274,12 +2275,10 @@ impl FireflyClient {
         });
 
         // Check cache first
-        if let Some(cached_json) = self.cache.get_sankey_flow(
-            &account_ids,
-            &flow_type,
-            Some(&start),
-            Some(&end),
-        ) {
+        if let Some(cached_json) =
+            self.cache
+                .get_sankey_flow(&account_ids, &flow_type, Some(&start), Some(&end))
+        {
             debug!("Cache hit for sankey flow");
             return serde_json::from_str(&cached_json)
                 .map_err(|e| format!("Failed to deserialize cached sankey flow: {}", e));
@@ -2314,12 +2313,8 @@ impl FireflyClient {
             SankeyFlowType::Destination => {
                 self.aggregate_sankey_destination(&all_journals, &account_ids)
             }
-            SankeyFlowType::Budget => {
-                self.aggregate_sankey_budget(&all_journals, &account_ids)
-            }
-            SankeyFlowType::Category => {
-                self.aggregate_sankey_category(&all_journals, &account_ids)
-            }
+            SankeyFlowType::Budget => self.aggregate_sankey_budget(&all_journals, &account_ids),
+            SankeyFlowType::Category => self.aggregate_sankey_category(&all_journals, &account_ids),
             SankeyFlowType::Subcategory => {
                 self.aggregate_sankey_subcategory(&all_journals, &account_ids)
             }
@@ -2358,12 +2353,21 @@ impl FireflyClient {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
         self.aggregate_sankey_by_names(journals, &source_set, |journal, source_set| {
-            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            let source_id = journal
+                .get("source_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if !source_set.contains(source_id) {
                 return None;
             }
-            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
-            let dest_name = journal.get("destination_name").and_then(|d| d.as_str()).unwrap_or("");
+            let source_name = journal
+                .get("source_name")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            let dest_name = journal
+                .get("destination_name")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             if dest_name.is_empty() || source_name.is_empty() {
                 return None;
             }
@@ -2390,11 +2394,17 @@ impl FireflyClient {
             if journal_type != "withdrawal" {
                 return None;
             }
-            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            let source_id = journal
+                .get("source_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if !ss.contains(source_id) {
                 return None;
             }
-            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            let source_name = journal
+                .get("source_name")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if source_name.is_empty() {
                 return None;
             }
@@ -2408,11 +2418,7 @@ impl FireflyClient {
                 .unwrap_or("0")
                 .parse::<f64>()
                 .unwrap_or(0.0);
-            Some((
-                source_name.to_string(),
-                budget_name.to_string(),
-                amount,
-            ))
+            Some((source_name.to_string(), budget_name.to_string(), amount))
         })
     }
 
@@ -2429,11 +2435,17 @@ impl FireflyClient {
             if journal_type != "withdrawal" {
                 return None;
             }
-            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            let source_id = journal
+                .get("source_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if !ss.contains(source_id) {
                 return None;
             }
-            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            let source_name = journal
+                .get("source_name")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if source_name.is_empty() {
                 return None;
             }
@@ -2453,11 +2465,7 @@ impl FireflyClient {
                 .unwrap_or("0")
                 .parse::<f64>()
                 .unwrap_or(0.0);
-            Some((
-                source_name.to_string(),
-                cat_name.to_string(),
-                amount,
-            ))
+            Some((source_name.to_string(), cat_name.to_string(), amount))
         })
     }
 
@@ -2474,11 +2482,17 @@ impl FireflyClient {
             if journal_type != "withdrawal" {
                 return None;
             }
-            let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+            let source_id = journal
+                .get("source_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if !ss.contains(source_id) {
                 return None;
             }
-            let source_name = journal.get("source_name").and_then(|s| s.as_str()).unwrap_or("");
+            let source_name = journal
+                .get("source_name")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
             if source_name.is_empty() {
                 return None;
             }
@@ -2504,11 +2518,7 @@ impl FireflyClient {
                 .unwrap_or("0")
                 .parse::<f64>()
                 .unwrap_or(0.0);
-            Some((
-                source_name.to_string(),
-                cat_name.to_string(),
-                amount,
-            ))
+            Some((source_name.to_string(), cat_name.to_string(), amount))
         })
     }
 
@@ -2520,7 +2530,10 @@ impl FireflyClient {
         selector: F,
     ) -> Vec<SankeyLink>
     where
-        F: Fn(&serde_json::Value, &std::collections::HashSet<String>) -> Option<(String, String, f64)>,
+        F: Fn(
+            &serde_json::Value,
+            &std::collections::HashSet<String>,
+        ) -> Option<(String, String, f64)>,
     {
         let mut links_map: std::collections::HashMap<(String, String), f64> =
             std::collections::HashMap::new();
@@ -2542,7 +2555,11 @@ impl FireflyClient {
             })
             .collect();
 
-        links.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+        links.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         links
     }
 }

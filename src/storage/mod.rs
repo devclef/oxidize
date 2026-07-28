@@ -158,10 +158,7 @@ fn init_db(conn: &Connection) {
     let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN start_date TEXT", []);
     let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN end_date TEXT", []);
     // Migration: Add sankey_flow_type column to widgets if it does not exist
-    let _ = conn.execute(
-        "ALTER TABLE widgets ADD COLUMN sankey_flow_type TEXT",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN sankey_flow_type TEXT", []);
     // Initialize persistent chart cache table
     PersistentCache::init(conn);
 }
