@@ -738,6 +738,9 @@ async function updateWidgetDateRange(widgetId) {
     const earnedChartTypeEl = document.getElementById(`${widgetId}-earned-chart-type`);
     if (earnedChartTypeEl) widget.earned_chart_type = earnedChartTypeEl.value;
 
+    const sankeyFlowTypeEl = document.getElementById(`${widgetId}-sankey-flow-type`);
+    if (sankeyFlowTypeEl) widget.sankey_flow_type = sankeyFlowTypeEl.value;
+
     try {
         const response = await fetch(`/api/widgets/${widgetId}`, {
             method: 'PUT',
@@ -1358,9 +1361,184 @@ function extractChartLabels(history) {
     return labels;
 }
 
-async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
+async function renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd) {
+    const sankeyDiv = document.getElementById(canvasId + '-sankey');
+    if (!sankeyDiv) return;
+    sankeyDiv.innerHTML = '';
 
+    const errorDiv = document.getElementById(canvasId + '-error');
+    if (errorDiv) errorDiv.textContent = '';
+
+    // Resolve account IDs from groups + individual
+    const groupIds = widget.group_ids || [];
+    const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+    const groupAccountIds = new Set();
+    widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+    const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+
+    if (allWidgetAccountIds.length === 0) {
+        if (errorDiv) errorDiv.textContent = 'No accounts selected for Sankey flow';
+        return;
+    }
+
+    const flowType = widget.sankey_flow_type || 'destination';
+    const params = new URLSearchParams();
+    params.append('flow_type', flowType);
+    if (effectiveStart) params.append('start', effectiveStart);
+    if (effectiveEnd) params.append('end', effectiveEnd);
+    allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+
+    try {
+        const response = await fetch('/api/sankey/flows?' + params.toString());
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        renderSankeyChart(sankeyDiv, data);
+    } catch (e) {
+        if (errorDiv) errorDiv.textContent = 'Failed to load Sankey data: ' + e.message;
+    }
+}
+
+function renderSankeyChart(container, data) {
+    const tooltip = document.getElementById('sankey-tooltip');
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const colors = {
+        textColor: isDark ? '#e2e8f0' : '#1a1a2e',
+        mutedText: isDark ? '#94a3b8' : '#6b7280',
+        nodeStroke: isDark ? '#334155' : '#d1d5db',
+    };
+    const symbol = data.currency_symbol || data.currency_code || '';
+
+    const width = container.clientWidth || 1100;
+    const height = container.clientHeight || Math.max(400, Math.min(600, width * 0.5));
+
+    // Build unique nodes from links
+    const nodeNames = new Set();
+    data.links.forEach(l => {
+        nodeNames.add(l.source);
+        nodeNames.add(l.target);
+    });
+    const nodeNameList = Array.from(nodeNames);
+    const nodeIndex = {};
+    nodeNameList.forEach((name, i) => { nodeIndex[name] = i; });
+
+    const nodes = nodeNameList.map(name => ({ name }));
+    const links = data.links.map(l => ({
+        source: nodeIndex[l.source],
+        target: nodeIndex[l.target],
+        value: l.amount,
+        sourceName: l.source,
+        targetName: l.target,
+    }));
+
+    if (nodes.length === 0 || links.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No flow data for the selected filters.</div>';
+        return;
+    }
+
+    const svg = d3.select(container)
+        .append('svg')
+        .attr('viewBox', [0, 0, width, height])
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    // Color palette for source nodes
+    const sourceNames = [...new Set(links.map(l => l.sourceName))];
+    const colorScale = d3.scaleOrdinal(d3.schemeTableau10).domain(sourceNames);
+
+    const sankey = d3.sankey()
+        .nodeWidth(14)
+        .nodePadding(12)
+        .extent([[10, 10], [width - 10, height - 10]])
+        .nodeAlign(d3.sankeyLeft);
+
+    const graph = sankey({
+        nodes: nodes.map(d => Object.assign({}, d)),
+        links: links.map(d => Object.assign({}, d)),
+    });
+
+    function formatSankeyAmount(amount) {
+        const abs = Math.abs(amount);
+        let formatted;
+        if (abs >= 1000000) formatted = (abs / 1000000).toFixed(1) + 'M';
+        else if (abs >= 1000) formatted = abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        else formatted = abs.toFixed(2);
+        return (amount < 0 ? '-' : '') + symbol + formatted;
+    }
+
+    // Draw links
+    svg.append('g')
+        .attr('fill', 'none')
+        .attr('stroke-width', 1)
+        .selectAll('path')
+        .data(graph.links)
+        .join('path')
+        .attr('class', 'sankey-link')
+        .attr('d', d3.sankeyLinkHorizontal())
+        .attr('stroke', d => {
+            const c = colorScale(d.source.name);
+            const r = parseInt(c.slice(1, 3), 16);
+            const g = parseInt(c.slice(3, 5), 16);
+            const b = parseInt(c.slice(5, 7), 16);
+            return 'rgba(' + r + ',' + g + ',' + b + ',0.35)';
+        })
+        .attr('stroke-width', d => Math.max(1, d.width))
+        .style('cursor', 'pointer')
+        .on('mouseover', function(event, d) {
+            d3.select(this).attr('stroke-opacity', 0.7);
+        })
+        .on('mouseout', function() {
+            d3.select(this).attr('stroke-opacity', 0.35);
+        });
+
+    // Draw nodes
+    const nodeGroup = svg.append('g')
+        .selectAll('g')
+        .data(graph.nodes)
+        .join('g')
+        .attr('class', 'sankey-node');
+
+    nodeGroup.append('rect')
+        .attr('height', d => Math.max(d.y1 - d.y0, 4))
+        .attr('width', 14)
+        .attr('fill', d => {
+            if (d.depth === 0) return colorScale(d.name);
+            return isDark ? '#475569' : '#94a3b8';
+        })
+        .attr('rx', 3)
+        .attr('stroke', colors.nodeStroke)
+        .style('cursor', 'pointer');
+
+    // Node labels
+    nodeGroup.append('text')
+        .attr('class', 'sankey-label')
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => d.y0 + 4)
+        .attr('dy', '0.35em')
+        .attr('fill', colors.textColor)
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .attr('font-size', '11px')
+        .attr('pointer-events', 'none')
+        .text(d => d.name.length > 25 ? d.name.substring(0, 25) + '…' : d.name);
+
+    // Node amount labels
+    nodeGroup.append('text')
+        .attr('class', 'sankey-amount')
+        .attr('fill', colors.mutedText)
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => d.y1 - 2)
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .attr('font-size', '10px')
+        .attr('pointer-events', 'none')
+        .text(d => {
+            const val = d.value || 0;
+            const short = val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
+                : val >= 1000 ? (val / 1000).toFixed(1) + 'K'
+                : val.toFixed(0);
+            return symbol + short;
+        });
+}
+
+async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
     const effectiveStart = source === 'dashboard' ? (dashboardDates.start || widget.start_date) : widget.start_date;
@@ -1369,6 +1547,14 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
     try {
         // Determine widget type (default to "balance" for backwards compatibility)
         const widgetType = widget.widget_type || 'balance';
+
+        // Handle sankey widget type separately (uses d3, not Chart.js canvas)
+        if (widgetType === 'sankey') {
+            await renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd);
+            return;
+        }
+
+        const ctx = document.getElementById(canvasId).getContext('2d');
 
         let history;
         if (widgetType === 'earned_spent') {
@@ -2292,6 +2478,8 @@ async function renderDashboard() {
         } else if (widgetType === 'category_subcat') {
             const catMode = widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Subcategories';
             widgetTypeBadge = `<span class="widget-type-badge category-subcat">${catMode}</span>`;
+        } else if (widgetType === 'sankey') {
+            widgetTypeBadge = '<span class="widget-type-badge sankey">Sankey Flow</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
@@ -2381,6 +2569,16 @@ async function renderDashboard() {
                             </select>
                         </label>
                         ` : ''}
+                        ${widgetType === 'sankey' ? `
+                        <label>Flow Type:
+                            <select id="${widget.id}-sankey-flow-type">
+                                <option value="destination" ${widget.sankey_flow_type === 'destination' || !widget.sankey_flow_type ? 'selected' : ''}>By Destination Account</option>
+                                <option value="category" ${widget.sankey_flow_type === 'category' ? 'selected' : ''}>By Category</option>
+                                <option value="subcategory" ${widget.sankey_flow_type === 'subcategory' ? 'selected' : ''}>By Subcategory</option>
+                                <option value="budget" ${widget.sankey_flow_type === 'budget' ? 'selected' : ''}>By Budget</option>
+                            </select>
+                        </label>
+                        ` : ''}
                     </div>
                     <div class="widget-settings-section">
                         <strong>Display Options</strong>
@@ -2425,7 +2623,8 @@ async function renderDashboard() {
                 <div class="widget-body">
                     <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>
                     <div class="widget-chart" style="height: ${widget.chart_height || 300}px;">
-                        <canvas id="${widget.id}"></canvas>
+                        <canvas id="${widget.id}" ${widgetType === 'sankey' ? 'style="display:none"' : ''}></canvas>
+                        <div id="${widget.id}-sankey" ${widgetType === 'sankey' ? '' : 'style="display:none"'}></div>
                         <div class="widget-chart-resize-handle"></div>
                     </div>
                     <div class="chart-legend" id="${widget.id}-legend" style="display: none;">

@@ -157,6 +157,11 @@ fn init_db(conn: &Connection) {
     // Migration: Add start_date and end_date columns to dashboards if they do not exist
     let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN start_date TEXT", []);
     let _ = conn.execute("ALTER TABLE dashboards ADD COLUMN end_date TEXT", []);
+    // Migration: Add sankey_flow_type column to widgets if it does not exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN sankey_flow_type TEXT",
+        [],
+    );
     // Initialize persistent chart cache table
     PersistentCache::init(conn);
 }
@@ -218,7 +223,7 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
-                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source
+                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -248,6 +253,7 @@ impl Storage {
                     let earned_chart_type: Option<String> = row.get(20)?;
                     let dashboard_ids_json: String = row.get(21)?;
                     let date_range_source: Option<String> = row.get(22)?;
+                    let sankey_flow_type: Option<String> = row.get(23)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -288,6 +294,7 @@ impl Storage {
                         chart_height,
                         dashboard_ids,
                         date_range_source,
+                        sankey_flow_type,
                         created_at,
                         updated_at,
                     })
@@ -348,8 +355,8 @@ impl Storage {
 
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
-                                      chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                                      chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -371,6 +378,7 @@ impl Storage {
                     &widget.width,
                     &widget.chart_height,
                     &dashboard_ids_json,
+                    &widget.sankey_flow_type,
                     &now,
                     &now
                 ],
@@ -409,8 +417,8 @@ impl Storage {
                     name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7, category_graph_mode = ?8,
                     start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
                     widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
-                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, updated_at = ?21
-                 WHERE id = ?22",
+                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, updated_at = ?22
+                 WHERE id = ?23",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -432,6 +440,7 @@ impl Storage {
                         &widget.chart_height,
                         &dashboard_ids_json,
                         &widget.date_range_source,
+                        &widget.sankey_flow_type,
                         &now,
                         &widget.id
                     ],

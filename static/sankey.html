@@ -21,6 +21,81 @@
             margin-bottom: 20px;
             align-items: start;
         }
+        .groups-inline {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+        .groups-inline h4 {
+            margin: 0 0 8px 0;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .group-control-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 6px;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+        }
+        .group-control-item:hover {
+            background: var(--card-bg);
+        }
+        .group-control-item input[type="checkbox"] {
+            accent-color: var(--accent-color);
+        }
+        .group-control-item .group-label {
+            font-size: 0.85em;
+            flex: 1;
+        }
+        .group-control-item .group-count {
+            font-size: 0.75em;
+            color: var(--text-muted);
+        }
+        .groups-list-inline {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 8px;
+            background: var(--bg-color);
+        }
+        .save-widget-row {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 8px;
+        }
+        .save-widget-row input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-size: 0.9em;
+        }
+        .save-widget-row button {
+            padding: 8px 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            border-radius: var(--radius-sm);
+            background: var(--accent-color);
+            color: white;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+        .save-widget-row button:hover {
+            background: var(--accent-hover);
+        }
         .control-panel {
             padding: 16px;
             background: var(--card-bg);
@@ -270,6 +345,12 @@
                 <div class="control-list" id="account-list">
                     <div class="loading-msg">Loading accounts...</div>
                 </div>
+                <div class="groups-inline" id="groups-inline" style="display: none;">
+                    <h4>My Groups</h4>
+                    <div class="groups-list-inline" id="groups-list-inline">
+                        <div class="loading-msg">Loading groups...</div>
+                    </div>
+                </div>
             </div>
 
             <div class="control-panel">
@@ -295,6 +376,11 @@
             <div>
                 <button class="compute-btn" id="compute-btn">Generate</button>
             </div>
+
+            <div class="save-widget-row">
+                <input type="text" id="sankey-widget-name" placeholder="Save as Widget — enter name...">
+                <button id="save-sankey-widget">Save as Widget</button>
+            </div>
         </div>
 
         <div id="error-container" class="error-msg" style="display: none;"></div>
@@ -312,8 +398,17 @@
 
 <script>
     const THEME_KEY = 'oxidize_theme';
+    const GROUPS_STORAGE_KEY = 'oxidize_sankey_groups';
     let currentFlowType = 'destination';
     let sankeyChart = null;
+    let groups = [];
+
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
 
     function initTheme() {
         const saved = localStorage.getItem(THEME_KEY);
@@ -605,6 +700,164 @@
             });
     }
 
+    // ── Groups ────────────────────────────────────────────────
+
+    async function fetchGroups() {
+        try {
+            const response = await fetch('/api/groups');
+            if (!response.ok) return [];
+            return await response.json();
+        } catch (e) {
+            console.error('Failed to fetch groups:', e);
+            return [];
+        }
+    }
+
+    function loadSavedGroups() {
+        try {
+            const saved = localStorage.getItem(GROUPS_STORAGE_KEY);
+            if (saved) return JSON.parse(saved);
+        } catch { /* ignore */ }
+        return [];
+    }
+
+    function saveGroups() {
+        try {
+            localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+        } catch { /* ignore */ }
+    }
+
+    async function loadGroups() {
+        const backendGroups = await fetchGroups();
+        const savedGroups = loadSavedGroups();
+
+        // Merge: backend takes precedence, but preserve _checked from local storage
+        groups = backendGroups.map(bg => {
+            const sg = savedGroups.find(s => s.id === bg.id);
+            return { ...bg, _checked: sg ? sg._checked : false };
+        });
+
+        renderGroups();
+    }
+
+    function renderGroups() {
+        const container = document.getElementById('groups-inline');
+        const list = document.getElementById('groups-list-inline');
+
+        if (groups.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        list.innerHTML = groups.map(g =>
+            '<label class="group-control-item">' +
+                '<input type="checkbox" class="group-cb" value="' + g.id + '" data-group-name="' + g.name + '">' +
+                '<span class="group-label">' + g.name + '</span>' +
+                '<span class="group-count">(' + g.account_ids.length + ')</span>' +
+            '</label>'
+        ).join('');
+
+        // Restore checked state
+        groups.forEach(g => {
+            if (g._checked) {
+                const cb = list.querySelector('.group-cb[value="' + g.id + '"]');
+                if (cb) {
+                    cb.checked = true;
+                    // Check all member account checkboxes
+                    g.account_ids.forEach(aid => {
+                        const acb = document.querySelector('.account-cb[value="' + aid + '"]');
+                        if (acb) acb.checked = true;
+                    });
+                }
+            }
+        });
+
+        // Wire up group checkbox change events
+        list.querySelectorAll('.group-cb').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const gid = cb.value;
+                const group = groups.find(g => g.id === gid);
+                if (!group) return;
+                group._checked = cb.checked;
+                saveGroups();
+                // Toggle corresponding account checkboxes
+                group.account_ids.forEach(aid => {
+                    const acb = document.querySelector('.account-cb[value="' + aid + '"]');
+                    if (acb) acb.checked = cb.checked;
+                });
+            });
+        });
+    }
+
+    // ── Save as Widget ────────────────────────────────────────
+
+    async function saveSankeyAsWidget() {
+        const widgetName = document.getElementById('sankey-widget-name').value.trim();
+        if (!widgetName) {
+            alert('Please enter a name for the widget');
+            return;
+        }
+
+        const selectedAccountIds = getSelectedAccountIds();
+        if (selectedAccountIds.length === 0) {
+            alert('Please select at least one source account');
+            return;
+        }
+
+        // Identify which selected accounts belong to checked groups
+        const checkedGroups = groups.filter(g => g._checked);
+        const groupMemberIds = new Set();
+        checkedGroups.forEach(g => {
+            g.account_ids.forEach(id => groupMemberIds.add(id));
+        });
+
+        const groupIds = checkedGroups.map(g => g.id);
+        const individualAccountIds = selectedAccountIds.filter(id => !groupMemberIds.has(id));
+
+        const startDate = document.getElementById('start-date').value || null;
+        const endDate = document.getElementById('end-date').value || null;
+
+        const widget = {
+            id: generateUUID(),
+            name: widgetName,
+            accounts: individualAccountIds,
+            group_ids: groupIds,
+            budget_ids: [],
+            budget_names: [],
+            parent_categories: [],
+            subcategories: [],
+            category_graph_mode: null,
+            start_date: startDate,
+            end_date: endDate,
+            interval: null,
+            chart_mode: null,
+            earned_chart_type: null,
+            widget_type: 'sankey',
+            sankey_flow_type: currentFlowType,
+            chart_options: null,
+            dashboard_ids: ['default'],
+            width: 12,
+            chart_height: 500
+        };
+
+        try {
+            const response = await fetch('/api/widgets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(widget)
+            });
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error || 'Failed to save widget');
+            }
+            document.getElementById('sankey-widget-name').value = '';
+            alert('Widget "' + widgetName + '" saved! View it on the Dashboard.');
+        } catch (e) {
+            alert('Failed to save widget: ' + e.message);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         initTheme();
         document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
@@ -625,8 +878,10 @@
             document.querySelectorAll('.account-cb').forEach(cb => cb.checked = false);
         });
         document.getElementById('compute-btn').addEventListener('click', generateSankey);
+        document.getElementById('save-sankey-widget').addEventListener('click', saveSankeyAsWidget);
 
         loadAccounts();
+        loadGroups();
     });
 </script>
 </body>

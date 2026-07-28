@@ -44,6 +44,10 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_range_source: Option<String>,
+    /// Sankey flow grouping type: "destination", "budget", "category", or "subcategory".
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sankey_flow_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

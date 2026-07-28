@@ -98,6 +98,7 @@ fn test_widget_serialization_includes_new_fields() {
         chart_height: 350,
         dashboard_ids: vec![],
         date_range_source: None,
+        sankey_flow_type: None,
         created_at: None,
         updated_at: None,
     };
