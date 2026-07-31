@@ -50,7 +50,11 @@ function calculateRelativeDatesFromCustom(count, unit) {
             startDate.setDate(startDate.getDate() - (num * 7));
             break;
         case 'months':
+            const day = startDate.getDate();
+            startDate.setDate(1);
             startDate.setMonth(startDate.getMonth() - num);
+            const maxDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
+            startDate.setDate(Math.min(day, maxDay));
             break;
         case 'years':
             startDate.setFullYear(startDate.getFullYear() - num);
