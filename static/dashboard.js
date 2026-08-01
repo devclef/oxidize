@@ -738,6 +738,9 @@ async function updateWidgetDateRange(widgetId) {
     const earnedChartTypeEl = document.getElementById(`${widgetId}-earned-chart-type`);
     if (earnedChartTypeEl) widget.earned_chart_type = earnedChartTypeEl.value;
 
+    const chartTypeEl = document.getElementById(`${widgetId}-chart-type`);
+    if (chartTypeEl) widget.chart_type = chartTypeEl.value;
+
     const sankeyFlowTypeEl = document.getElementById(`${widgetId}-sankey-flow-type`);
     if (sankeyFlowTypeEl) widget.sankey_flow_type = sankeyFlowTypeEl.value;
 
@@ -1285,6 +1288,53 @@ function filterChartLineByNames(chartLine, budgetNames) {
     return chartLine.filter(ds => nameSet.has(ds.label));
 }
 
+// Render a pie chart for widget data
+function renderPieChartWidget(ctx, widget, labels, data) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+
+    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
+                    '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors.slice(0, labels.length).map(c => c + 'cc'),
+                borderColor: colors.slice(0, labels.length),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor, padding: 12 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
+                            const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
+                            return context.label + ': ' + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 async function refreshWidget(widgetId) {
     const btn = document.querySelector(`[data-widget-id="${widgetId}"] .refresh-btn`);
     if (btn) {
@@ -1676,12 +1726,28 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
         // Handle earned vs spent widget type
         if (widgetType === 'earned_spent') {
-            const earnedChartType = widget.earned_chart_type || 'bars';
-            await renderEarnedSpentChart(ctx, widget, labels, history, canvasId, earnedChartType);
+            const chartType = widget.chart_type || 'line';
+            if (chartType === 'pie') {
+                const earnedDataset = history.find(ds => ds.label === 'earned');
+                const spentDataset = history.find(ds => ds.label === 'spent');
+                let earnedTotal = 0, spentTotal = 0;
+                if (earnedDataset) {
+                    const vals = extractChartData(earnedDataset.entries, labels);
+                    earnedTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
+                }
+                if (spentDataset) {
+                    const vals = extractChartData(spentDataset.entries, labels);
+                    spentTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
+                }
+                renderPieChartWidget(ctx, widget, ['Earned', 'Spent'], [earnedTotal, spentTotal]);
+            } else {
+                const earnedChartType = widget.earned_chart_type || 'bars';
+                await renderEarnedSpentChart(ctx, widget, labels, history, canvasId, earnedChartType);
+            }
             return;
         }
 
-        // Handle budget_spent widget type - time-series line chart with dates on X-axis, one line per budget
+        // Handle budget_spent widget type
         if (widgetType === 'budget_spent') {
             const budgetNames = widget.budget_names || [];
             let filteredHistory = history;
@@ -1702,6 +1768,26 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 }
             });
             const allDates = Array.from(dateSet).sort();
+
+            const chartType = widget.chart_type || 'line';
+
+            // Pie chart mode: aggregate total spent per budget
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                filteredHistory.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                });
+                renderPieChartWidget(ctx, widget, pieLabels, pieData);
+                return;
+            }
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1799,8 +1885,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             return;
         }
 
-
-        // Handle expenses_by_category widget type - time-series line chart with dates on X-axis, one line per category
+        // Handle expenses_by_category widget type
         if (widgetType === 'expenses_by_category') {
             if (!history || history.length === 0) {
                 document.getElementById(`${canvasId}-error`).textContent = 'No category expense data available';
@@ -1815,6 +1900,26 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 }
             });
             const allDates = Array.from(dateSet).sort();
+
+            const chartType = widget.chart_type || 'line';
+
+            // Pie chart mode: aggregate total spent per category
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                history.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                });
+                renderPieChartWidget(ctx, widget, pieLabels, pieData);
+                return;
+            }
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1910,7 +2015,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             renderSplitLegend(widget.id, legendInfo, datasets);
             return;
         }
-        // Handle category_subcat widget type - time-series line chart with dates on X-axis, one line per subcategory
+        // Handle category_subcat widget type
         if (widgetType === 'category_subcat') {
             const parentCategories = widget.parent_categories || [];
             let filteredHistory = history;
@@ -1928,6 +2033,26 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 }
             });
             const allDates = Array.from(dateSet).sort();
+
+            const chartType = widget.chart_type || 'line';
+
+            // Pie chart mode: aggregate total spent per subcategory
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                filteredHistory.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                });
+                renderPieChartWidget(ctx, widget, pieLabels, pieData);
+                return;
+            }
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -2024,6 +2149,34 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             renderSplitLegend(widget.id, legendInfo, datasets);
             return;
         }
+
+        // Pie chart for balance widgets: show balance distribution by account
+        if (chartType === 'pie' && widgetType === 'balance') {
+            const groupIds = widget.group_ids || [];
+            const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+            const widgetGroupAccountIds = new Set();
+            widgetGroups.forEach(g => g.account_ids.forEach(id => widgetGroupAccountIds.add(id)));
+            const individualAccounts = widget.accounts.filter(id => !widgetGroupAccountIds.has(id))
+                .map(id => allAccounts.find(a => a.id === id)).filter(Boolean);
+
+            const pieLabels = [];
+            const pieData = [];
+            widgetGroups.forEach(g => {
+                const totalBalance = g.account_ids.reduce((sum, accId) => {
+                    const acc = allAccounts.find(a => a.id === accId);
+                    return sum + (acc ? Math.abs(parseFloat(acc.balance) || 0) : 0);
+                }, 0);
+                pieLabels.push(g.name);
+                pieData.push(totalBalance);
+            });
+            individualAccounts.forEach(acc => {
+                pieLabels.push(acc.name);
+                pieData.push(Math.abs(parseFloat(acc.balance) || 0));
+            });
+            renderPieChartWidget(ctx, widget, pieLabels, pieData);
+            return;
+        }
+
         if (widget.chart_mode === 'combined') {
             // Aggregate all datasets
             const totalFlowData = new Array(labels.length).fill(0);
@@ -2557,6 +2710,15 @@ async function renderDashboard() {
                             <select id="${widget.id}-chart-mode">
                                 <option value="combined" ${widget.chart_mode === 'combined' || !widget.chart_mode ? 'selected' : ''}>Combined</option>
                                 <option value="split" ${widget.chart_mode === 'split' ? 'selected' : ''}>Split</option>
+                            </select>
+                        </label>
+                        ` : ''}
+
+                        ${widgetType !== 'sankey' ? `
+                        <label>Chart Type:
+                            <select id="${widget.id}-chart-type">
+                                <option value="line" ${widget.chart_type !== 'pie' ? 'selected' : ''}>Line</option>
+                                <option value="pie" ${widget.chart_type === 'pie' ? 'selected' : ''}>Pie</option>
                             </select>
                         </label>
                         ` : ''}

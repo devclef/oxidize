@@ -48,6 +48,10 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sankey_flow_type: Option<String>,
+    /// Chart rendering type: "line" (default) or "pie".
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chart_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

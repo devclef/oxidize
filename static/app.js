@@ -367,8 +367,9 @@ async function fetchChartData() {
             return;
         }
 
-       // For budget_spent widget type - time-series line chart with dates on X-axis, one line per budget
+       // For budget_spent widget type
         if (widgetType === 'budget_spent') {
+            const chartType = getChartType();
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
@@ -448,60 +449,79 @@ async function fetchChartData() {
 
             chartContainer.style.display = 'block';
             const ctx = document.getElementById('balanceChart').getContext('2d');
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
 
-            balanceChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: chartTextColor }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
+            // Pie chart mode: aggregate total spent per budget
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                budgetData.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                });
+                renderPieChart(ctx, pieLabels, pieData);
+            } else {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                const chartTextColor = isDark ? '#eaeaea' : '#333';
+                const chartGridColor = isDark ? '#444' : '#ddd';
+
+                balanceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: allDates,
+                        datasets: datasets
                     },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { color: chartTextColor }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                    }
                                 }
                             }
                         },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: chartGridColor },
+                                ticks: {
+                                    color: chartTextColor,
+                                    callback: function(value) {
+                                        return value.toLocaleString();
+                                    }
+                                }
+                            },
+                            x: {
+                                grid: { color: chartGridColor },
+                                ticks: {
+                                    color: chartTextColor,
+                                    maxRotation: 45
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            }
             return;
         }
 
-        // For category_subcat widget type - time-series line chart with dates on X-axis, one line per subcategory
+        // For category_subcat widget type
         if (widgetType === 'category_subcat') {
+            const chartType = getChartType();
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
@@ -595,55 +615,73 @@ async function fetchChartData() {
 
             chartContainer.style.display = 'block';
             const ctx = document.getElementById('balanceChart').getContext('2d');
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
 
-            balanceChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: chartTextColor }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
+            // Pie chart mode: aggregate total spent per subcategory
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                subcatData.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                });
+                renderPieChart(ctx, pieLabels, pieData);
+            } else {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                const chartTextColor = isDark ? '#eaeaea' : '#333';
+                const chartGridColor = isDark ? '#444' : '#ddd';
+
+                balanceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: allDates,
+                        datasets: datasets
                     },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { color: chartTextColor }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                    }
                                 }
                             }
                         },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: chartGridColor },
+                                ticks: {
+                                    color: chartTextColor,
+                                    callback: function(value) {
+                                        return value.toLocaleString();
+                                    }
+                                }
+                            },
+                            x: {
+                                grid: { color: chartGridColor },
+                                ticks: {
+                                    color: chartTextColor,
+                                    maxRotation: 45
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            }
             return;
         }
 
@@ -1588,24 +1626,105 @@ function computeForecast(absoluteData, labels, forecastDays) {
     return { values: forecastValues, labels: forecastLabels };
 }
 
+function getChartType() {
+    return document.querySelector('input[name="chart-type"]:checked')?.value || 'line';
+}
+
+function renderPieChart(ctx, labels, data, currencySymbol = '') {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+
+    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
+                    '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
+
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    balanceChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors.slice(0, labels.length).map(c => c + 'cc'),
+                borderColor: colors.slice(0, labels.length),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor, padding: 12 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
+                            const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
+                            return context.label + ': ' + currencySymbol + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 function renderChart(history, widgetType = 'balance') {
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+    const chartType = getChartType();
 
     // For earned_spent widget type, render based on selected chart type
     if (widgetType === 'earned_spent') {
         const earnedChartType = document.querySelector('input[name="earned-chart-type"]:checked')?.value || 'bars';
-        renderEarnedSpentChart(ctx, history, earnedChartType);
+        if (chartType === 'pie') {
+            // Aggregate earned vs spent over the entire date range
+            const earnedDataset = history.find(ds => ds.label === 'earned');
+            const spentDataset = history.find(ds => ds.label === 'spent');
+            let earnedTotal = 0, spentTotal = 0;
+            if (earnedDataset) {
+                const vals = extractChartData(earnedDataset.entries);
+                earnedTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
+            }
+            if (spentDataset) {
+                const vals = extractChartData(spentDataset.entries);
+                spentTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
+            }
+            renderPieChart(ctx, ['Earned', 'Spent'], [earnedTotal, spentTotal]);
+        } else {
+            renderEarnedSpentChart(ctx, history, earnedChartType);
+        }
         return;
     }
 
-    // For expenses_by_category widget type, render as a line chart with time on X axis
+    // For expenses_by_category widget type
     if (widgetType === 'expenses_by_category') {
-        renderExpensesByCategoryChart(ctx, history);
+        if (chartType === 'pie') {
+            // Aggregate total spend per category across all dates
+            const totals = history.map(ds => {
+                let sum = 0;
+                if (typeof ds.entries === 'object') {
+                    Object.values(ds.entries).forEach(v => {
+                        sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                    });
+                }
+                return sum;
+            });
+            renderPieChart(ctx, history.map(ds => ds.label), totals);
+        } else {
+            renderExpensesByCategoryChart(ctx, history);
+        }
         return;
     }
 
-    // For net_worth widget type, render as a line chart
+    // For net_worth widget type, render as a line chart (pie doesn't make sense)
     if (widgetType === 'net_worth') {
         renderNetWorthChart(ctx, history);
         return;
@@ -1785,6 +1904,19 @@ function renderChart(history, widgetType = 'balance') {
     // Initialize visibility tracking by index - all visible by default
     for (let i = 0; i < totalDisplayItems; i++) {
         datasetVisibility[i] = true;
+    }
+
+    // If pie chart is selected for balance, show balance distribution pie
+    if (chartType === 'pie' && widgetType === 'balance') {
+        // Use current account balances for pie slices
+        const pieLabels = [];
+        const pieData = [];
+        uniqueAccountInfo.forEach(info => {
+            pieLabels.push(info.name);
+            pieData.push(Math.abs(parseFloat(info.balance) || 0));
+        });
+        renderPieChart(ctx, pieLabels, pieData);
+        return;
     }
 
     if (chartMode === 'split') {
@@ -2616,6 +2748,7 @@ async function saveGraphAsWidget() {
     const comparisonEndDate = enableComparison ? document.getElementById('comparison-end-date').value : null;
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
     const earnedChartType = document.querySelector('input[name="earned-chart-type"]:checked')?.value || 'bars';
+    const chartType = document.querySelector('input[name="chart-type"]:checked')?.value || 'line';
 
     // Identify which selected accounts belong to checked groups
     const checkedGroups = groups.filter(g => g._checked);
@@ -2657,6 +2790,7 @@ async function saveGraphAsWidget() {
         chart_mode: chartMode,
         earned_chart_type: earnedChartType,
         widget_type: widgetType,
+        chart_type: chartType,
         chart_options: chartOptions,
         dashboard_ids: ['default']
     };
@@ -3627,6 +3761,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle earned chart type change
     document.querySelectorAll('input[name="earned-chart-type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            fetchChartData();
+        });
+    });
+
+    // Handle chart type (line/pie) change
+    document.querySelectorAll('input[name="chart-type"]').forEach(radio => {
         radio.addEventListener('change', () => {
             fetchChartData();
         });
