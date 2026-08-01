@@ -1,4 +1,4 @@
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::env;
 
 /// A validated Firefly III URL. Only http/https URLs are allowed.
