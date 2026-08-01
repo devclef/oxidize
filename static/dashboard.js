@@ -1296,6 +1296,12 @@ function renderPieChartWidget(ctx, widget, labels, data) {
     const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
                     '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
 
+    // Sort slices largest-first so the pie chart reads clockwise from biggest to smallest
+    const indexed = labels.map((label, i) => ({ label, value: data[i] }));
+    indexed.sort((a, b) => b.value - a.value);
+    labels = indexed.map(item => item.label);
+    data = indexed.map(item => item.value);
+
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
     }
@@ -1323,7 +1329,7 @@ function renderPieChartWidget(ctx, widget, labels, data) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            const value = context.parsed;
+                            const value = context.parsed.value;
                             const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
                             const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
                             return context.label + ': ' + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
@@ -2151,6 +2157,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
         }
 
         // Pie chart for balance widgets: show balance distribution by account
+        const chartType = widget.chart_type || 'line';
         if (chartType === 'pie' && widgetType === 'balance') {
             const groupIds = widget.group_ids || [];
             const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
