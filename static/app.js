@@ -1637,6 +1637,12 @@ function renderPieChart(ctx, labels, data, currencySymbol = '') {
     const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
                     '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
 
+    // Sort slices largest-first so the pie chart reads clockwise from biggest to smallest
+    const indexed = labels.map((label, i) => ({ label, value: data[i] }));
+    indexed.sort((a, b) => b.value - a.value);
+    labels = indexed.map(item => item.label);
+    data = indexed.map(item => item.value);
+
     if (balanceChart) {
         balanceChart.destroy();
     }
