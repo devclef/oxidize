@@ -3,8 +3,8 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, ParentCategory, SankeyFlowData,
-    SankeyFlowType, SankeyLink, SimpleAccount,
+    CategoryListResponse, ChartDataSet, ChartLine, ParentCategory, SankeyFlowData, SankeyFlowType,
+    SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
