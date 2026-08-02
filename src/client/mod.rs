@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, MonthlySummary, ParentCategory, SankeyFlowData,
+    CategoryListResponse, ChartDataSet, ChartLine, ParentCategory, SankeyFlowData,
     SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
@@ -756,118 +756,6 @@ impl FireflyClient {
         Ok(result)
     }
 
-    pub async fn get_monthly_summary(
-        &self,
-        month: u32,
-        year: i32,
-        account_ids: Option<Vec<String>>,
-        account_type: Option<String>,
-    ) -> Result<MonthlySummary, String> {
-        let start_date = chrono::NaiveDate::from_ymd_opt(year, month, 1)
-            .map(|d| d.format("%Y-%m-%d").to_string())
-            .ok_or_else(|| format!("Invalid date for month {} year {}", month, year))?;
-
-        let end_date = if month == 12 {
-            chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
-                .map(|d| d.pred_opt().unwrap().format("%Y-%m-%d").to_string())
-                .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
-        } else {
-            chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
-                .map(|d| d.pred_opt().unwrap().format("%Y-%m-%d").to_string())
-                .ok_or_else(|| format!("Invalid date for end of month {} year {}", month, year))?
-        };
-
-        let mut selected_account_ids = std::collections::HashSet::new();
-        if let Some(ref ids) = account_ids {
-            for id in ids {
-                selected_account_ids.insert(id.clone());
-            }
-        } else if let Some(ref t) = account_type {
-            if t != "all" {
-                if let Ok(accounts) = self.get_accounts(Some(t.clone())).await {
-                    for acc in accounts {
-                        selected_account_ids.insert(acc.id);
-                    }
-                }
-            } else {
-                if let Ok(accounts) = self.get_accounts(Some("asset".to_string())).await {
-                    for acc in accounts {
-                        selected_account_ids.insert(acc.id);
-                    }
-                }
-            }
-        } else {
-            if let Ok(accounts) = self.get_accounts(Some("asset".to_string())).await {
-                for acc in accounts {
-                    selected_account_ids.insert(acc.id);
-                }
-            }
-        }
-
-        let income_txs = self
-            .fetch_all_transactions(
-                &start_date,
-                &end_date,
-                account_ids.as_ref(),
-                Some("deposit"),
-            )
-            .await?;
-        let expense_txs = self
-            .fetch_all_transactions(
-                &start_date,
-                &end_date,
-                account_ids.as_ref(),
-                Some("withdrawal"),
-            )
-            .await?;
-
-        let total_income =
-            Self::sum_transactions_from_list(&income_txs, &selected_account_ids, true);
-        let total_expenses =
-            Self::sum_transactions_from_list(&expense_txs, &selected_account_ids, false);
-        let savings = total_income - total_expenses;
-        let savings_rate = if total_income > 0.0 {
-            (savings / total_income) * 100.0
-        } else {
-            0.0
-        };
-        let (currency_symbol, currency_code) = {
-            let c = Self::get_currency_from_transaction_list(&income_txs);
-            if c.0.is_some() || c.1.is_some() {
-                c
-            } else {
-                Self::get_currency_from_transaction_list(&expense_txs)
-            }
-        };
-
-        let month_name = match month {
-            1 => "January",
-            2 => "February",
-            3 => "March",
-            4 => "April",
-            5 => "May",
-            6 => "June",
-            7 => "July",
-            8 => "August",
-            9 => "September",
-            10 => "October",
-            11 => "November",
-            12 => "December",
-            _ => "Unknown",
-        };
-
-        Ok(MonthlySummary {
-            month: month_name.to_string(),
-            year,
-            total_income,
-            total_expenses,
-            savings,
-            savings_rate,
-            currency_symbol,
-            currency_code,
-        })
-    }
-
     pub async fn get_budgets(
         &self,
         start_date: Option<String>,
@@ -1161,19 +1049,13 @@ impl FireflyClient {
             })
             .collect();
 
-        // Sort by number of data points descending for consistent ordering
+        // Sort by total spend descending
         chart.sort_by(|a, b| {
-            let a_count = if let serde_json::Value::Object(m) = &a.entries {
-                m.len()
-            } else {
-                0
-            };
-            let b_count = if let serde_json::Value::Object(m) = &b.entries {
-                m.len()
-            } else {
-                0
-            };
-            b_count.cmp(&a_count)
+            let sum_a = Self::sum_entries(&a.entries);
+            let sum_b = Self::sum_entries(&b.entries);
+            sum_b
+                .partial_cmp(&sum_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         debug!(
@@ -1778,40 +1660,6 @@ impl FireflyClient {
             }
         }
         Ok(keys)
-    }
-
-    fn sum_transactions_from_list(
-        txs: &[serde_json::Value],
-        selected_account_ids: &std::collections::HashSet<String>,
-        is_income: bool,
-    ) -> f64 {
-        txs.iter()
-            .filter_map(|t| t.get("attributes"))
-            .filter_map(|attr| attr.get("transactions"))
-            .filter_map(|trans_array| trans_array.as_array())
-            .flatten()
-            .filter(|t| {
-                if is_income {
-                    // For income (deposits), ignore if destination is a selected account
-                    let dest_id = t.get("destination_id").and_then(|d| d.as_str());
-                    if let Some(id) = dest_id {
-                        return !selected_account_ids.contains(id);
-                    }
-                } else {
-                    // For expenses (withdrawals), ignore if source is a selected account
-                    let source_id = t.get("source_id").and_then(|s| s.as_str());
-                    if let Some(id) = source_id {
-                        return !selected_account_ids.contains(id);
-                    }
-                }
-                true
-            })
-            .filter_map(|trans| trans.get("amount"))
-            .filter_map(|amt| {
-                amt.as_f64()
-                    .or_else(|| amt.as_str().and_then(|s| s.parse::<f64>().ok()))
-            })
-            .sum()
     }
 
     /// Extract currency info from a list of transaction objects (from fetch_all_transactions).

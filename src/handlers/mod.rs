@@ -6,7 +6,6 @@ pub mod dashboard;
 pub mod dashboard_api;
 pub mod group;
 pub mod index;
-pub mod summary;
 pub mod widget;
 
 pub mod sankey;

@@ -43,8 +43,6 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::category::get_category_list)
             .service(handlers::category::get_subcategory_spend)
             .service(handlers::dashboard::dashboard)
-            .service(handlers::summary::get_monthly_summary)
-            .service(handlers::summary::summary)
             .service(handlers::budget_comparison::budget_comparison)
             .service(handlers::avg_cost::avg_cost_page)
             .service(handlers::avg_cost::get_avg_cost)

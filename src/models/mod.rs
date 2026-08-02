@@ -16,8 +16,6 @@ pub use chart::{ChartDataSet, ChartLine};
 pub use dashboard::Dashboard;
 pub use group::Group;
 pub use widget::Widget;
-pub mod summary;
-pub use summary::MonthlySummary;
 
 pub mod sankey;
 pub use sankey::{SankeyFlowData, SankeyFlowType, SankeyLink, SankeyNode};
