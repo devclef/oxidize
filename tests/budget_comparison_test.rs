@@ -374,6 +374,8 @@ fn test_avg_cost_response_serialization() {
         months_count: 6,
         start_date: "2026-01-01".to_string(),
         end_date: "2026-06-30".to_string(),
+        target_month: None,
+        target_year: None,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");

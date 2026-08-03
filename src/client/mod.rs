@@ -1943,10 +1943,19 @@ impl FireflyClient {
         mode: AvgCostMode,
         months_count: u32,
         account_ids: Option<Vec<String>>,
+        target_month: Option<u32>,
+        target_year: Option<i32>,
     ) -> Result<AvgCostResponse, String> {
         let now = Utc::now();
         let current_year = now.year();
         let current_month = now.month();
+
+        // Use target month/year if provided, otherwise default to current
+        let (use_year, use_month) = match (&mode, target_year, target_month) {
+            (AvgCostMode::PreviousYearSameMonth, Some(y), Some(m)) => (y, m),
+            (AvgCostMode::PreviousYearSameMonth, None, None) => (current_year - 1, current_month),
+            (_, _, _) => (current_year, current_month),
+        };
 
         // Determine date range based on mode
         let (start_date, end_date, data_period_months) = match &mode {
@@ -1970,18 +1979,17 @@ impl FireflyClient {
                 (start, end_str, n)
             }
             AvgCostMode::PreviousYearSameMonth => {
-                // Show only the same month from the previous year
-                let prev_year = current_year - 1;
-                let start = chrono::NaiveDate::from_ymd_opt(prev_year, current_month, 1)
+                // Show only the specified month from the target year
+                let start = chrono::NaiveDate::from_ymd_opt(use_year, use_month, 1)
                     .ok_or_else(|| "Failed to compute start date".to_string())?
                     .format("%Y-%m-%d")
                     .to_string();
                 // Last day of that month
-                let next_month = current_month + 1;
+                let next_month = use_month + 1;
                 let (end_year, end_month) = if next_month > 12 {
-                    (prev_year + 1, 1)
+                    (use_year + 1, 1)
                 } else {
-                    (prev_year, next_month)
+                    (use_year, next_month)
                 };
                 let end = chrono::NaiveDate::from_ymd_opt(end_year, end_month, 1)
                     .ok_or_else(|| "Failed to compute end date".to_string())?
@@ -2095,12 +2103,19 @@ impl FireflyClient {
             end_date
         );
 
+        let (resp_target_month, resp_target_year) = match &mode {
+            AvgCostMode::PreviousYearSameMonth => (Some(use_month), Some(use_year)),
+            _ => (None, None),
+        };
+
         Ok(AvgCostResponse {
             budgets: results,
             mode,
             months_count: data_period_months,
             start_date,
             end_date,
+            target_month: resp_target_month,
+            target_year: resp_target_year,
         })
     }
 

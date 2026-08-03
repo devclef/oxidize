@@ -380,6 +380,14 @@
                 <select id="months-select">
                 </select>
             </div>
+            <div class="field" id="month-nav-field" style="display: none;">
+                <label>Month</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <button class="compute-btn" id="month-prev-btn" style="padding: 6px 12px; font-size: 0.85em;">◀</button>
+                    <span id="month-label" style="min-width: 120px; text-align: center; font-weight: 600; font-size: 0.95em;"></span>
+                    <button class="compute-btn" id="month-next-btn" style="padding: 6px 12px; font-size: 0.85em;">▶</button>
+                </div>
+            </div>
             <button class="compute-btn" id="compute-btn">Compute</button>
         </div>
 
@@ -411,9 +419,13 @@
 
 <script>
     const THEME_KEY = 'oxidize_theme';
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     let allBudgetsData = [];
     let sortField = 'avg';
     let sortAsc = false;
+    let navMonth = null;   // 1-12, for Previous Year Same Month navigation
+    let navYear = null;    // target year for comparison
+    let lastAvgCostData = null;  // cache last response for re-render
 
     function initTheme() {
         const saved = localStorage.getItem(THEME_KEY);
@@ -513,6 +525,11 @@
             .map(cb => cb.value);
     }
 
+    function updateMonthLabel() {
+        const label = MONTH_NAMES[(navMonth - 1) % 12] + ' ' + navYear;
+        document.getElementById('month-label').textContent = label;
+    }
+
     async function computeAvgCost() {
         const selected = getSelectedBudgets();
         const errorContainer = document.getElementById('error-container');
@@ -525,7 +542,6 @@
             noDataMsg.style.display = 'block';
             return;
         }
-
 
         noDataMsg.style.display = 'none';
         errorContainer.style.display = 'none';
@@ -540,6 +556,10 @@
         selected.forEach(b => params.append('budget_names', b.name));
         params.append('mode', mode);
         params.append('months', months);
+        if (mode === 'previous_year_same_month' && navMonth && navYear) {
+            params.append('month', navMonth);
+            params.append('year', navYear);
+        }
         if (accountIds.length > 0) {
             params.append('account_ids', accountIds.join(','));
         }
@@ -549,6 +569,13 @@
             const response = await fetch('/api/budgets/avg-cost?' + params.toString());
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
+            lastAvgCostData = data;
+            // Update navigation state from response
+            if (data.target_month && data.target_year) {
+                navMonth = data.target_month;
+                navYear = data.target_year;
+                updateMonthLabel();
+            }
             renderResults(data);
         }
  catch (e) {
@@ -641,11 +668,22 @@
         }
 
 
-        // Mode toggle: show/hide months field
+        // Mode toggle: show/hide months field and month nav
         const monthsField = document.getElementById('months-field');
+        const monthNavField = document.getElementById('month-nav-field');
+        const now = new Date();
         document.querySelectorAll('input[name="calc-mode"]').forEach(radio => {
             radio.addEventListener('change', () => {
                 monthsField.style.display = radio.value === 'last_n_months' ? 'flex' : 'none';
+                if (radio.value === 'previous_year_same_month') {
+                    monthNavField.style.display = 'flex';
+                    // Default to current month of previous year
+                    navMonth = now.getMonth() + 1; // 1-12
+                    navYear = now.getFullYear() - 1;
+                    updateMonthLabel();
+                } else {
+                    monthNavField.style.display = 'none';
+                }
             }
 );
         }
@@ -671,6 +709,20 @@
 
         // Compute button
         document.getElementById('compute-btn').addEventListener('click', computeAvgCost);
+
+        // Month navigation buttons
+        document.getElementById('month-prev-btn').addEventListener('click', () => {
+            navMonth -= 1;
+            if (navMonth < 1) { navMonth = 12; navYear -= 1; }
+            updateMonthLabel();
+            computeAvgCost();
+        });
+        document.getElementById('month-next-btn').addEventListener('click', () => {
+            navMonth += 1;
+            if (navMonth > 12) { navMonth = 1; navYear += 1; }
+            updateMonthLabel();
+            computeAvgCost();
+        });
 
         // Sort handlers
         document.getElementById('sort-avg').addEventListener('click', () => {

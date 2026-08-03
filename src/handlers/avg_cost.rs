@@ -39,6 +39,8 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
     let mut mode: Option<String> = None;
     let mut months: Option<u32> = None;
     let mut account_ids: Vec<String> = Vec::new();
+    let mut target_month: Option<u32> = None;
+    let mut target_year: Option<i32> = None;
 
     for (k, v) in params {
         match k.as_str() {
@@ -52,6 +54,16 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
             "account_ids" => {
                 for id in v.split(',').filter(|s| !s.trim().is_empty()) {
                     account_ids.push(id.trim().to_string());
+                }
+            }
+            "month" => {
+                if let Ok(m) = v.parse::<u32>() {
+                    target_month = Some(m);
+                }
+            }
+            "year" => {
+                if let Ok(y) = v.parse::<i32>() {
+                    target_year = Some(y);
                 }
             }
             _ => {}
@@ -72,7 +84,7 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
     };
 
     match client
-        .get_avg_cost(budget_names, avg_mode, months_count, account_ids_opt)
+        .get_avg_cost(budget_names, avg_mode, months_count, account_ids_opt, target_month, target_year)
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),

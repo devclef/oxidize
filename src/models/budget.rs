@@ -233,4 +233,10 @@ pub struct AvgCostResponse {
     pub start_date: String,
     /// End date of the data range
     pub end_date: String,
+    /// The month (1-12) used for PreviousYearSameMonth mode, for frontend navigation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_month: Option<u32>,
+    /// The year used for PreviousYearSameMonth mode, for frontend navigation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_year: Option<i32>,
 }
