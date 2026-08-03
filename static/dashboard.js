@@ -392,7 +392,42 @@ async function saveWidgetDashboardAssignment(widgetId) {
 
 // ── End dashboard management ──────────────────────────────────────────
 
-// Parse a chart label that may be a date string or quarterly format like "2025-Q1"
+// Chart.js plugin: sort tooltip items by value descending (OXI-43)
+// and bold the hovered legend items (OXI-44)
+const tooltipSortAndLegendPlugin = {
+    id: 'tooltipSortAndLegend',
+    afterTooltipDraw(chart) {
+        const tooltip = chart.tooltip;
+        if (!tooltip || !tooltip._active || !tooltip._active.length) {
+            // Clear any bold state when tooltip is not active
+            const legendItems = document.querySelectorAll('.legend-item.active');
+            legendItems.forEach(item => item.classList.remove('legend-highlight'));
+            return;
+        }
+
+        // Get the widget ID from the chart canvas
+        const canvas = chart.canvas;
+        const match = canvas.id ? canvas.id.match(/(.+)-chart$/) : null;
+        const widgetId = match ? match[1] : null;
+        if (!widgetId) return;
+
+        // Get hovered dataset indices from tooltip active elements
+        const hoveredIndices = tooltip._active.map(el => el.datasetIndex);
+
+        // Highlight legend items for hovered datasets
+        const legendContainer = document.getElementById(widgetId + '-legend');
+        if (legendContainer) {
+            const items = legendContainer.querySelectorAll('.legend-item');
+            items.forEach((item, idx) => {
+                if (hoveredIndices.includes(idx)) {
+                    item.classList.add('legend-highlight');
+                } else {
+                    item.classList.remove('legend-highlight');
+                }
+            });
+        }
+    },
+};
 function parseChartLabel(label) {
     if (typeof label !== 'string') return new Date(label);
     const qMatch = label.match(/^(\d{4})-Q(\d)$/);
@@ -1859,6 +1894,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: datasets
                 },
+                plugins: [tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -1867,6 +1903,11 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                         tooltip: {
                             mode: 'index',
                             intersect: false,
+                            itemSort: (a, b) => {
+                                const va = Math.abs(a.parsed.y || 0);
+                                const vb = Math.abs(b.parsed.y || 0);
+                                return vb - va;
+                            },
                             callbacks: {
                                 label: function(context) {
                                     return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
@@ -1990,6 +2031,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: datasets
                 },
+                plugins: [tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -1998,6 +2040,11 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                         tooltip: {
                             mode: 'index',
                             intersect: false,
+                            itemSort: (a, b) => {
+                                const va = Math.abs(a.parsed.y || 0);
+                                const vb = Math.abs(b.parsed.y || 0);
+                                return vb - va;
+                            },
                             callbacks: {
                                 label: function(context) {
                                     return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
@@ -2124,6 +2171,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: datasets
                 },
+                plugins: [tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -2132,6 +2180,11 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                         tooltip: {
                             mode: 'index',
                             intersect: false,
+                            itemSort: (a, b) => {
+                                const va = Math.abs(a.parsed.y || 0);
+                                const vb = Math.abs(b.parsed.y || 0);
+                                return vb - va;
+                            },
                             callbacks: {
                                 label: function(context) {
                                     return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
@@ -2506,12 +2559,18 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: splitLabels,
                     datasets: splitDatasets
                 },
+                plugins: [tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
                         legend: { display: false },
                         tooltip: {
+                            itemSort: (a, b) => {
+                                const va = Math.abs(a.parsed.y || 0);
+                                const vb = Math.abs(b.parsed.y || 0);
+                                return vb - va;
+                            },
                             callbacks: {
                                 label: function(context) {
                                     if (context.parsed.y !== null) {

@@ -739,6 +739,13 @@ button:hover {
     text-decoration: line-through;
 }
 
+.legend-item.legend-highlight {
+    font-weight: 700;
+    border-color: var(--accent-color);
+    box-shadow: var(--shadow-hover);
+    background: var(--accent-light);
+}
+
 .legend-color {
     width: 10px;
     height: 10px;
