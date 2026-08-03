@@ -496,8 +496,15 @@
 
             // Build datasets: one per budget for current year, one per budget for previous year
             // Each group shares a stack key so they stack vertically
+            // Sort by total spend descending so highest-amount budgets are on the bottom of the stack
+            const budgetTotals = data.map(b => ({
+                budget: b,
+                total: b.current_year_spent.reduce((s, v) => s + (v || 0), 0),
+            })).sort((a, b) => b.total - a.total);
+
             const datasets = [];
-            data.forEach((b, i) => {
+            budgetTotals.forEach((item, i) => {
+                const b = item.budget;
                 const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
                 datasets.push({
                     label: b.budget_name + ' (' + b.current_year + ')',
