@@ -360,6 +360,30 @@
                     <div class="flow-option" data-type="subcategory" onclick="setFlowType('subcategory')">By Subcategory</div>
                     <div class="flow-option" data-type="budget" onclick="setFlowType('budget')">By Budget</div>
                 </div>
+                <div id="category-filter-panel" style="display: none; margin-top: 12px;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 0.8em; color: var(--text-muted); text-transform: uppercase;">Filter Categories</h4>
+                    <div class="control-actions">
+                        <button id="select-all-categories">All</button>
+                        <button id="deselect-all-categories">None</button>
+                    </div>
+                    <div class="control-list" id="category-filter-list" style="max-height: 120px;"></div>
+                </div>
+                <div id="subcategory-filter-panel" style="display: none; margin-top: 12px;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 0.8em; color: var(--text-muted); text-transform: uppercase;">Filter Subcategories</h4>
+                    <div class="control-actions">
+                        <button id="select-all-subcategories">All</button>
+                        <button id="deselect-all-subcategories">None</button>
+                    </div>
+                    <div class="control-list" id="subcategory-filter-list" style="max-height: 120px;"></div>
+                </div>
+                <div id="budget-filter-panel" style="display: none; margin-top: 12px;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 0.8em; color: var(--text-muted); text-transform: uppercase;">Filter Budgets</h4>
+                    <div class="control-actions">
+                        <button id="select-all-budgets">All</button>
+                        <button id="deselect-all-budgets">None</button>
+                    </div>
+                    <div class="control-list" id="budget-filter-list" style="max-height: 120px;"></div>
+                </div>
                 <div class="date-row">
                     <div>
                         <label>From</label><br>
@@ -401,6 +425,9 @@
     let currentFlowType = 'destination';
     let sankeyChart = null;
     let groups = [];
+    let availableCategories = [];
+    let availableSubcategories = [];
+    let availableBudgets = [];
 
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -438,6 +465,10 @@
         document.querySelectorAll('.flow-option').forEach(el => {
             el.classList.toggle('active', el.dataset.type === type);
         });
+        // Show/hide filter panels based on flow type
+        document.getElementById('category-filter-panel').style.display = type === 'category' ? 'block' : 'none';
+        document.getElementById('subcategory-filter-panel').style.display = type === 'subcategory' ? 'block' : 'none';
+        document.getElementById('budget-filter-panel').style.display = type === 'budget' ? 'block' : 'none';
     }
 
     function formatCurrency(amount, symbol, code) {
@@ -456,6 +487,60 @@
 
     function getSelectedAccountIds() {
         return Array.from(document.querySelectorAll('.account-cb:checked')).map(cb => cb.value);
+    }
+
+    function getSelectedFilterValues(listId) {
+        return Array.from(document.querySelectorAll('#' + listId + ' input:checked')).map(cb => cb.value);
+    }
+
+    async function loadSankeyFilters() {
+        // Load categories and subcategories from the same endpoint
+        try {
+            const resp = await fetch('/api/categories/list');
+            if (resp.ok) {
+                const parents = await resp.json();
+                availableCategories = parents.map(p => p.name);
+                availableSubcategories = [];
+                parents.forEach(p => {
+                    p.subcategories.forEach(sub => {
+                        availableSubcategories.push(p.name + ' > ' + sub);
+                    });
+                });
+                renderFilterList('category-filter-list', availableCategories, 'filter-cb');
+                renderFilterList('subcategory-filter-list', availableSubcategories, 'filter-cb');
+            }
+        } catch (e) { console.error('Failed to load categories:', e); }
+
+        // Load budgets
+        try {
+            const resp = await fetch('/api/budgets/list');
+            if (resp.ok) {
+                const budgets = await resp.json();
+                availableBudgets = budgets.map(b => b.name);
+                renderFilterList('budget-filter-list', availableBudgets, 'filter-cb');
+            }
+        } catch (e) { console.error('Failed to load budgets:', e); }
+    }
+
+    function renderFilterList(listId, items, cbClass) {
+        const container = document.getElementById(listId);
+        if (!container) return;
+        if (items.length === 0) {
+            container.innerHTML = '<div style="padding:8px;color:var(--text-muted);font-size:0.85em;">None available</div>';
+            return;
+        }
+        container.innerHTML = items.map(item =>
+            '<label class="control-item">' +
+                '<input type="checkbox" class="' + cbClass + '" value="' + escapeHtml(item) + '">' +
+                escapeHtml(item) +
+            '</label>'
+        ).join('');
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     async function loadAccounts() {
@@ -516,6 +601,18 @@
         if (startDate) params.append('start', startDate);
         if (endDate) params.append('end', endDate);
         accountIds.forEach(id => params.append('accounts[]', id));
+
+        // Add filter params based on flow type
+        if (currentFlowType === 'category') {
+            const selectedCats = getSelectedFilterValues('category-filter-list');
+            selectedCats.forEach(c => params.append('categories[]', c));
+        } else if (currentFlowType === 'subcategory') {
+            const selectedSubs = getSelectedFilterValues('subcategory-filter-list');
+            selectedSubs.forEach(s => params.append('subcategories[]', s));
+        } else if (currentFlowType === 'budget') {
+            const selectedBudgets = getSelectedFilterValues('budget-filter-list');
+            selectedBudgets.forEach(b => params.append('budgets[]', b));
+        }
 
         try {
             const response = await fetch('/api/sankey/flows?' + params.toString());
@@ -877,8 +974,29 @@
         document.getElementById('compute-btn').addEventListener('click', generateSankey);
         document.getElementById('save-sankey-widget').addEventListener('click', saveSankeyAsWidget);
 
+        // Filter select/deselect buttons
+        document.getElementById('select-all-categories').addEventListener('click', () => {
+            document.querySelectorAll('#category-filter-list input').forEach(cb => cb.checked = true);
+        });
+        document.getElementById('deselect-all-categories').addEventListener('click', () => {
+            document.querySelectorAll('#category-filter-list input').forEach(cb => cb.checked = false);
+        });
+        document.getElementById('select-all-subcategories').addEventListener('click', () => {
+            document.querySelectorAll('#subcategory-filter-list input').forEach(cb => cb.checked = true);
+        });
+        document.getElementById('deselect-all-subcategories').addEventListener('click', () => {
+            document.querySelectorAll('#subcategory-filter-list input').forEach(cb => cb.checked = false);
+        });
+        document.getElementById('select-all-budgets').addEventListener('click', () => {
+            document.querySelectorAll('#budget-filter-list input').forEach(cb => cb.checked = true);
+        });
+        document.getElementById('deselect-all-budgets').addEventListener('click', () => {
+            document.querySelectorAll('#budget-filter-list input').forEach(cb => cb.checked = false);
+        });
+
         loadAccounts();
         loadGroups();
+        loadSankeyFilters();
     });
 </script>
 </body>

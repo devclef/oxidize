@@ -2132,6 +2132,9 @@ impl FireflyClient {
         flow_type: SankeyFlowType,
         start_date: Option<String>,
         end_date: Option<String>,
+        categories: Option<Vec<String>>,
+        subcategories: Option<Vec<String>>,
+        budgets: Option<Vec<String>>,
     ) -> Result<SankeyFlowData, String> {
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
@@ -2179,10 +2182,10 @@ impl FireflyClient {
             SankeyFlowType::Destination => {
                 self.aggregate_sankey_destination(&all_journals, &account_ids)
             }
-            SankeyFlowType::Budget => self.aggregate_sankey_budget(&all_journals, &account_ids),
-            SankeyFlowType::Category => self.aggregate_sankey_category(&all_journals, &account_ids),
+            SankeyFlowType::Budget => self.aggregate_sankey_budget(&all_journals, &account_ids, budgets.as_ref()),
+            SankeyFlowType::Category => self.aggregate_sankey_category(&all_journals, &account_ids, categories.as_ref()),
             SankeyFlowType::Subcategory => {
-                self.aggregate_sankey_subcategory(&all_journals, &account_ids)
+                self.aggregate_sankey_subcategory(&all_journals, &account_ids, subcategories.as_ref())
             }
         };
 
@@ -2252,9 +2255,13 @@ impl FireflyClient {
         &self,
         journals: &[serde_json::Value],
         source_account_ids: &[String],
+        budget_filter: Option<&Vec<String>>,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
+        let budget_set: Option<std::collections::HashSet<&str>> = budget_filter.map(|v| {
+            v.iter().map(|s| s.as_str()).collect()
+        });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
             if journal_type != "withdrawal" {
@@ -2278,6 +2285,11 @@ impl FireflyClient {
                 .get("budget_name")
                 .and_then(|b| b.as_str())
                 .unwrap_or("Unbudgeted");
+            if let Some(ref set) = budget_set {
+                if !set.contains(budget_name) {
+                    return None;
+                }
+            }
             let amount = journal
                 .get("amount")
                 .and_then(|a| a.as_str())
@@ -2293,9 +2305,13 @@ impl FireflyClient {
         &self,
         journals: &[serde_json::Value],
         source_account_ids: &[String],
+        category_filter: Option<&Vec<String>>,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
+        let cat_set: Option<std::collections::HashSet<&str>> = category_filter.map(|v| {
+            v.iter().map(|s| s.as_str()).collect()
+        });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
             if journal_type != "withdrawal" {
@@ -2325,6 +2341,11 @@ impl FireflyClient {
             } else {
                 parts[0].trim()
             };
+            if let Some(ref set) = cat_set {
+                if !set.contains(cat_name) {
+                    return None;
+                }
+            }
             let amount = journal
                 .get("amount")
                 .and_then(|a| a.as_str())
@@ -2340,9 +2361,13 @@ impl FireflyClient {
         &self,
         journals: &[serde_json::Value],
         source_account_ids: &[String],
+        subcategory_filter: Option<&Vec<String>>,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
+        let subcat_set: Option<std::collections::HashSet<&str>> = subcategory_filter.map(|v| {
+            v.iter().map(|s| s.as_str()).collect()
+        });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
             if journal_type != "withdrawal" {
@@ -2378,6 +2403,11 @@ impl FireflyClient {
                 "Other"
             };
             let cat_name = format!("{} > {}", parent, subcat);
+            if let Some(ref set) = subcat_set {
+                if !set.contains(&cat_name.as_str()) {
+                    return None;
+                }
+            }
             let amount = journal
                 .get("amount")
                 .and_then(|a| a.as_str())

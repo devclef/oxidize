@@ -42,6 +42,9 @@ pub async fn get_sankey_flows(
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut flow_type: Option<String> = None;
+    let mut categories: Vec<String> = Vec::new();
+    let mut subcategories: Vec<String> = Vec::new();
+    let mut budgets: Vec<String> = Vec::new();
 
     for (k, v) in params {
         match k.as_str() {
@@ -51,6 +54,9 @@ pub async fn get_sankey_flows(
             "start" => start = Some(v),
             "end" => end = Some(v),
             "flow_type" => flow_type = Some(v),
+            "categories[]" => categories.push(v),
+            "subcategories[]" => subcategories.push(v),
+            "budgets[]" => budgets.push(v),
             _ => {}
         }
     }
@@ -62,8 +68,12 @@ pub async fn get_sankey_flows(
         _ => SankeyFlowType::Destination,
     };
 
+    let categories_opt = if categories.is_empty() { None } else { Some(categories) };
+    let subcategories_opt = if subcategories.is_empty() { None } else { Some(subcategories) };
+    let budgets_opt = if budgets.is_empty() { None } else { Some(budgets) };
+
     match client
-        .get_sankey_flows(account_ids, flow_type, start, end)
+        .get_sankey_flows(account_ids, flow_type, start, end, categories_opt, subcategories_opt, budgets_opt)
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),
