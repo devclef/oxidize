@@ -1541,9 +1541,24 @@ function renderSankeyChart(container, data) {
         .style('cursor', 'pointer')
         .on('mouseover', function(event, d) {
             d3.select(this).attr('stroke-opacity', 0.7);
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = '<strong>' + d.source.name + '</strong><br>' +
+                    '→ ' + d.target.name + '<br>' +
+                    formatSankeyAmount(d.value);
+                tooltip.style.left = (event.clientX + 12) + 'px';
+                tooltip.style.top = (event.clientY - 10) + 'px';
+            }
+        })
+        .on('mousemove', function(event) {
+            if (tooltip) {
+                tooltip.style.left = (event.clientX + 12) + 'px';
+                tooltip.style.top = (event.clientY - 10) + 'px';
+            }
         })
         .on('mouseout', function() {
             d3.select(this).attr('stroke-opacity', 0.35);
+            if (tooltip) tooltip.style.display = 'none';
         });
 
     // Draw nodes

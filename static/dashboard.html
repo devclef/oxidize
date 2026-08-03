@@ -101,6 +101,21 @@
         <div class="loading">Loading widgets...</div>
     </div>
 
+    <div id="sankey-tooltip" style="
+        position: fixed;
+        background: var(--card-bg, #fff);
+        border: 1px solid var(--border-color, #ddd);
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 0.8em;
+        pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 100;
+        color: var(--text-color, #333);
+        max-width: 250px;
+        display: none;
+    "></div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/interactjs@1.19.0/dist/interact.min.js"></script>
