@@ -728,13 +728,11 @@
 
     async function loadGroups() {
         const backendGroups = await fetchGroups();
-        const savedGroups = loadSavedGroups();
 
-        // Merge: backend takes precedence, but preserve _checked from local storage
-        groups = backendGroups.map(bg => {
-            const sg = savedGroups.find(s => s.id === bg.id);
-            return { ...bg, _checked: sg ? sg._checked : false };
-        });
+        // Clear any previously saved checked state so the page starts with no selections
+        try { localStorage.removeItem(GROUPS_STORAGE_KEY); } catch { /* ignore */ }
+
+        groups = backendGroups.map(bg => ({ ...bg, _checked: false }));
 
         renderGroups();
     }
