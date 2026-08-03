@@ -1670,7 +1670,7 @@ function renderPieChart(ctx, labels, data, currencySymbol = '') {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            const value = context.parsed;
+                            const value = context.parsed.value;
                             const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
                             const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
                             return context.label + ': ' + currencySymbol + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
