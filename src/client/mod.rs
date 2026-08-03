@@ -1970,21 +1970,24 @@ impl FireflyClient {
                 (start, end_str, n)
             }
             AvgCostMode::PreviousYearSameMonth => {
+                // Show only the same month from the previous year
                 let prev_year = current_year - 1;
-                let start = format!("{}-01-01", prev_year);
-                // End of current month in previous year
+                let start = chrono::NaiveDate::from_ymd_opt(prev_year, current_month, 1)
+                    .ok_or_else(|| "Failed to compute start date".to_string())?
+                    .format("%Y-%m-%d")
+                    .to_string();
+                // Last day of that month
                 let next_month = current_month + 1;
                 let (end_year, end_month) = if next_month > 12 {
                     (prev_year + 1, 1)
                 } else {
                     (prev_year, next_month)
                 };
-                // Last day of previous month
                 let end = chrono::NaiveDate::from_ymd_opt(end_year, end_month, 1)
                     .ok_or_else(|| "Failed to compute end date".to_string())?
                     - chrono::Duration::days(1);
                 let end_str = end.format("%Y-%m-%d").to_string();
-                (start, end_str, current_month)
+                (start, end_str, 1)
             }
         };
 
