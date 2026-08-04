@@ -1645,6 +1645,288 @@ function renderSankeyChart(container, data) {
         });
 }
 
+// ── Card Paydown Widget ──────────────────────────────────────────────────
+
+async function renderCardPaydownWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd) {
+    const canvasEl = document.getElementById(canvasId);
+    const ctx = canvasEl.getContext('2d');
+    const errorEl = document.getElementById(`${canvasId}-error`);
+    if (errorEl) errorEl.textContent = '';
+
+    // Resolve account IDs from widget + groups
+    const groupIds = widget.group_ids || [];
+    const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+    const groupAccountIds = new Set();
+    widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+    const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+
+    // Fetch card paydown data
+    const params = new URLSearchParams();
+    allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+    if (effectiveStart) params.append('start', effectiveStart);
+    if (effectiveEnd) params.append('end', effectiveEnd);
+
+    try {
+        const response = await fetch(`/api/card-paydown?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error(`Error: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        renderCardPaydownChart(ctx, widget, data, canvasId);
+    } catch (e) {
+        if (errorEl) errorEl.textContent = e.message;
+    }
+}
+
+function renderCardPaydownChart(ctx, widget, data, canvasId) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    const activity = data.monthly_activity || [];
+    const summary = data.summary || {};
+    const symbol = summary.currency_symbol || '$';
+
+    if (!activity.length) {
+        const errorEl = document.getElementById(`${canvasId}-error`);
+        if (errorEl) errorEl.textContent = 'No card activity found for the selected accounts and date range';
+        return;
+    }
+
+    // Build chart data
+    const months = activity.map(a => a.month);
+    const balances = activity.map(a => a.balance || 0);
+    const payments = activity.map(a => a.payments || 0);
+    const spending = activity.map(a => a.spending || 0);
+    const interest = activity.map(a => a.interest || 0);
+    const netPaydown = activity.map(a => a.net_paydown || 0);
+
+    // Determine chart layout: two stacked canvases (balance on top, activity below)
+    const container = canvasEl.parentElement;
+    const chartHeight = parseInt(container.style.height) || 300;
+
+    // If there's existing chart instance, destroy it
+    if (widgetCharts[canvasId]) {
+        widgetCharts[canvasId].destroy();
+    }
+    // Also destroy the activity chart if it exists
+    if (widgetCharts[canvasId + '-activity']) {
+        widgetCharts[canvasId + '-activity'].destroy();
+    }
+
+    // We need to split the widget area into two charts.
+    // Strategy: use the existing canvas for balance, create a second canvas for activity.
+    // Remove the second canvas if it already exists from a previous render.
+    let activityCanvas = document.getElementById(canvasId + '-activity');
+    if (activityCanvas) {
+        activityCanvas.remove();
+    }
+    // Also remove any existing summary strip
+    let existingSummary = document.getElementById(canvasId + '-summary');
+    if (existingSummary) {
+        existingSummary.remove();
+    }
+
+    // Create a container for the activity canvas right after the main canvas
+    activityCanvas = document.createElement('canvas');
+    activityCanvas.id = canvasId + '-activity';
+    activityCanvas.style.display = 'block';
+    activityCanvas.style.width = '100%';
+    activityCanvas.style.height = '200px';
+    canvasEl.after(activityCanvas);
+
+    canvasEl.style.height = Math.max(150, chartHeight - 220) + 'px';
+    canvasEl.style.width = '100%';
+    canvasEl.style.display = 'block';
+
+    // Wait for layout to settle
+    requestAnimationFrame(() => {
+        // ── Balance Trend Chart (top) ──
+        const balanceTrend = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: [{
+                    label: 'Card Balance',
+                    data: balances,
+                    borderColor: isDark ? '#4ade80' : '#22c55e',
+                    backgroundColor: isDark ? 'rgba(74, 222, 128, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: balances.length > 24 ? 0 : 3,
+                    pointBackgroundColor: isDark ? '#4ade80' : '#22c55e',
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index',
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Card Balance Trend',
+                        color: chartTextColor,
+                        font: { size: 13, weight: 'bold' },
+                    },
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${symbol}${context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: chartTextColor, maxTicksLimit: 6 },
+                        grid: { color: chartGridColor },
+                    },
+                    y: {
+                        ticks: {
+                            color: chartTextColor,
+                            callback: function(value) { return symbol + value.toLocaleString(); }
+                        },
+                        grid: { color: chartGridColor },
+                    }
+                }
+            }
+        });
+        widgetCharts[canvasId] = balanceTrend;
+
+        // ── Monthly Activity Chart (bottom) ──
+        const activityCtx = activityCanvas.getContext('2d');
+        const activityChart = new Chart(activityCtx, {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [
+                    {
+                        label: 'Payments',
+                        data: payments,
+                        backgroundColor: isDark ? 'rgba(74, 222, 128, 0.8)' : 'rgba(34, 197, 94, 0.8)',
+                        borderColor: isDark ? '#4ade80' : '#22c55e',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'Spending',
+                        data: spending.map(v => -v),
+                        backgroundColor: isDark ? 'rgba(248, 113, 113, 0.8)' : 'rgba(239, 68, 68, 0.8)',
+                        borderColor: isDark ? '#f87171' : '#ef4444',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'Interest',
+                        data: interest.map(v => -v),
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.8)' : 'rgba(245, 158, 11, 0.8)',
+                        borderColor: isDark ? '#fbbf24' : '#f59e0b',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'Net Paydown',
+                        type: 'line',
+                        data: netPaydown,
+                        borderColor: isDark ? '#60a5fa' : '#3b82f6',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: netPaydown.length > 24 ? 0 : 3,
+                        pointBackgroundColor: isDark ? '#60a5fa' : '#3b82f6',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index',
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Monthly Activity (up = payments, down = spending/interest)',
+                        color: chartTextColor,
+                        font: { size: 12 },
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: chartTextColor,
+                            boxWidth: 12,
+                            padding: 10,
+                            font: { size: 10 },
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.parsed.y;
+                                const absVal = Math.abs(val);
+                                return `${context.dataset.label}: ${val >= 0 ? '+' : '-'}${symbol}${absVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: chartTextColor, maxTicksLimit: 6 },
+                        grid: { color: chartGridColor },
+                    },
+                    y: {
+                        ticks: {
+                            color: chartTextColor,
+                            callback: function(value) {
+                                const prefix = value < 0 ? '-' : '';
+                                return prefix + symbol + Math.abs(value).toLocaleString();
+                            }
+                        },
+                        grid: { color: chartGridColor },
+                    }
+                }
+            }
+        });
+        widgetCharts[canvasId + '-activity'] = activityChart;
+
+        // ── Summary Strip ──
+        const summaryDiv = document.createElement('div');
+        summaryDiv.id = canvasId + '-summary';
+        summaryDiv.className = 'card-paydown-summary';
+
+        const avgMonthly = summary.avg_monthly_paydown || 0;
+        const totalPayments = summary.total_payments || 0;
+        const totalSpending = summary.total_spending || 0;
+        const totalNet = summary.total_net_paydown || 0;
+        const projectedMonths = summary.projected_payoff_months;
+        const bestMonth = summary.best_month;
+        const currentBalance = summary.current_balance || 0;
+
+        let html = '';
+        html += `<span class="paydown-stat"><span class="paydown-label">Total Paid</span><span class="paydown-value positive">${symbol}${totalPayments.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Total Spent</span><span class="paydown-value negative">${symbol}${totalSpending.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Net Paydown</span><span class="paydown-value ${totalNet >= 0 ? 'positive' : 'negative'}">${symbol}${totalNet.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Avg/Month</span><span class="paydown-value ${avgMonthly >= 0 ? 'positive' : 'negative'}">${symbol}${avgMonthly.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+
+        if (currentBalance > 0) {
+            html += `<span class="paydown-stat"><span class="paydown-label">Current Balance</span><span class="paydown-value">${symbol}${currentBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        }
+        if (projectedMonths != null && projectedMonths > 0) {
+            html += `<span class="paydown-stat highlight"><span class="paydown-label">Projected Payoff</span><span class="paydown-value">${projectedMonths} month(s)</span></span>`;
+        }
+        if (bestMonth) {
+            html += `<span class="paydown-stat"><span class="paydown-label">Best Month</span><span class="paydown-value positive">${bestMonth.month} (+${symbol}${bestMonth.net_paydown.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span></span>`;
+        }
+
+        summaryDiv.innerHTML = html;
+        container.appendChild(summaryDiv);
+    });
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
@@ -1658,6 +1940,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
         // Handle sankey widget type separately (uses d3, not Chart.js canvas)
         if (widgetType === 'sankey') {
             await renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd);
+            return;
+        }
+
+        // Handle card_paydown widget type separately
+        if (widgetType === 'card_paydown') {
+            await renderCardPaydownWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd);
             return;
         }
 
@@ -2715,6 +3003,8 @@ async function renderDashboard() {
             widgetTypeBadge = `<span class="widget-type-badge category-subcat">${catMode}</span>`;
         } else if (widgetType === 'sankey') {
             widgetTypeBadge = '<span class="widget-type-badge sankey">Sankey Flow</span>';
+        } else if (widgetType === 'card_paydown') {
+            widgetTypeBadge = '<span class="widget-type-badge card-paydown">Card Paydown</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }

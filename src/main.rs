@@ -40,6 +40,8 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::account::refresh_budget_spent)
             .service(handlers::account::get_budget_list)
             .service(handlers::account::get_budget_comparison)
+            .service(handlers::account::get_card_paydown)
+            .service(handlers::account::refresh_card_paydown)
             .service(handlers::category::get_category_list)
             .service(handlers::category::get_subcategory_spend)
             .service(handlers::dashboard::dashboard)

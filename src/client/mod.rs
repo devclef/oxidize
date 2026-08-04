@@ -121,6 +121,11 @@ impl FireflyClient {
         info!("Subcategory spend cache cleared");
     }
 
+    pub fn clear_card_paydown_cache(&self) {
+        self.cache.clear_card_paydown();
+        info!("Card paydown cache cleared");
+    }
+
     pub fn clear_budget_spent_history_cache(&self) {
         self.cache.clear_budget_spent_history();
         info!("Budget spent history cache cleared");
@@ -130,6 +135,345 @@ impl FireflyClient {
         self.cache.clear_budget_limit();
         info!("Budget limit cache cleared");
     }
+
+    /// Analyze credit card paydown activity for the given liability accounts.
+    /// Returns monthly breakdown of payments (debt-reducing), spending (debt-increasing),
+    /// and interest/fees, along with monthly ending balances and summary stats.
+    pub async fn get_card_paydown(
+        &self,
+        account_ids: Vec<String>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Result<serde_json::Value, String> {
+        if account_ids.is_empty() {
+            return Err("No card accounts specified".to_string());
+        }
+
+        // Check cache
+        if let Some(cached) = self.cache.get_card_paydown(
+            &account_ids,
+            start_date.clone(),
+            end_date.clone(),
+        ) {
+            debug!("Cache hit for card paydown");
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached card paydown: {}", e));
+        }
+
+        let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        // Fetch all transactions involving the card accounts
+        let transactions = self
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .await?;
+
+        let card_ids: std::collections::HashSet<String> = account_ids.iter().cloned().collect();
+
+        // Classify journals and aggregate by month
+        let mut monthly: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new(); // month -> payments
+        let mut monthly_spending: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new(); // month -> spending
+        let mut monthly_interest: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new(); // month -> interest/fees
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &transactions {
+            let Some(journals) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            else {
+                continue;
+            };
+
+            for journal in journals {
+                let journal_type =
+                    journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                let source_id =
+                    journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+                let dest_id =
+                    journal.get("destination_id").and_then(|d| d.as_str()).unwrap_or("");
+                let amount_str =
+                    journal.get("amount").and_then(|a| a.as_str()).unwrap_or("0");
+                let amount = amount_str.parse::<f64>().unwrap_or(0.0);
+                let date_str = journal.get("date").and_then(|d| d.as_str()).unwrap_or("");
+
+                // Extract month key (YYYY-MM)
+                let month_key = if date_str.len() >= 7 {
+                    &date_str[..7]
+                } else {
+                    continue;
+                };
+
+                // Get currency info from first valid journal
+                if currency_symbol.is_none() {
+                    currency_symbol = journal
+                        .get("currency_symbol")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                    currency_code = journal
+                        .get("currency_code")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                }
+
+                // Classification for liability (credit card) accounts:
+                // - "transfer" from card to non-card (e.g., asset) = payment (debt-reducing)
+                // - "withdrawal" from card = spending (debt-increasing)
+                // - "transfer" from card to expense account = interest/fees (debt-increasing)
+                if !card_ids.contains(source_id) {
+                    // Journal where card is NOT the source — skip for classification
+                    // (these are the reverse-perspective journals from Firefly III)
+                    continue;
+                }
+
+                match journal_type {
+                    "withdrawal" => {
+                        // Spending on the card (increases debt)
+                        *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
+                    }
+                    "transfer" => {
+                        // Transfer from card: check if dest is another card or not
+                        if card_ids.contains(dest_id) {
+                            // Transfer between card accounts — skip
+                            continue;
+                        } else {
+                            // Transfer from card to non-card account
+                            // This could be: payment from card (debt-reducing) or interest/fee
+                            // Heuristic: if destination is an expense account, it's interest/fees
+                            // Otherwise treat as payment. Since we can't easily check account type
+                            // here, we check if the dest account looks like a fee/interest category.
+                            // For simplicity, classify as interest if the destination name
+                            // contains "interest" or "fee", otherwise as payment.
+                            let dest_name = journal
+                                .get("destination_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+                            let category_name = journal
+                                .get("category_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+                            if dest_name.contains("interest")
+                                || dest_name.contains("fee")
+                                || category_name.contains("interest")
+                                || category_name.contains("fee")
+                            {
+                                *monthly_interest
+                                    .entry(month_key.to_string())
+                                    .or_insert(0.0) += amount;
+                            } else {
+                                // Treat as payment (debt-reducing)
+                                // But wait — a transfer FROM card to a regular expense account
+                                // is actually a payment to that expense, reducing the card balance.
+                                // This is correct.
+                                *monthly.entry(month_key.to_string()).or_insert(0.0) += amount;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Generate all month keys in range for completeness
+        let mut all_months: Vec<String> = Vec::new();
+        let start_date =
+            chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d").map_err(|e| e.to_string())?;
+        let end_date =
+            chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").map_err(|e| e.to_string())?;
+        let mut current = start_date;
+        while current <= end_date {
+            all_months.push(current.format("%Y-%m").to_string());
+            // Move to next month
+            let next_month = if current.month() == 12 {
+                current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap()
+            } else {
+                current.with_month(current.month() + 1).unwrap()
+            };
+            current = next_month;
+        }
+
+        // Build monthly activity array
+        let mut monthly_activity: Vec<serde_json::Value> = Vec::new();
+        let mut total_payments = 0.0;
+        let mut total_spending = 0.0;
+        let mut total_interest = 0.0;
+        let mut months_with_activity = 0;
+        let mut total_net_paydown = 0.0;
+
+        // Fetch balance history for monthly ending balances
+        let balances = self
+            .fetch_card_balances(&account_ids, &start, &end)
+            .await;
+
+        for month in &all_months {
+            let payments = *monthly.entry(month.clone()).or_insert(0.0);
+            let spending = *monthly_spending.entry(month.clone()).or_insert(0.0);
+            let interest = *monthly_interest.entry(month.clone()).or_insert(0.0);
+            let net_paydown = payments - spending - interest;
+
+            if payments > 0.0 || spending > 0.0 || interest > 0.0 {
+                months_with_activity += 1;
+                total_payments += payments;
+                total_spending += spending;
+                total_interest += interest;
+                total_net_paydown += net_paydown;
+            }
+
+            // Get monthly ending balance
+            let balance = if let Ok(ref bal_map) = balances {
+                bal_map.get(month).copied().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+
+            monthly_activity.push(serde_json::json!({
+                "month": month,
+                "payments": payments,
+                "spending": spending,
+                "interest": interest,
+                "net_paydown": net_paydown,
+                "balance": balance,
+            }));
+        }
+
+        // Calculate avg monthly net paydown (only for months with activity)
+        let avg_monthly = if months_with_activity > 0 {
+            total_net_paydown / months_with_activity as f64
+        } else {
+            0.0
+        };
+
+        // Find best month
+        let best_month = monthly_activity
+            .iter()
+            .filter_map(|m| {
+                let net = m.get("net_paydown").and_then(|n| n.as_f64())?;
+                if net > 0.0 {
+                    Some((m.get("month").unwrap().as_str().unwrap(), net))
+                } else {
+                    None
+                }
+            })
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(m, n)| serde_json::json!({ "month": m, "net_paydown": n }));
+
+        // Project payoff: months until balance is 0 at current avg rate
+        let last_balance = monthly_activity
+            .last()
+            .and_then(|m| m.get("balance").and_then(|b| b.as_f64()))
+            .unwrap_or(0.0);
+        let projected_months = if avg_monthly > 0.0 && last_balance > 0.0 {
+            Some((last_balance / avg_monthly).ceil() as i32)
+        } else {
+            None
+        };
+
+        let result = serde_json::json!({
+            "monthly_activity": monthly_activity,
+            "summary": {
+                "total_payments": total_payments,
+                "total_spending": total_spending,
+                "total_interest": total_interest,
+                "total_net_paydown": total_net_paydown,
+                "avg_monthly_paydown": avg_monthly,
+                "current_balance": last_balance,
+                "projected_payoff_months": projected_months,
+                "best_month": best_month,
+                "currency_symbol": currency_symbol,
+                "currency_code": currency_code,
+            }
+        });
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache
+                .set_card_paydown(&account_ids, Some(start), Some(end), json);
+        }
+
+        Ok(result)
+    }
+
+    /// Fetch monthly ending balances for card accounts.
+    /// Returns a HashMap of month key (YYYY-MM) -> total balance across all cards.
+    async fn fetch_card_balances(
+        &self,
+        account_ids: &[String],
+        start: &str,
+        end: &str,
+    ) -> Result<std::collections::HashMap<String, f64>, String> {
+        // Fetch balance history with monthly period for specific card accounts
+        let mut query_params = vec![
+            ("start".to_string(), start.to_string()),
+            ("end".to_string(), end.to_string()),
+            ("period".to_string(), "1M".to_string()),
+        ];
+
+        for id in account_ids {
+            query_params.push(("accounts[]".to_string(), id.clone()));
+        }
+
+        let url = format!(
+            "{}/v1/chart/account/overview",
+            self.config.firefly_url.as_str()
+        );
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.get_headers())
+            .query(&query_params)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !response.status().is_success() {
+            debug!("Balance history fetch failed: {}", response.status());
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let chart_line: ChartLine = response.json().await.map_err(|e| e.to_string())?;
+
+        // Aggregate balances by month across all card datasets
+        let mut monthly_balances: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+
+        for dataset in &chart_line {
+            if let Some(entries) = dataset.entries.as_array() {
+                for entry in entries {
+                    if let (Some(date), Some(ba)) = (
+                        entry.get("date").and_then(|d| d.as_str()),
+                        entry.get("ba").and_then(|b| b.as_f64()),
+                    ) {
+                        // Extract YYYY-MM from date string
+                        let month_key = if date.len() >= 7 {
+                            &date[..7]
+                        } else {
+                            continue;
+                        };
+                        *monthly_balances
+                            .entry(month_key.to_string())
+                            .or_insert(0.0) += ba;
+                    }
+                }
+            }
+        }
+
+        Ok(monthly_balances)
+    }
+
     pub async fn get_accounts(
         &self,
         type_filter: Option<String>,

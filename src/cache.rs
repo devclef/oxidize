@@ -31,6 +31,7 @@ pub struct DataCache {
     subcategory_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     categories: RwLock<HashMap<String, CacheEntry<String>>>,
     budget_limit: RwLock<HashMap<String, CacheEntry<String>>>,
+    card_paydown: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -53,6 +54,7 @@ impl DataCache {
             subcategory_spend: RwLock::new(HashMap::new()),
             categories: RwLock::new(HashMap::new()),
             budget_limit: RwLock::new(HashMap::new()),
+            card_paydown: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -560,6 +562,7 @@ impl DataCache {
         self.clear_subcategory_spend();
         self.clear_categories();
         self.clear_budget_limit();
+        self.clear_card_paydown();
     }
 
     pub fn clear_accounts(&self) {
@@ -669,6 +672,62 @@ impl DataCache {
         Self::clear_tiered(
             &self.budget_limit,
             Some(&format!("v{}:budget_limit:", CACHE_VERSION)),
+        );
+    }
+
+    // ── Card paydown ─────────────────────────────────────────────────
+
+    fn card_paydown_key(
+        account_ids: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let accounts = if account_ids.is_empty() {
+            "all".to_string()
+        } else {
+            account_ids.join(",")
+        };
+        format!(
+            "v{}:card_paydown:{}:{}:{}",
+            CACHE_VERSION, accounts, start, end
+        )
+    }
+
+    pub fn get_card_paydown(
+        &self,
+        account_ids: &[String],
+        start_date: Option<String>,
+        end_date: Option<String>,
+    ) -> Option<String> {
+        let key = Self::card_paydown_key(
+            account_ids,
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        Self::get_tiered(&self.card_paydown, &key)
+    }
+
+    pub fn set_card_paydown(
+        &self,
+        account_ids: &[String],
+        start_date: Option<String>,
+        end_date: Option<String>,
+        data: String,
+    ) {
+        let key = Self::card_paydown_key(
+            account_ids,
+            start_date.as_deref(),
+            end_date.as_deref(),
+        );
+        Self::set_tiered(&self.card_paydown, &key, &data, self.ttl_seconds);
+    }
+
+    pub fn clear_card_paydown(&self) {
+        Self::clear_tiered(
+            &self.card_paydown,
+            Some(&format!("v{}:card_paydown:", CACHE_VERSION)),
         );
     }
 

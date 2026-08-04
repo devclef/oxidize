@@ -390,3 +390,48 @@ pub async fn get_budget_comparison(
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+/// GET endpoint for credit card paydown analysis
+#[get("/api/card-paydown")]
+pub async fn get_card_paydown(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut account_ids: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "accounts[]" | "accounts" => {
+                account_ids.push(v);
+            }
+            _ => {
+                if k == "accounts%5B%5D" {
+                    account_ids.push(v);
+                }
+            }
+        }
+    }
+
+    match client.get_card_paydown(account_ids, start, end).await {
+        Ok(data) => HttpResponse::Ok().json(data),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
+/// POST endpoint to refresh/clear the card paydown cache
+#[post("/api/card-paydown/refresh")]
+pub async fn refresh_card_paydown(client: web::Data<FireflyClient>) -> impl Responder {
+    client.clear_card_paydown_cache();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "Card paydown cache cleared"
+    }))
+}
