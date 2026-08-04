@@ -984,23 +984,34 @@ impl FireflyClient {
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
+        // Build selected account set for transfer filtering
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
         for journal in &all_journals {
             let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
             let source_id = journal
                 .get("source_id")
                 .and_then(|s| s.as_str())
                 .unwrap_or("");
-            let _dest_id = journal
+            let dest_id = journal
                 .get("destination_id")
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
 
-            // Only count "spent" transactions (withdrawals and outbound transfers)
+            // Only count "spent" transactions (withdrawals and outbound transfers to outside)
             let is_spent = match journal_type {
                 "withdrawal" => true,
                 "transfer" => {
-                    // Transfer out of any account to outside
-                    !source_id.is_empty()
+                    // Transfer out of selected account to outside (dest not selected)
+                    if selected_ids.is_empty() {
+                        // No account filter: count all outbound transfers
+                        !source_id.is_empty()
+                    } else {
+                        selected_ids.contains(source_id) && !selected_ids.contains(dest_id)
+                    }
                 }
                 _ => false,
             };
