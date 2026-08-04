@@ -1364,10 +1364,11 @@ function renderPieChartWidget(ctx, widget, labels, data) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            const value = context.parsed.value;
-                            const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
-                            const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
-                            return context.label + ': ' + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
+                            const raw = context.parsed?.value ?? context.raw ?? 0;
+                            const value = typeof raw === 'number' && !isNaN(raw) ? Math.abs(raw) : 0;
+                            const total = context.dataset.data.reduce((s, v) => s + (typeof v === 'number' && !isNaN(v) ? Math.abs(v) : 0), 0);
+                            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                            return context.label + ': ' + value.toLocaleString() + ' (' + pct + '%)';
                         }
                     }
                 }
