@@ -27,6 +27,34 @@ fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
         .ok()
 }
 
+/// Determines whether a journal entry counts as "spent" from the perspective
+/// of the selected accounts.
+///
+/// - Withdrawals: always spent
+/// - Transfers: spent only when source is in selected accounts and dest is NOT
+///   (money leaving the selected set). If no accounts selected, all transfers count.
+/// - Deposits and other types: never spent.
+fn is_journal_spent(
+    journal: &serde_json::Value,
+    selected_ids: &std::collections::HashSet<String>,
+) -> bool {
+    let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
+    let dest_id = journal.get("destination_id").and_then(|d| d.as_str()).unwrap_or("");
+
+    match journal_type {
+        "withdrawal" => true,
+        "transfer" => {
+            if selected_ids.is_empty() {
+                !source_id.is_empty()
+            } else {
+                selected_ids.contains(source_id) && !selected_ids.contains(dest_id)
+            }
+        }
+        _ => false,
+    }
+}
+
 pub struct FireflyClient {
     client: reqwest::Client,
     config: Config,
@@ -539,7 +567,13 @@ impl FireflyClient {
             }
         }
 
-        // Filter to withdrawal journals, group by category + period
+        // Build selected account set for transfer filtering
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        // Filter to "spent" journals (withdrawals + outbound transfers), group by category + period
         let mut category_entries: std::collections::HashMap<
             String,
             std::collections::HashMap<String, f64>,
@@ -548,8 +582,7 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         for journal in &all_journals {
-            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if journal_type != "withdrawal" {
+            if !is_journal_spent(journal, &selected_ids) {
                 continue;
             }
 
@@ -1831,7 +1864,13 @@ impl FireflyClient {
             }
         }
 
-        // Filter to withdrawal journals, group by subcategory + period
+        // Build selected account set for transfer filtering
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        // Filter to "spent" journals (withdrawals + outbound transfers), group by subcategory + period
         let mut subcat_entries: std::collections::HashMap<
             String,
             std::collections::HashMap<String, f64>,
@@ -1840,8 +1879,7 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         for journal in &all_journals {
-            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if journal_type != "withdrawal" {
+            if !is_journal_spent(journal, &selected_ids) {
                 continue;
             }
 
@@ -2261,7 +2299,8 @@ impl FireflyClient {
         })
     }
 
-    /// Aggregate for "budget" flow type: withdrawals grouped by budget name.
+    /// Aggregate for "budget" flow type: spent transactions grouped by budget name.
+    /// Includes withdrawals and transfers from selected accounts to non-selected destinations.
     fn aggregate_sankey_budget(
         &self,
         journals: &[serde_json::Value],
@@ -2274,15 +2313,7 @@ impl FireflyClient {
             v.iter().map(|s| s.as_str()).collect()
         });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
-            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if journal_type != "withdrawal" {
-                return None;
-            }
-            let source_id = journal
-                .get("source_id")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
-            if !ss.contains(source_id) {
+            if !is_journal_spent(journal, ss) {
                 return None;
             }
             let source_name = journal
@@ -2311,7 +2342,8 @@ impl FireflyClient {
         })
     }
 
-    /// Aggregate for "category" flow type: withdrawals grouped by main category (before ":").
+    /// Aggregate for "category" flow type: spent transactions grouped by main category (before ":").
+    /// Includes withdrawals and transfers from selected accounts to non-selected destinations.
     fn aggregate_sankey_category(
         &self,
         journals: &[serde_json::Value],
@@ -2324,15 +2356,7 @@ impl FireflyClient {
             v.iter().map(|s| s.as_str()).collect()
         });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
-            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if journal_type != "withdrawal" {
-                return None;
-            }
-            let source_id = journal
-                .get("source_id")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
-            if !ss.contains(source_id) {
+            if !is_journal_spent(journal, ss) {
                 return None;
             }
             let source_name = journal
@@ -2367,7 +2391,8 @@ impl FireflyClient {
         })
     }
 
-    /// Aggregate for "subcategory" flow type: withdrawals grouped by "Parent > Subcat".
+    /// Aggregate for "subcategory" flow type: spent transactions grouped by "Parent > Subcat".
+    /// Includes withdrawals and transfers from selected accounts to non-selected destinations.
     fn aggregate_sankey_subcategory(
         &self,
         journals: &[serde_json::Value],
@@ -2380,15 +2405,7 @@ impl FireflyClient {
             v.iter().map(|s| s.as_str()).collect()
         });
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
-            let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if journal_type != "withdrawal" {
-                return None;
-            }
-            let source_id = journal
-                .get("source_id")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
-            if !ss.contains(source_id) {
+            if !is_journal_spent(journal, ss) {
                 return None;
             }
             let source_name = journal
