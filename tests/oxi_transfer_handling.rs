@@ -32,10 +32,7 @@ mod tests {
     }
 
     /// Helper to set up a mock transactions endpoint that returns the given transactions.
-    async fn mock_transactions(
-        server: &mut mockito::Server,
-        transactions: serde_json::Value,
-    ) {
+    async fn mock_transactions(server: &mut mockito::Server, transactions: serde_json::Value) {
         server
             .mock("GET", "/v1/transactions")
             .match_query(mockito::Matcher::Regex(

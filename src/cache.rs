@@ -701,11 +701,7 @@ impl DataCache {
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Option<String> {
-        let key = Self::card_paydown_key(
-            account_ids,
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+        let key = Self::card_paydown_key(account_ids, start_date.as_deref(), end_date.as_deref());
         Self::get_tiered(&self.card_paydown, &key)
     }
 
@@ -716,11 +712,7 @@ impl DataCache {
         end_date: Option<String>,
         data: String,
     ) {
-        let key = Self::card_paydown_key(
-            account_ids,
-            start_date.as_deref(),
-            end_date.as_deref(),
-        );
+        let key = Self::card_paydown_key(account_ids, start_date.as_deref(), end_date.as_deref());
         Self::set_tiered(&self.card_paydown, &key, &data, self.ttl_seconds);
     }
 

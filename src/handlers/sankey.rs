@@ -68,12 +68,32 @@ pub async fn get_sankey_flows(
         _ => SankeyFlowType::Destination,
     };
 
-    let categories_opt = if categories.is_empty() { None } else { Some(categories) };
-    let subcategories_opt = if subcategories.is_empty() { None } else { Some(subcategories) };
-    let budgets_opt = if budgets.is_empty() { None } else { Some(budgets) };
+    let categories_opt = if categories.is_empty() {
+        None
+    } else {
+        Some(categories)
+    };
+    let subcategories_opt = if subcategories.is_empty() {
+        None
+    } else {
+        Some(subcategories)
+    };
+    let budgets_opt = if budgets.is_empty() {
+        None
+    } else {
+        Some(budgets)
+    };
 
     match client
-        .get_sankey_flows(account_ids, flow_type, start, end, categories_opt, subcategories_opt, budgets_opt)
+        .get_sankey_flows(
+            account_ids,
+            flow_type,
+            start,
+            end,
+            categories_opt,
+            subcategories_opt,
+            budgets_opt,
+        )
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),

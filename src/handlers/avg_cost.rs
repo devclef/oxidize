@@ -84,7 +84,14 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
     };
 
     match client
-        .get_avg_cost(budget_names, avg_mode, months_count, account_ids_opt, target_month, target_year)
+        .get_avg_cost(
+            budget_names,
+            avg_mode,
+            months_count,
+            account_ids_opt,
+            target_month,
+            target_year,
+        )
         .await
     {
         Ok(data) => HttpResponse::Ok().json(data),

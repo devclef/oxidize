@@ -39,8 +39,14 @@ fn is_journal_spent(
     selected_ids: &std::collections::HashSet<String>,
 ) -> bool {
     let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    let source_id = journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
-    let dest_id = journal.get("destination_id").and_then(|d| d.as_str()).unwrap_or("");
+    let source_id = journal
+        .get("source_id")
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    let dest_id = journal
+        .get("destination_id")
+        .and_then(|d| d.as_str())
+        .unwrap_or("");
 
     match journal_type {
         "withdrawal" => true,
@@ -150,11 +156,10 @@ impl FireflyClient {
         }
 
         // Check cache
-        if let Some(cached) = self.cache.get_card_paydown(
-            &account_ids,
-            start_date.clone(),
-            end_date.clone(),
-        ) {
+        if let Some(cached) =
+            self.cache
+                .get_card_paydown(&account_ids, start_date.clone(), end_date.clone())
+        {
             debug!("Cache hit for card paydown");
             return serde_json::from_str(&cached)
                 .map_err(|e| format!("Failed to deserialize cached card paydown: {}", e));
@@ -193,14 +198,19 @@ impl FireflyClient {
             };
 
             for journal in journals {
-                let journal_type =
-                    journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                let source_id =
-                    journal.get("source_id").and_then(|s| s.as_str()).unwrap_or("");
-                let dest_id =
-                    journal.get("destination_id").and_then(|d| d.as_str()).unwrap_or("");
-                let amount_str =
-                    journal.get("amount").and_then(|a| a.as_str()).unwrap_or("0");
+                let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                let source_id = journal
+                    .get("source_id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("");
+                let dest_id = journal
+                    .get("destination_id")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
+                let amount_str = journal
+                    .get("amount")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("0");
                 let amount = amount_str.parse::<f64>().unwrap_or(0.0);
                 let date_str = journal.get("date").and_then(|d| d.as_str()).unwrap_or("");
 
@@ -325,17 +335,17 @@ impl FireflyClient {
             };
 
             // Derive interest from balance delta when both balances are available
-            let (interest, balance, net_paydown) = if let (Some(sb), Some(eb)) = (start_bal, end_bal)
-            {
-                let interest = eb - sb - spending + payments;
-                let net_paydown = sb - eb;
-                (interest, eb, net_paydown)
-            } else if let Some(eb) = end_bal {
-                // Only end balance available (e.g. first month without prior data)
-                (0.0, eb, payments - spending)
-            } else {
-                (0.0, 0.0, payments - spending)
-            };
+            let (interest, balance, net_paydown) =
+                if let (Some(sb), Some(eb)) = (start_bal, end_bal) {
+                    let interest = eb - sb - spending + payments;
+                    let net_paydown = sb - eb;
+                    (interest, eb, net_paydown)
+                } else if let Some(eb) = end_bal {
+                    // Only end balance available (e.g. first month without prior data)
+                    (0.0, eb, payments - spending)
+                } else {
+                    (0.0, 0.0, payments - spending)
+                };
 
             if payments > 0.01 || spending > 0.01 || interest.abs() > 0.01 {
                 months_with_activity += 1;
@@ -468,9 +478,7 @@ impl FireflyClient {
                         } else {
                             continue;
                         };
-                        *monthly_balances
-                            .entry(month_key.to_string())
-                            .or_insert(0.0) += ba;
+                        *monthly_balances.entry(month_key.to_string()).or_insert(0.0) += ba;
                     }
                 }
             }
@@ -2580,11 +2588,17 @@ impl FireflyClient {
             SankeyFlowType::Destination => {
                 self.aggregate_sankey_destination(&all_journals, &account_ids)
             }
-            SankeyFlowType::Budget => self.aggregate_sankey_budget(&all_journals, &account_ids, budgets.as_ref()),
-            SankeyFlowType::Category => self.aggregate_sankey_category(&all_journals, &account_ids, categories.as_ref()),
-            SankeyFlowType::Subcategory => {
-                self.aggregate_sankey_subcategory(&all_journals, &account_ids, subcategories.as_ref())
+            SankeyFlowType::Budget => {
+                self.aggregate_sankey_budget(&all_journals, &account_ids, budgets.as_ref())
             }
+            SankeyFlowType::Category => {
+                self.aggregate_sankey_category(&all_journals, &account_ids, categories.as_ref())
+            }
+            SankeyFlowType::Subcategory => self.aggregate_sankey_subcategory(
+                &all_journals,
+                &account_ids,
+                subcategories.as_ref(),
+            ),
         };
 
         // Extract currency from the transaction list
@@ -2658,9 +2672,8 @@ impl FireflyClient {
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
-        let budget_set: Option<std::collections::HashSet<&str>> = budget_filter.map(|v| {
-            v.iter().map(|s| s.as_str()).collect()
-        });
+        let budget_set: Option<std::collections::HashSet<&str>> =
+            budget_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             if !is_journal_spent(journal, ss) {
                 return None;
@@ -2701,9 +2714,8 @@ impl FireflyClient {
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
-        let cat_set: Option<std::collections::HashSet<&str>> = category_filter.map(|v| {
-            v.iter().map(|s| s.as_str()).collect()
-        });
+        let cat_set: Option<std::collections::HashSet<&str>> =
+            category_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             if !is_journal_spent(journal, ss) {
                 return None;
@@ -2750,9 +2762,8 @@ impl FireflyClient {
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
-        let subcat_set: Option<std::collections::HashSet<&str>> = subcategory_filter.map(|v| {
-            v.iter().map(|s| s.as_str()).collect()
-        });
+        let subcat_set: Option<std::collections::HashSet<&str>> =
+            subcategory_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
             if !is_journal_spent(journal, ss) {
                 return None;

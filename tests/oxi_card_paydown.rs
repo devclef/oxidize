@@ -24,10 +24,7 @@ mod tests {
         }
     }
 
-    async fn mock_transactions(
-        server: &mut mockito::Server,
-        transactions: serde_json::Value,
-    ) {
+    async fn mock_transactions(server: &mut mockito::Server, transactions: serde_json::Value) {
         server
             .mock("GET", "/v1/transactions")
             .match_query(mockito::Matcher::Regex(
@@ -40,15 +37,10 @@ mod tests {
             .await;
     }
 
-    async fn mock_balance_history(
-        server: &mut mockito::Server,
-        balance_data: serde_json::Value,
-    ) {
+    async fn mock_balance_history(server: &mut mockito::Server, balance_data: serde_json::Value) {
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                r"period=1M".to_string(),
-            ))
+            .match_query(mockito::Matcher::Regex(r"period=1M".to_string()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(balance_data.to_string())
@@ -119,10 +111,7 @@ mod tests {
 
         let activity = result["monthly_activity"].as_array().unwrap();
         // Find January 2026 entry
-        let jan_entry = activity
-            .iter()
-            .find(|m| m["month"] == "2026-01")
-            .unwrap();
+        let jan_entry = activity.iter().find(|m| m["month"] == "2026-01").unwrap();
 
         assert!(
             (jan_entry["payments"].as_f64().unwrap() - 500.0).abs() < 0.01,
@@ -201,10 +190,7 @@ mod tests {
             .unwrap();
 
         let activity = result["monthly_activity"].as_array().unwrap();
-        let feb_entry = activity
-            .iter()
-            .find(|m| m["month"] == "2026-02")
-            .unwrap();
+        let feb_entry = activity.iter().find(|m| m["month"] == "2026-02").unwrap();
 
         // Both journals are classified as spending (Firefly returns 2 for withdrawals)
         assert!(
@@ -316,10 +302,7 @@ mod tests {
             .unwrap();
 
         let activity = result["monthly_activity"].as_array().unwrap();
-        let mar_entry = activity
-            .iter()
-            .find(|m| m["month"] == "2026-03")
-            .unwrap();
+        let mar_entry = activity.iter().find(|m| m["month"] == "2026-03").unwrap();
 
         assert!(
             (mar_entry["spending"].as_f64().unwrap() - 300.0).abs() < 0.01,
@@ -411,10 +394,7 @@ mod tests {
             .unwrap();
 
         let activity = result["monthly_activity"].as_array().unwrap();
-        let mar_entry = activity
-            .iter()
-            .find(|m| m["month"] == "2026-03")
-            .unwrap();
+        let mar_entry = activity.iter().find(|m| m["month"] == "2026-03").unwrap();
 
         // Without balance data, transfer is classified as payment, interest is 0
         assert!(
@@ -540,10 +520,7 @@ mod tests {
             .unwrap();
 
         let activity = result["monthly_activity"].as_array().unwrap();
-        let apr_entry = activity
-            .iter()
-            .find(|m| m["month"] == "2026-04")
-            .unwrap();
+        let apr_entry = activity.iter().find(|m| m["month"] == "2026-04").unwrap();
 
         assert!(
             (apr_entry["payments"].as_f64().unwrap() - 1000.0).abs() < 0.01,
@@ -566,12 +543,8 @@ mod tests {
 
         // Check summary
         let summary = &result["summary"];
-        assert!(
-            (summary["total_payments"].as_f64().unwrap() - 1000.0).abs() < 0.01,
-        );
-        assert!(
-            (summary["total_spending"].as_f64().unwrap() - 400.0).abs() < 0.01,
-        );
+        assert!((summary["total_payments"].as_f64().unwrap() - 1000.0).abs() < 0.01,);
+        assert!((summary["total_spending"].as_f64().unwrap() - 400.0).abs() < 0.01,);
         assert!(
             (summary["total_interest"].as_f64().unwrap() - 25.0).abs() < 0.01,
             "Expected $25 total interest"
@@ -641,28 +614,28 @@ mod tests {
             .unwrap();
 
         let activity = result["monthly_activity"].as_array().unwrap();
-        let jan_balance = activity
-            .iter()
-            .find(|m| m["month"] == "2026-01")
-            .unwrap()["balance"]
+        let jan_balance = activity.iter().find(|m| m["month"] == "2026-01").unwrap()["balance"]
             .as_f64()
             .unwrap();
-        let feb_balance = activity
-            .iter()
-            .find(|m| m["month"] == "2026-02")
-            .unwrap()["balance"]
+        let feb_balance = activity.iter().find(|m| m["month"] == "2026-02").unwrap()["balance"]
             .as_f64()
             .unwrap();
-        let mar_balance = activity
-            .iter()
-            .find(|m| m["month"] == "2026-03")
-            .unwrap()["balance"]
+        let mar_balance = activity.iter().find(|m| m["month"] == "2026-03").unwrap()["balance"]
             .as_f64()
             .unwrap();
 
-        assert!((jan_balance - 5000.0).abs() < 0.01, "Jan balance should be $5000");
-        assert!((feb_balance - 4500.0).abs() < 0.01, "Feb balance should be $4500");
-        assert!((mar_balance - 3800.0).abs() < 0.01, "Mar balance should be $3800");
+        assert!(
+            (jan_balance - 5000.0).abs() < 0.01,
+            "Jan balance should be $5000"
+        );
+        assert!(
+            (feb_balance - 4500.0).abs() < 0.01,
+            "Feb balance should be $4500"
+        );
+        assert!(
+            (mar_balance - 3800.0).abs() < 0.01,
+            "Mar balance should be $3800"
+        );
 
         // Check summary current balance
         assert!(
