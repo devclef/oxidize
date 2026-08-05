@@ -685,6 +685,46 @@ async function fetchChartData() {
             return;
         }
 
+        // For card_paydown widget type
+        if (widgetType === 'card_paydown') {
+            if (selectedIds.length === 0) {
+                chartErrorEl.innerHTML = '<div class="info">Please select at least one credit card (liability) account.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            const params = new URLSearchParams();
+            selectedIds.forEach(id => params.append('accounts[]', id));
+            if (startDate) params.append('start', startDate);
+            if (endDate) params.append('end', endDate);
+
+            const url = `/api/card-paydown?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const data = await response.json();
+
+            const activity = data.monthly_activity || [];
+            if (!activity.length) {
+                chartErrorEl.innerHTML = '<div class="info">No card activity found for the selected accounts and date range.</div>';
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            chartContainer.style.display = 'block';
+            renderChart(null, widgetType, data);
+            return;
+        }
+
         if (selectedIds.length > 0) {
             selectedIds.forEach(id => params.append('accounts[]', id));
         } else if (chartMode === 'split') {
@@ -1682,10 +1722,142 @@ function renderPieChart(ctx, labels, data, currencySymbol = '') {
     });
 }
 
-function renderChart(history, widgetType = 'balance') {
+function renderCardPaydownPreview(ctx, data) {
+    const activity = data.monthly_activity || [];
+    const summary = data.summary || {};
+    const symbol = summary.currency_symbol || '$';
+
+    if (balanceChart) {
+        balanceChart.destroy();
+    }
+
+    const months = activity.map(a => a.month);
+    const payments = activity.map(a => a.payments || 0);
+    const spending = activity.map(a => (a.spending || 0) * -1);
+    const interest = activity.map(a => (a.interest || 0) * -1);
+    const netPaydown = activity.map(a => a.net_paydown || 0);
+    const balances = activity.map(a => a.balance || 0);
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartGridColor = isDark ? '#444' : '#ddd';
+
+    balanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: months,
+            datasets: [
+                {
+                    label: 'Payments',
+                    data: payments,
+                    backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                    borderColor: '#22c55e',
+                    borderWidth: 1,
+                },
+                {
+                    label: 'Spending',
+                    data: spending,
+                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1,
+                },
+                {
+                    label: 'Interest',
+                    data: interest,
+                    backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                    borderColor: '#f59e0b',
+                    borderWidth: 1,
+                },
+                {
+                    label: 'Net Paydown',
+                    type: 'line',
+                    data: netPaydown,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#3b82f6',
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Balance',
+                    type: 'line',
+                    data: balances,
+                    borderColor: isDark ? '#a78bfa' : '#7c3aed',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    tension: 0.3,
+                    pointRadius: 2,
+                    pointBackgroundColor: isDark ? '#a78bfa' : '#7c3aed',
+                    yAxisID: 'y1',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { color: chartTextColor, boxWidth: 12, padding: 10, font: { size: 11 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const val = context.parsed.y;
+                            const absVal = Math.abs(val);
+                            return context.dataset.label + ': ' + (val >= 0 ? '+' : '-') + symbol + absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: chartTextColor, maxTicksLimit: 8 },
+                    grid: { color: chartGridColor },
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    ticks: {
+                        color: chartTextColor,
+                        callback: function(value) {
+                            const prefix = value < 0 ? '-' : '';
+                            return prefix + symbol + Math.abs(value).toLocaleString();
+                        }
+                    },
+                    grid: { color: chartGridColor },
+                    title: { display: true, text: 'Monthly Activity', color: chartTextColor }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    ticks: {
+                        color: chartTextColor,
+                        callback: function(value) { return symbol + value.toLocaleString(); }
+                    },
+                    grid: { display: false },
+                    title: { display: true, text: 'Balance', color: chartTextColor }
+                }
+            }
+        }
+    });
+}
+
+function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
     const chartType = getChartType();
+
+    // For card_paydown widget type
+    if (widgetType === 'card_paydown' && cardPaydownData) {
+        renderCardPaydownPreview(ctx, cardPaydownData);
+        return;
+    }
 
     // For earned_spent widget type, render based on selected chart type
     if (widgetType === 'earned_spent') {
@@ -2738,8 +2910,8 @@ async function saveGraphAsWidget() {
         }
     }
 
-    // Only balance widget type requires accounts
-    if (widgetType === 'balance' && selectedIds.length === 0) {
+    // Only balance and card_paydown widget types require accounts
+    if ((widgetType === 'balance' || widgetType === 'card_paydown') && selectedIds.length === 0) {
         alert('Please select at least one account');
         return;
     }
@@ -3709,7 +3881,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     'budget_spent': 'Budget Spent Over Time',
                     'category_subcat': categoryGraphMode === 'parent'
                         ? 'Category Spend by Main Category'
-                        : 'Category Subcategory Spend'
+                        : 'Category Subcategory Spend',
+                    'card_paydown': 'Card Paydown',
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -3717,6 +3890,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const earnedSelector = document.getElementById('earned-chart-type-selector');
             if (earnedSelector) {
                 earnedSelector.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
+            }
+            // Toggle chart type selector (line/pie) visibility - hide for card_paydown
+            const chartTypeSelector = document.getElementById('chart-type-selector');
+            if (chartTypeSelector) {
+                chartTypeSelector.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
+            }
+            // Toggle advanced options visibility for card_paydown (some don't apply)
+            const advancedOptions = document.getElementById('advanced-options');
+            if (advancedOptions) {
+                advancedOptions.style.display = widgetType === 'card_paydown' ? 'none' : '';
             }
              // Toggle budgets section visibility
             const budgetsSection = document.getElementById('budgets-section');
