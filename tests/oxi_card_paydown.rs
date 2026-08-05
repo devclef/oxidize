@@ -218,9 +218,139 @@ mod tests {
         );
     }
 
-    /// Test: Transfer from card with "interest" in destination/category should be classified as interest.
+    /// Test: Interest is derived from balance delta, not from transaction names.
+    /// Given: start_balance=5000, spending=300, payments=1000, end_balance=4350
+    /// Expected interest = 4350 - 5000 - 300 + 1000 = 50
     #[tokio::test]
-    async fn test_card_paydown_interest_classification() {
+    async fn test_card_paydown_interest_from_balance_delta() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        // Spending of $300 and payment of $1000 in March
+        mock_transactions(
+            &mut server,
+            json!({
+                "data": [
+                    {
+                        "type": "transactions",
+                        "id": "1",
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": "withdrawal",
+                                    "amount": "300.00",
+                                    "source_id": "99",
+                                    "source_name": "Credit Card",
+                                    "destination_id": "88",
+                                    "destination_name": "Grocery Store",
+                                    "date": "2026-03-15",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "type": "transactions",
+                        "id": "2",
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": "transfer",
+                                    "amount": "1000.00",
+                                    "source_id": "1",
+                                    "source_name": "Checking",
+                                    "destination_id": "99",
+                                    "destination_name": "Credit Card",
+                                    "date": "2026-03-20",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$"
+                                },
+                                {
+                                    "type": "transfer",
+                                    "amount": "1000.00",
+                                    "source_id": "99",
+                                    "source_name": "Credit Card",
+                                    "destination_id": "1",
+                                    "destination_name": "Checking",
+                                    "date": "2026-03-20",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }),
+        )
+        .await;
+
+        // Balance data: Feb end = 5000, Mar end = 4350
+        // Interest = 4350 - 5000 - 300 + 1000 = 50
+        mock_balance_history(
+            &mut server,
+            json!([
+                {
+                    "label": "Credit Card",
+                    "currency_symbol": "$",
+                    "currency_code": "USD",
+                    "entries": [
+                        {"date": "2026-02-28", "ba": 5000.00},
+                        {"date": "2026-03-31", "ba": 4350.00}
+                    ]
+                }
+            ]),
+        )
+        .await;
+
+        let config = make_test_config(url);
+        let client = FireflyClient::new(config);
+
+        let result = client
+            .get_card_paydown(
+                vec!["99".to_string()],
+                Some("2026-03-01".to_string()),
+                Some("2026-03-31".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let activity = result["monthly_activity"].as_array().unwrap();
+        let mar_entry = activity
+            .iter()
+            .find(|m| m["month"] == "2026-03")
+            .unwrap();
+
+        assert!(
+            (mar_entry["spending"].as_f64().unwrap() - 300.0).abs() < 0.01,
+            "Expected $300 spending, got ${}",
+            mar_entry["spending"].as_f64().unwrap()
+        );
+        assert!(
+            (mar_entry["payments"].as_f64().unwrap() - 1000.0).abs() < 0.01,
+            "Expected $1000 payments, got ${}",
+            mar_entry["payments"].as_f64().unwrap()
+        );
+        assert!(
+            (mar_entry["interest"].as_f64().unwrap() - 50.0).abs() < 0.01,
+            "Expected $50 interest (derived from balance delta), got ${}",
+            mar_entry["interest"].as_f64().unwrap()
+        );
+        assert!(
+            (mar_entry["net_paydown"].as_f64().unwrap() - 650.0).abs() < 0.01,
+            "Expected $650 net paydown (5000 - 4350), got ${}",
+            mar_entry["net_paydown"].as_f64().unwrap()
+        );
+        assert!(
+            (mar_entry["balance"].as_f64().unwrap() - 4350.0).abs() < 0.01,
+            "Expected $4350 balance"
+        );
+    }
+
+    /// Test: A transfer to an account named "Interest Expense" is classified as a payment,
+    /// not as interest. Interest is now derived from balance delta, not transaction names.
+    #[tokio::test]
+    async fn test_card_paydown_transfer_named_interest_is_payment() {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
@@ -265,6 +395,7 @@ mod tests {
         )
         .await;
 
+        // No balance data — interest should be 0, transfer classified as payment
         mock_balance_history(&mut server, json!([])).await;
 
         let config = make_test_config(url);
@@ -285,26 +416,24 @@ mod tests {
             .find(|m| m["month"] == "2026-03")
             .unwrap();
 
+        // Without balance data, transfer is classified as payment, interest is 0
         assert!(
-            mar_entry["payments"].as_f64().unwrap() == 0.0,
-            "Expected $0 payments"
+            (mar_entry["payments"].as_f64().unwrap() - 25.50).abs() < 0.01,
+            "Expected $25.50 payments (transfer to 'Interest Expense' is now a payment), got ${}",
+            mar_entry["payments"].as_f64().unwrap()
         );
         assert!(
             mar_entry["spending"].as_f64().unwrap() == 0.0,
             "Expected $0 spending"
         );
         assert!(
-            (mar_entry["interest"].as_f64().unwrap() - 25.50).abs() < 0.01,
-            "Expected $25.50 interest, got ${}",
-            mar_entry["interest"].as_f64().unwrap()
-        );
-        assert!(
-            (mar_entry["net_paydown"].as_f64().unwrap() - (-25.50)).abs() < 0.01,
-            "Expected -$25.50 net paydown (interest increases debt)"
+            mar_entry["interest"].as_f64().unwrap() == 0.0,
+            "Expected $0 interest (no balance data to derive from)"
         );
     }
 
     /// Test: Mixed activity in a single month with correct net paydown calculation.
+    /// Includes balance data to verify interest is derived from balance delta.
     #[tokio::test]
     async fn test_card_paydown_mixed_activity() {
         let mut server = mockito::Server::new_async().await;
@@ -379,7 +508,24 @@ mod tests {
         )
         .await;
 
-        mock_balance_history(&mut server, json!([])).await;
+        // Balance: Mar end = 8000, Apr end = 7425
+        // interest = 7425 - 8000 - 400 + 1000 = 25
+        // net_paydown = 8000 - 7425 = 575
+        mock_balance_history(
+            &mut server,
+            json!([
+                {
+                    "label": "Credit Card",
+                    "currency_symbol": "$",
+                    "currency_code": "USD",
+                    "entries": [
+                        {"date": "2026-03-31", "ba": 8000.00},
+                        {"date": "2026-04-30", "ba": 7425.00}
+                    ]
+                }
+            ]),
+        )
+        .await;
 
         let config = make_test_config(url);
         let client = FireflyClient::new(config);
@@ -408,8 +554,14 @@ mod tests {
             "Expected $400 spending (2 journals x $200)"
         );
         assert!(
-            (apr_entry["net_paydown"].as_f64().unwrap() - 600.0).abs() < 0.01,
-            "Expected $600 net paydown ($1000 payments - $400 spending)"
+            (apr_entry["interest"].as_f64().unwrap() - 25.0).abs() < 0.01,
+            "Expected $25 interest (derived from balance delta), got ${}",
+            apr_entry["interest"].as_f64().unwrap()
+        );
+        assert!(
+            (apr_entry["net_paydown"].as_f64().unwrap() - 575.0).abs() < 0.01,
+            "Expected $575 net paydown (8000 - 7425), got ${}",
+            apr_entry["net_paydown"].as_f64().unwrap()
         );
 
         // Check summary
@@ -421,7 +573,12 @@ mod tests {
             (summary["total_spending"].as_f64().unwrap() - 400.0).abs() < 0.01,
         );
         assert!(
-            (summary["total_net_paydown"].as_f64().unwrap() - 600.0).abs() < 0.01,
+            (summary["total_interest"].as_f64().unwrap() - 25.0).abs() < 0.01,
+            "Expected $25 total interest"
+        );
+        assert!(
+            (summary["total_net_paydown"].as_f64().unwrap() - 575.0).abs() < 0.01,
+            "Expected $575 total net paydown"
         );
     }
 

@@ -138,7 +138,7 @@ impl FireflyClient {
 
     /// Analyze credit card paydown activity for the given liability accounts.
     /// Returns monthly breakdown of payments (debt-reducing), spending (debt-increasing),
-    /// and interest/fees, along with monthly ending balances and summary stats.
+    /// and interest (derived from balance delta), along with monthly ending balances and summary stats.
     pub async fn get_card_paydown(
         &self,
         account_ids: Vec<String>,
@@ -174,13 +174,12 @@ impl FireflyClient {
 
         let card_ids: std::collections::HashSet<String> = account_ids.iter().cloned().collect();
 
-        // Classify journals and aggregate by month
-        let mut monthly: std::collections::HashMap<String, f64> =
+        // Classify journals: payments and spending only.
+        // Interest is derived from balance delta (see below).
+        let mut monthly_payments: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> payments
         let mut monthly_spending: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> spending
-        let mut monthly_interest: std::collections::HashMap<String, f64> =
-            std::collections::HashMap::new(); // month -> interest/fees
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
@@ -225,9 +224,9 @@ impl FireflyClient {
                 }
 
                 // Classification for liability (credit card) accounts:
-                // - "transfer" from card to non-card (e.g., asset) = payment (debt-reducing)
+                // - "transfer" from card to non-card = payment (debt-reducing)
                 // - "withdrawal" from card = spending (debt-increasing)
-                // - "transfer" from card to expense account = interest/fees (debt-increasing)
+                // Interest is NOT classified from transactions; it's derived from balance delta.
                 if !card_ids.contains(source_id) {
                     // Journal where card is NOT the source — skip for classification
                     // (these are the reverse-perspective journals from Firefly III)
@@ -244,40 +243,9 @@ impl FireflyClient {
                         if card_ids.contains(dest_id) {
                             // Transfer between card accounts — skip
                             continue;
-                        } else {
-                            // Transfer from card to non-card account
-                            // This could be: payment from card (debt-reducing) or interest/fee
-                            // Heuristic: if destination is an expense account, it's interest/fees
-                            // Otherwise treat as payment. Since we can't easily check account type
-                            // here, we check if the dest account looks like a fee/interest category.
-                            // For simplicity, classify as interest if the destination name
-                            // contains "interest" or "fee", otherwise as payment.
-                            let dest_name = journal
-                                .get("destination_name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-                            let category_name = journal
-                                .get("category_name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-                            if dest_name.contains("interest")
-                                || dest_name.contains("fee")
-                                || category_name.contains("interest")
-                                || category_name.contains("fee")
-                            {
-                                *monthly_interest
-                                    .entry(month_key.to_string())
-                                    .or_insert(0.0) += amount;
-                            } else {
-                                // Treat as payment (debt-reducing)
-                                // But wait — a transfer FROM card to a regular expense account
-                                // is actually a payment to that expense, reducing the card balance.
-                                // This is correct.
-                                *monthly.entry(month_key.to_string()).or_insert(0.0) += amount;
-                            }
                         }
+                        // All transfers from card to non-card are payments (debt-reducing)
+                        *monthly_payments.entry(month_key.to_string()).or_insert(0.0) += amount;
                     }
                     _ => {}
                 }
@@ -306,7 +274,37 @@ impl FireflyClient {
             current = next_month;
         }
 
-        // Build monthly activity array
+        // Fetch balance history — start one month earlier to get previous month's
+        // ending balance, which is needed to derive interest for the first month.
+        let balance_start = if start_date.month() == 1 {
+            start_date
+                .with_year(start_date.year() - 1)
+                .unwrap()
+                .with_month(12)
+                .unwrap()
+        } else {
+            start_date.with_month(start_date.month() - 1).unwrap()
+        };
+        let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
+
+        let balances = self
+            .fetch_card_balances(&account_ids, &balance_start_str, &end)
+            .await;
+
+        // Helper: compute previous month key (e.g. "2026-01" -> "2025-12")
+        let prev_month = |m: &str| -> String {
+            let y: u32 = m[..4].parse().unwrap_or(0);
+            let mo: u32 = m[5..7].parse().unwrap_or(1);
+            if mo == 1 {
+                format!("{:04}-{:02}", y - 1, 12)
+            } else {
+                format!("{:04}-{:02}", y, mo - 1)
+            }
+        };
+
+        // Build monthly activity — interest is derived from balance delta:
+        //   interest = end_balance - start_balance - spending + payments
+        //   net_paydown = start_balance - end_balance
         let mut monthly_activity: Vec<serde_json::Value> = Vec::new();
         let mut total_payments = 0.0;
         let mut total_spending = 0.0;
@@ -314,31 +312,38 @@ impl FireflyClient {
         let mut months_with_activity = 0;
         let mut total_net_paydown = 0.0;
 
-        // Fetch balance history for monthly ending balances
-        let balances = self
-            .fetch_card_balances(&account_ids, &start, &end)
-            .await;
-
         for month in &all_months {
-            let payments = *monthly.entry(month.clone()).or_insert(0.0);
+            let payments = *monthly_payments.entry(month.clone()).or_insert(0.0);
             let spending = *monthly_spending.entry(month.clone()).or_insert(0.0);
-            let interest = *monthly_interest.entry(month.clone()).or_insert(0.0);
-            let net_paydown = payments - spending - interest;
 
-            if payments > 0.0 || spending > 0.0 || interest > 0.0 {
+            // Look up start (previous month end) and end balances
+            let prev = prev_month(month);
+            let (start_bal, end_bal) = if let Ok(ref bal_map) = balances {
+                (bal_map.get(&prev).copied(), bal_map.get(month).copied())
+            } else {
+                (None, None)
+            };
+
+            // Derive interest from balance delta when both balances are available
+            let (interest, balance, net_paydown) = if let (Some(sb), Some(eb)) = (start_bal, end_bal)
+            {
+                let interest = eb - sb - spending + payments;
+                let net_paydown = sb - eb;
+                (interest, eb, net_paydown)
+            } else if let Some(eb) = end_bal {
+                // Only end balance available (e.g. first month without prior data)
+                (0.0, eb, payments - spending)
+            } else {
+                (0.0, 0.0, payments - spending)
+            };
+
+            if payments > 0.01 || spending > 0.01 || interest.abs() > 0.01 {
                 months_with_activity += 1;
                 total_payments += payments;
                 total_spending += spending;
                 total_interest += interest;
                 total_net_paydown += net_paydown;
             }
-
-            // Get monthly ending balance
-            let balance = if let Ok(ref bal_map) = balances {
-                bal_map.get(month).copied().unwrap_or(0.0)
-            } else {
-                0.0
-            };
 
             monthly_activity.push(serde_json::json!({
                 "month": month,
