@@ -736,66 +736,18 @@ impl FireflyClient {
             }
         }
 
-        // Parse end date for clamping in get_period_key closure
-        let end_date_parsed = chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").ok();
-
         let get_period_key = |date_str: &str, period: &str| -> String {
-            if let Some(date) = parse_tx_date(date_str) {
-                let key = match period {
-                    "1M" => {
-                        let first_of_next = chrono::NaiveDate::from_ymd_opt(
-                            if date.month() == 12 {
-                                date.year() + 1
-                            } else {
-                                date.year()
-                            },
-                            if date.month() == 12 {
-                                1
-                            } else {
-                                date.month() + 1
-                            },
-                            1,
-                        )
-                        .unwrap();
-                        let last_of_month = first_of_next - chrono::Duration::days(1);
-                        let key_date = if let Some(ref end_dt) = end_date_parsed {
-                            if last_of_month > *end_dt {
-                                *end_dt
-                            } else {
-                                last_of_month
-                            }
-                        } else {
-                            last_of_month
-                        };
-                        key_date.format("%Y-%m-%dT00:00:00+00:00").to_string()
+            // Use the static method with end date for clamping
+            let key = Self::get_period_key(date_str, period, Some(&end));
+            // Fallback: if the static method couldn't parse the date, try date-only parsing
+            if key == date_str {
+                if let Some(date_part) = date_str.split('T').next() {
+                    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+                        return date.format("%Y-%m-%dT00:00:00+00:00").to_string();
                     }
-                    "1Q" => {
-                        let quarter_month = match date.month() {
-                            1..=3 => 1,
-                            4..=6 => 4,
-                            7..=9 => 7,
-                            10..=12 => 10,
-                            _ => 1,
-                        };
-                        chrono::NaiveDate::from_ymd_opt(date.year(), quarter_month, 1)
-                            .unwrap()
-                            .format("%Y-%m-%dT00:00:00+00:00")
-                            .to_string()
-                    }
-                    "1W" => {
-                        let monday = date
-                            - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
-                        monday.format("%Y-%m-%dT00:00:00+00:00").to_string()
-                    }
-                    _ => date.format("%Y-%m-%dT00:00:00+00:00").to_string(),
-                };
-                return key;
-            } else if let Some(date_part) = date_str.split('T').next() {
-                if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
-                    return date.format("%Y-%m-%dT00:00:00+00:00").to_string();
                 }
             }
-            date_str.to_string()
+            key
         };
 
         for journal in &all_journals {
@@ -975,7 +927,7 @@ impl FireflyClient {
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
                 if let Ok(amount) = amount_str.parse::<f64>() {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
-                        let period_key = Self::get_period_key(date, &period_val);
+                        let period_key = Self::get_period_key(date, &period_val, Some(&end));
 
                         let entries = category_entries.entry(category_name).or_default();
                         *entries.entry(period_key).or_insert(0.0) += amount;
@@ -1277,7 +1229,10 @@ impl FireflyClient {
         Ok(chart)
     }
 
-    fn get_period_key(date_str: &str, period: &str) -> String {
+    fn get_period_key(date_str: &str, period: &str, end_date: Option<&str>) -> String {
+        let end_parsed =
+            end_date.and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
         if let Some(date) = parse_tx_date(date_str) {
             let key = match period {
                 "1M" => {
@@ -1295,9 +1250,17 @@ impl FireflyClient {
                         1,
                     )
                     .unwrap();
-                    (first_of_next - chrono::Duration::days(1))
-                        .format("%Y-%m-%dT00:00:00+00:00")
-                        .to_string()
+                    let last_of_month = first_of_next - chrono::Duration::days(1);
+                    let key_date = if let Some(ref end_dt) = end_parsed {
+                        if last_of_month > *end_dt {
+                            *end_dt
+                        } else {
+                            last_of_month
+                        }
+                    } else {
+                        last_of_month
+                    };
+                    key_date.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
                 "1Q" => {
                     let quarter_month = match date.month() {
@@ -1430,7 +1393,7 @@ impl FireflyClient {
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
                 if let Ok(amount) = amount_str.parse::<f64>() {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
-                        let period_key = Self::get_period_key(date, &period_val);
+                        let period_key = Self::get_period_key(date, &period_val, Some(&end));
 
                         let entries = budget_entries.entry(budget_name).or_default();
                         *entries.entry(period_key).or_insert(0.0) += amount;
@@ -2290,7 +2253,7 @@ impl FireflyClient {
             if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
                 if let Ok(amount) = amount_str.parse::<f64>() {
                     if let Some(date) = journal.get("date").and_then(|d| d.as_str()) {
-                        let period_key = Self::get_period_key(date, &period_val);
+                        let period_key = Self::get_period_key(date, &period_val, Some(&end));
 
                         // In parent mode, group by parent only; otherwise by "parent > subcat"
                         let label = if is_parent_mode {
@@ -2997,17 +2960,18 @@ mod period_key_tests {
 
     #[test]
     fn test_get_period_key_clamped_to_end() {
-        // Verify the static get_period_key also clamps for "1M"
-        // Note: get_period_key doesn't have access to end date, so it returns
-        // the last day of the month. The clamping is only in generate_period_keys.
-        // Transaction dates within the range will map to the correct bucket.
-        let key = FireflyClient::get_period_key("2025-08-03T10:00:00+00:00", "1M");
-        // Transaction on Aug 3 maps to Aug 31 (last day of August)
+        // Without end date, get_period_key returns last day of month (no clamping)
+        let key = FireflyClient::get_period_key("2025-08-03T10:00:00+00:00", "1M", None);
         assert_eq!(key, "2025-08-31T00:00:00+00:00");
 
-        // But generate_period_keys with end=Aug 5 would produce Aug 5 as the key.
-        // This means transactions in the partial last month won't match the seed key.
-        // The closure version of get_period_key in get_earned_spent_with_since
-        // has the clamping fix.
+        // With end date, the key is clamped to the end date
+        let key =
+            FireflyClient::get_period_key("2025-08-03T10:00:00+00:00", "1M", Some("2025-08-05"));
+        assert_eq!(key, "2025-08-05T00:00:00+00:00");
+
+        // When end date is beyond last of month, no clamping needed
+        let key =
+            FireflyClient::get_period_key("2025-08-03T10:00:00+00:00", "1M", Some("2025-08-31"));
+        assert_eq!(key, "2025-08-31T00:00:00+00:00");
     }
 }
