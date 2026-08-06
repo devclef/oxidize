@@ -729,25 +729,39 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         // Seed all period keys with 0.0
-        if let Ok(period_keys) = Self::generate_period_keys(&start, &end, &period_val) {
-            for key in period_keys {
-                earned_entries.insert(key.clone(), 0.0);
-                spent_entries.insert(key, 0.0);
-            }
+        let period_keys = Self::generate_period_keys(&start, &end, &period_val)
+            .unwrap_or_default();
+        let last_period_key = period_keys.last().cloned();
+        for key in &period_keys {
+            earned_entries.insert(key.clone(), 0.0);
+            spent_entries.insert(key.clone(), 0.0);
         }
 
         let get_period_key = |date_str: &str, period: &str| -> String {
-            // Use the static method with end date for clamping
             let key = Self::get_period_key(date_str, period, Some(&end));
             // Fallback: if the static method couldn't parse the date, try date-only parsing
             if key == date_str {
                 if let Some(date_part) = date_str.split('T').next() {
                     if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
-                        return date.format("%Y-%m-%dT00:00:00+00:00").to_string();
+                        let parsed_key = date.format("%Y-%m-%dT00:00:00+00:00").to_string();
+                        // If the parsed key isn't in the generated period keys
+                        // (partial end month), fall back to the last period key
+                        return if period_keys.contains(&parsed_key) {
+                            parsed_key
+                        } else {
+                            last_period_key.clone().unwrap_or(parsed_key)
+                        };
                     }
                 }
             }
-            key
+            // If the key isn't in the generated period keys (partial end month),
+            // fall back to the last period key so amounts flow into the prior
+            // full month's chart point instead of creating a dangling point.
+            if period_keys.contains(&key) {
+                key
+            } else {
+                last_period_key.clone().unwrap_or(key)
+            }
         };
 
         for journal in &all_journals {
@@ -1980,11 +1994,25 @@ impl FireflyClient {
                     )
                     .unwrap();
                     let last_of_month = first_of_next - chrono::Duration::days(1);
-                    let key_date = if last_of_month > end {
-                        end
-                    } else {
-                        last_of_month
-                    };
+                    // If the month is partial (end date doesn't reach month end)
+                    // and we already have a key for a previous month, skip this
+                    // partial bucket to avoid showing two points one day apart
+                    // (e.g., Aug 31 + Sep 1 when end date is Sep 1).
+                    if last_of_month > end && !keys.is_empty() {
+                        // Don't emit a key — advance past this partial month.
+                        if current.month() == 12 {
+                            current = current
+                                .with_year(current.year() + 1)
+                                .unwrap()
+                                .with_month(1)
+                                .unwrap();
+                        } else {
+                            current = current.with_month(current.month() + 1).unwrap();
+                        }
+                        continue;
+                    }
+                    // For the last (possibly partial) month, clamp key to end date.
+                    let key_date = if last_of_month > end { end } else { last_of_month };
                     key_date.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
                 "1Q" => {
@@ -2890,17 +2918,16 @@ mod period_key_tests {
 
     #[test]
     fn test_monthly_period_key_clamped_to_end_date() {
-        // When end date is mid-month, the last period key should be clamped
-        // to the end date, not the last day of the month.
+        // When end date is mid-month and a prior full month already exists,
+        // the partial last month is skipped entirely to avoid showing two
+        // points one day apart (e.g., Aug 31 + Sep 1 when end date is Sep 1).
         let keys = FireflyClient::generate_period_keys("2025-07-01", "2025-08-05", "1M").unwrap();
 
-        // July: last day is July 31 — within range
+        // July: last day is July 31 — full month, included
         assert_eq!(keys[0], "2025-07-31T00:00:00+00:00");
 
-        // August: last day is Aug 31 — but end date is Aug 5, so key should be clamped
-        assert_eq!(keys[1], "2025-08-05T00:00:00+00:00");
-
-        assert_eq!(keys.len(), 2);
+        // August: partial month (only 5 days), skipped because July is already present.
+        assert_eq!(keys.len(), 1);
     }
 
     #[test]
