@@ -53,7 +53,7 @@ mod tests {
         // The card-paydown endpoint fetches accounts per type.
         // Register a mock for each type-filtered request, returning only matching accounts.
         let all_accounts = accounts.clone();
-        for atype in &["asset", "expense", "revenue", "liability", "cash"] {
+        for atype in &["asset", "expense", "revenue", "liability", "liabilities", "cash", "loan"] {
             let filtered: Vec<serde_json::Value> = all_accounts["data"]
                 .as_array()
                 .unwrap()
@@ -367,15 +367,15 @@ mod tests {
         );
     }
 
-    /// Test: Interest is derived from balance delta, not from transaction names.
-    /// Given: start_balance=5000, spending=300, payments=1000, end_balance=4350
-    /// Expected interest = 4350 - 5000 - 300 + 1000 = 50
+    /// Test: Interest is detected from "Interest:" transaction descriptions.
+    /// Given: start_balance=5000, spending=300, payments=1000, interest=50, end_balance=4350
+    /// Expected net_paydown = 1000 - 300 - 50 = 650
     #[tokio::test]
     async fn test_card_paydown_interest_from_balance_delta() {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
-        // Spending of $300 (single withdrawal journal) and payment of $1000 in March
+        // Spending of $300, payment of $1000, interest of $50 in March
         mock_transactions(
             &mut server,
             json!({
@@ -425,6 +425,26 @@ mod tests {
                                     "date": "2026-03-20",
                                     "currency_code": "USD",
                                     "currency_symbol": "$"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "type": "transactions",
+                        "id": "3",
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": "withdrawal",
+                                    "amount": "50.00",
+                                    "source_id": "99",
+                                    "source_name": "Credit Card",
+                                    "destination_id": "90",
+                                    "destination_name": "Interest",
+                                    "date": "2026-03-01",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$",
+                                    "description": "Interest: Credit Card"
                                 }
                             ]
                         }
@@ -482,12 +502,12 @@ mod tests {
         );
         assert!(
             (mar_entry["interest"].as_f64().unwrap() - 50.0).abs() < 0.01,
-            "Expected $50 interest (derived from balance delta), got ${}",
+            "Expected $50 interest (from Interest: transaction), got ${}",
             mar_entry["interest"].as_f64().unwrap()
         );
         assert!(
             (mar_entry["net_paydown"].as_f64().unwrap() - 650.0).abs() < 0.01,
-            "Expected $650 net paydown (5000 - 4350), got ${}",
+            "Expected $650 net paydown (1000 - 300 - 50), got ${}",
             mar_entry["net_paydown"].as_f64().unwrap()
         );
         assert!(
@@ -497,7 +517,7 @@ mod tests {
     }
 
     /// Test: Mixed activity in a single month with correct net paydown calculation.
-    /// Includes balance data to verify interest is derived from balance delta.
+    /// Includes balance data and interest transaction.
     /// Uses Firefly III key/value format for balance entries.
     #[tokio::test]
     async fn test_card_paydown_mixed_activity() {
@@ -556,6 +576,26 @@ mod tests {
                                 }
                             ]
                         }
+                    },
+                    {
+                        "type": "transactions",
+                        "id": "3",
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": "withdrawal",
+                                    "amount": "225.00",
+                                    "source_id": "99",
+                                    "source_name": "Credit Card",
+                                    "destination_id": "90",
+                                    "destination_name": "Interest",
+                                    "date": "2026-04-01",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$",
+                                    "description": "Interest: Credit Card"
+                                }
+                            ]
+                        }
                     }
                 ]
             }),
@@ -563,8 +603,7 @@ mod tests {
         .await;
 
         // Balance in Firefly III object format: {"date": value}
-        // interest = 7425 - 8000 - 200 + 1000 = 225
-        // net_paydown = 8000 - 7425 = 575
+        // net_paydown = 1000 - 200 - 225 = 575
         mock_balance_history(
             &mut server,
             json!([
@@ -610,12 +649,12 @@ mod tests {
         );
         assert!(
             (apr_entry["interest"].as_f64().unwrap() - 225.0).abs() < 0.01,
-            "Expected $225 interest (derived from balance delta), got ${}",
+            "Expected $225 interest (from Interest: transaction), got ${}",
             apr_entry["interest"].as_f64().unwrap()
         );
         assert!(
             (apr_entry["net_paydown"].as_f64().unwrap() - 575.0).abs() < 0.01,
-            "Expected $575 net paydown (8000 - 7425), got ${}",
+            "Expected $575 net paydown (1000 - 200 - 225), got ${}",
             apr_entry["net_paydown"].as_f64().unwrap()
         );
 

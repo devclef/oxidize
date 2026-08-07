@@ -192,7 +192,7 @@ impl FireflyClient {
         // so we must explicitly fetch each account type.
         let all_account_types: std::collections::HashMap<String, String> = {
             let mut map = std::collections::HashMap::new();
-            for atype in &["asset", "expense", "revenue", "liability", "cash"] {
+            for atype in &["asset", "expense", "revenue", "liability", "liabilities", "cash", "loan"] {
                 if let Ok(accounts) = self.get_accounts(Some(atype.to_string())).await {
                     for a in accounts {
                         map.insert(a.id, a.account_type);
@@ -206,12 +206,13 @@ impl FireflyClient {
         // Debug: collect raw classification details
         let mut debug_classifications: Vec<serde_json::Value> = Vec::new();
 
-        // Classify journals: payments and spending only.
-        // Interest is derived from balance delta (see below).
+        // Classify journals: payments, spending, and interest.
         let mut monthly_payments: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> payments
         let mut monthly_spending: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> spending
+        let mut monthly_interest: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new(); // month -> interest
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
@@ -282,9 +283,9 @@ impl FireflyClient {
                 let classification = match journal_type {
                     "withdrawal" => {
                         if is_interest {
-                            // Interest charges are derived from the balance delta,
-                            // so we skip them here to avoid double-counting.
-                            "skip(interest, derived from delta)"
+                            // Interest charges are tracked separately, not as spending.
+                            *monthly_interest.entry(month_key.to_string()).or_insert(0.0) += amount;
+                            "interest(withdrawal)"
                         } else {
                             // Spending on the card (increases debt)
                             *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
@@ -364,40 +365,40 @@ impl FireflyClient {
         };
         let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
 
-        // Only use liability (credit card) accounts for balance-based interest derivation.
-        // Including asset accounts (checking) would contaminate the delta with unrelated
-        // outflows (savings transfers, bills, etc.), producing wildly wrong "interest".
-        let balance_account_ids: Vec<String> = account_ids
-            .iter()
-            .filter(|id| {
-                all_account_types
-                    .get(id.as_str())
-                    .map(|t| t == "liability")
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
-        let balances = if balance_account_ids.is_empty() {
-            // Fallback to all card_ids if no liability accounts identified
-            self.fetch_card_balances(&account_ids, &balance_start_str, &end).await
-        } else {
-            self.fetch_card_balances(&balance_account_ids, &balance_start_str, &end).await
-        };
-
-        // Helper: compute previous month key (e.g. "2026-01" -> "2025-12")
-        let prev_month = |m: &str| -> String {
-            let y: u32 = m[..4].parse().unwrap_or(0);
-            let mo: u32 = m[5..7].parse().unwrap_or(1);
-            if mo == 1 {
-                format!("{:04}-{:02}", y - 1, 12)
-            } else {
-                format!("{:04}-{:02}", y, mo - 1)
+        // Fetch per-account balance charts to avoid contaminating the combined
+        // balance with unrelated account changes (e.g., checking account outflows).
+        // Each account's chart is fetched individually for correct delta calculation.
+        let per_account_balances: std::collections::HashMap<String, std::collections::HashMap<String, f64>> = {
+            let mut map = std::collections::HashMap::new();
+            for id in &account_ids {
+                match self
+                    .fetch_card_balances(&[id.clone()], &balance_start_str, &end)
+                    .await
+                {
+                    Ok(acc_balances) => {
+                        map.insert(id.clone(), acc_balances);
+                    }
+                    Err(_) => {}
+                }
             }
+            map
         };
 
-        // Build monthly activity — interest is derived from balance delta:
-        //   interest = end_balance - start_balance - spending + payments
-        //   net_paydown = start_balance - end_balance
+        // Build combined balance map from per-account balances for the balance field.
+        let combined_balances: std::collections::HashMap<String, f64> = {
+            let mut combined = std::collections::HashMap::new();
+            for (_, acc_balances) in &per_account_balances {
+                for (month, bal) in acc_balances {
+                    *combined.entry(month.clone()).or_insert(0.0) += bal;
+                }
+            }
+            combined
+        };
+
+        // Build monthly activity from transaction data.
+        // Interest is detected directly from "Interest:" transaction descriptions.
+        // Net paydown = payments - spending - interest (from transaction classification).
+        // Balance comes from the combined per-account chart data.
         let mut monthly_activity: Vec<serde_json::Value> = Vec::new();
         let mut total_payments = 0.0;
         let mut total_spending = 0.0;
@@ -408,29 +409,16 @@ impl FireflyClient {
         for month in &all_months {
             let payments = *monthly_payments.entry(month.clone()).or_insert(0.0);
             let spending = *monthly_spending.entry(month.clone()).or_insert(0.0);
+            let interest = *monthly_interest.entry(month.clone()).or_insert(0.0);
 
-            // Look up start (previous month end) and end balances
-            let prev = prev_month(month);
-            let (start_bal, end_bal) = if let Ok(ref bal_map) = balances {
-                (bal_map.get(&prev).copied(), bal_map.get(month).copied())
-            } else {
-                (None, None)
-            };
+            // Get combined ending balance from per-account chart data
+            let balance = combined_balances.get(month).copied().unwrap_or(0.0);
 
-            // Derive interest from balance delta when both balances are available
-            let (interest, balance, net_paydown) =
-                if let (Some(sb), Some(eb)) = (start_bal, end_bal) {
-                    let interest = eb - sb - spending + payments;
-                    let net_paydown = sb - eb;
-                    (interest, eb, net_paydown)
-                } else if let Some(eb) = end_bal {
-                    // Only end balance available (e.g. first month without prior data)
-                    (0.0, eb, payments - spending)
-                } else {
-                    (0.0, 0.0, payments - spending)
-                };
+            // Net paydown from transaction data (not balance delta):
+            // payments reduce debt, spending and interest increase debt.
+            let net_paydown = payments - spending - interest;
 
-            if payments > 0.01 || spending > 0.01 || interest.abs() > 0.01 {
+            if payments > 0.01 || spending > 0.01 || interest > 0.01 {
                 months_with_activity += 1;
                 total_payments += payments;
                 total_spending += spending;
@@ -498,14 +486,18 @@ impl FireflyClient {
 
         // Attach debug data when requested
         if debug {
-            let debug_balances: Vec<serde_json::Value> = if let Ok(ref bal_map) = balances {
-                bal_map
-                    .iter()
-                    .map(|(k, v)| serde_json::json!({ "month": k, "balance": v }))
-                    .collect::<Vec<_>>()
-            } else {
-                vec![serde_json::json!({ "error": "balance fetch failed" })]
-            };
+            let debug_balances: Vec<serde_json::Value> = per_account_balances
+                .iter()
+                .flat_map(|(acc_id, bal_map)| {
+                    bal_map.iter().map(move |(k, v)| {
+                        serde_json::json!({ "month": k, "balance": v, "account": acc_id })
+                    })
+                })
+                .collect();
+            let debug_combined: Vec<serde_json::Value> = combined_balances
+                .iter()
+                .map(|(k, v)| serde_json::json!({ "month": k, "balance": v }))
+                .collect::<Vec<_>>();
 
             let debug_account_types: Vec<serde_json::Value> = account_types
                 .iter()
@@ -521,7 +513,8 @@ impl FireflyClient {
                 "accounts_fetched": debug_account_types,
                 "transactions_total": transactions.len(),
                 "classifications": debug_classifications,
-                "balances_raw": debug_balances,
+                "balances_per_account": debug_balances,
+                "balances_combined": debug_combined,
                 "balance_fetch_url": format!(
                     "{}/v1/chart/account/overview?start={}&end={}&period=1M{}",
                     self.config.firefly_url.as_str(),
