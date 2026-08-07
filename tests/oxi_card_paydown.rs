@@ -50,6 +50,35 @@ mod tests {
 
     /// Mock the /v1/accounts endpoint to provide account type info for transaction classification.
     async fn mock_accounts(server: &mut mockito::Server, accounts: serde_json::Value) {
+        // The card-paydown endpoint fetches accounts per type.
+        // Register a mock for each type-filtered request, returning only matching accounts.
+        let all_accounts = accounts.clone();
+        for atype in &["asset", "expense", "revenue", "liability", "cash"] {
+            let filtered: Vec<serde_json::Value> = all_accounts["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|a| {
+                    a["attributes"]["type"]
+                        .as_str()
+                        .map(|t| t == *atype)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect();
+            server
+                .mock("GET", "/v1/accounts")
+                .match_query(mockito::Matcher::UrlEncoded(
+                    "type".to_string(),
+                    atype.to_string(),
+                ))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(serde_json::json!({ "data": filtered }).to_string())
+                .create_async()
+                .await;
+        }
+        // Also register the base URL mock (no type filter) for other endpoints.
         server
             .mock("GET", "/v1/accounts")
             .with_status(200)

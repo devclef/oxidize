@@ -188,13 +188,20 @@ impl FireflyClient {
         // Fetch account types to properly classify transfers.
         // Transfers from card to expense/revenue = spending (debt-increasing).
         // Transfers from card to asset/liability = payment (debt-reducing).
-        let account_types: std::collections::HashMap<String, String> = self
-            .get_accounts(None)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|a| (a.id, a.account_type))
-            .collect();
+        // Firefly III's /v1/accounts defaults to asset-only without a type filter,
+        // so we must explicitly fetch each account type.
+        let all_account_types: std::collections::HashMap<String, String> = {
+            let mut map = std::collections::HashMap::new();
+            for atype in &["asset", "expense", "revenue", "liability", "cash"] {
+                if let Ok(accounts) = self.get_accounts(Some(atype.to_string())).await {
+                    for a in accounts {
+                        map.insert(a.id, a.account_type);
+                    }
+                }
+            }
+            map
+        };
+        let account_types = &all_account_types;
 
         // Debug: collect raw classification details
         let mut debug_classifications: Vec<serde_json::Value> = Vec::new();
@@ -270,11 +277,19 @@ impl FireflyClient {
                 }
 
                 let dest_type = account_types.get(dest_id).map(|s| s.as_str());
+                // Check if this is an interest withdrawal (e.g. "Interest: Amex Elite")
+                let is_interest = description.to_lowercase().starts_with("interest:");
                 let classification = match journal_type {
                     "withdrawal" => {
-                        // Spending on the card (increases debt)
-                        *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
-                        "spending(withdrawal)"
+                        if is_interest {
+                            // Interest charges are derived from the balance delta,
+                            // so we skip them here to avoid double-counting.
+                            "skip(interest, derived from delta)"
+                        } else {
+                            // Spending on the card (increases debt)
+                            *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
+                            "spending(withdrawal)"
+                        }
                     }
                     "transfer" => {
                         if card_ids.contains(dest_id) {
@@ -349,9 +364,25 @@ impl FireflyClient {
         };
         let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
 
-        let balances = self
-            .fetch_card_balances(&account_ids, &balance_start_str, &end)
-            .await;
+        // Only use liability (credit card) accounts for balance-based interest derivation.
+        // Including asset accounts (checking) would contaminate the delta with unrelated
+        // outflows (savings transfers, bills, etc.), producing wildly wrong "interest".
+        let balance_account_ids: Vec<String> = account_ids
+            .iter()
+            .filter(|id| {
+                all_account_types
+                    .get(id.as_str())
+                    .map(|t| t == "liability")
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        let balances = if balance_account_ids.is_empty() {
+            // Fallback to all card_ids if no liability accounts identified
+            self.fetch_card_balances(&account_ids, &balance_start_str, &end).await
+        } else {
+            self.fetch_card_balances(&balance_account_ids, &balance_start_str, &end).await
+        };
 
         // Helper: compute previous month key (e.g. "2026-01" -> "2025-12")
         let prev_month = |m: &str| -> String {
@@ -606,7 +637,7 @@ impl FireflyClient {
         }
 
         let account_array: AccountArray = response.json().await.map_err(|e| e.to_string())?;
-        let simple_accounts = account_array
+        let simple_accounts: Vec<SimpleAccount> = account_array
             .data
             .into_iter()
             .map(|a| SimpleAccount {
@@ -615,6 +646,14 @@ impl FireflyClient {
                 balance: a.attributes.current_balance,
                 currency: a.attributes.currency_symbol,
                 account_type: a.attributes.account_type,
+            })
+            // Filter client-side to ensure correct results even when the API
+            // doesn't honor the type filter (e.g., mock servers, some Firefly III versions).
+            .filter(|a| {
+                type_filter
+                    .as_deref()
+                    .map(|t| a.account_type == t)
+                    .unwrap_or(true)
             })
             .collect();
 
