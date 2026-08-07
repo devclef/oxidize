@@ -145,24 +145,30 @@ impl FireflyClient {
     /// Analyze credit card paydown activity for the given liability accounts.
     /// Returns monthly breakdown of payments (debt-reducing), spending (debt-increasing),
     /// and interest (derived from balance delta), along with monthly ending balances and summary stats.
+    ///
+    /// When `debug` is true, bypasses caching and includes raw data in the response
+    /// (account types, classified transactions, balance points) for troubleshooting.
     pub async fn get_card_paydown(
         &self,
         account_ids: Vec<String>,
         start_date: Option<String>,
         end_date: Option<String>,
+        debug: bool,
     ) -> Result<serde_json::Value, String> {
         if account_ids.is_empty() {
             return Err("No card accounts specified".to_string());
         }
 
-        // Check cache
-        if let Some(cached) =
-            self.cache
-                .get_card_paydown(&account_ids, start_date.clone(), end_date.clone())
-        {
-            debug!("Cache hit for card paydown");
-            return serde_json::from_str(&cached)
-                .map_err(|e| format!("Failed to deserialize cached card paydown: {}", e));
+        // Check cache (skip when in debug mode)
+        if !debug {
+            if let Some(cached) =
+                self.cache
+                    .get_card_paydown(&account_ids, start_date.clone(), end_date.clone())
+            {
+                debug!("Cache hit for card paydown");
+                return serde_json::from_str(&cached)
+                    .map_err(|e| format!("Failed to deserialize cached card paydown: {}", e));
+            }
         }
 
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
@@ -189,6 +195,9 @@ impl FireflyClient {
             .into_iter()
             .map(|a| (a.id, a.account_type))
             .collect();
+
+        // Debug: collect raw classification details
+        let mut debug_classifications: Vec<serde_json::Value> = Vec::new();
 
         // Classify journals: payments and spending only.
         // Interest is derived from balance delta (see below).
@@ -224,6 +233,10 @@ impl FireflyClient {
                     .unwrap_or("0");
                 let amount = amount_str.parse::<f64>().unwrap_or(0.0);
                 let date_str = journal.get("date").and_then(|d| d.as_str()).unwrap_or("");
+                let description = journal
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
 
                 // Extract month key (YYYY-MM)
                 let month_key = if date_str.len() >= 7 {
@@ -256,33 +269,47 @@ impl FireflyClient {
                     continue;
                 }
 
-                match journal_type {
+                let dest_type = account_types.get(dest_id).map(|s| s.as_str());
+                let classification = match journal_type {
                     "withdrawal" => {
                         // Spending on the card (increases debt)
                         *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
+                        "spending(withdrawal)"
                     }
                     "transfer" => {
-                        // Transfer from card: check destination to classify
                         if card_ids.contains(dest_id) {
-                            // Transfer between card accounts — skip
+                            "skip(card-to-card)";
                             continue;
                         }
-                        // Check destination account type to distinguish spending from payments
-                        let dest_type = account_types.get(dest_id).map(|s| s.as_str());
                         match dest_type {
                             Some("expense") | Some("revenue") => {
-                                // Transfer to expense/revenue = spending (increases debt)
                                 *monthly_spending.entry(month_key.to_string()).or_insert(0.0) +=
                                     amount;
+                                &format!("spending(transfer->{:?})", dest_type)
                             }
                             _ => {
-                                // Transfer to asset/liability = payment (reduces debt)
                                 *monthly_payments.entry(month_key.to_string()).or_insert(0.0) +=
                                     amount;
+                                &format!("payment(transfer->{:?})", dest_type)
                             }
                         }
                     }
-                    _ => {}
+                    _ => "skip(unknown_type)",
+                };
+
+                if debug {
+                    debug_classifications.push(serde_json::json!({
+                        "tx_id": tx.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                        "date": date_str,
+                        "month": month_key,
+                        "type": journal_type,
+                        "amount": amount,
+                        "source_id": source_id,
+                        "dest_id": dest_id,
+                        "dest_type": dest_type.unwrap_or("unknown"),
+                        "description": description,
+                        "classified_as": classification,
+                    }));
                 }
             }
         }
@@ -422,7 +449,7 @@ impl FireflyClient {
             None
         };
 
-        let result = serde_json::json!({
+        let mut result = serde_json::json!({
             "monthly_activity": monthly_activity,
             "summary": {
                 "total_payments": total_payments,
@@ -438,10 +465,46 @@ impl FireflyClient {
             }
         });
 
-        // Cache the result
-        if let Ok(json) = serde_json::to_string(&result) {
-            self.cache
-                .set_card_paydown(&account_ids, Some(start), Some(end), json);
+        // Attach debug data when requested
+        if debug {
+            let debug_balances: Vec<serde_json::Value> = if let Ok(ref bal_map) = balances {
+                bal_map
+                    .iter()
+                    .map(|(k, v)| serde_json::json!({ "month": k, "balance": v }))
+                    .collect::<Vec<_>>()
+            } else {
+                vec![serde_json::json!({ "error": "balance fetch failed" })]
+            };
+
+            let debug_account_types: Vec<serde_json::Value> = account_types
+                .iter()
+                .map(|(id, t)| serde_json::json!({ "id": id, "type": t }))
+                .collect();
+
+            result["debug"] = serde_json::json!({
+                "params": {
+                    "start": &start,
+                    "end": &end,
+                    "card_ids": account_ids,
+                },
+                "accounts_fetched": debug_account_types,
+                "transactions_total": transactions.len(),
+                "classifications": debug_classifications,
+                "balances_raw": debug_balances,
+                "balance_fetch_url": format!(
+                    "{}/v1/chart/account/overview?start={}&end={}&period=1M{}",
+                    self.config.firefly_url.as_str(),
+                    balance_start_str,
+                    end,
+                    account_ids.iter().map(|id| format!("&accounts[]={}", id)).collect::<String>()
+                ),
+            });
+        } else {
+            // Cache only non-debug results
+            if let Ok(json) = serde_json::to_string(&result) {
+                self.cache
+                    .set_card_paydown(&account_ids, Some(start), Some(end), json);
+            }
         }
 
         Ok(result)

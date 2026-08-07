@@ -392,6 +392,7 @@ pub async fn get_budget_comparison(
 }
 
 /// GET endpoint for credit card paydown analysis
+/// Append ?debug=1 to dump raw transaction classifications, account types, and balance data.
 #[get("/api/card-paydown")]
 pub async fn get_card_paydown(
     client: web::Data<FireflyClient>,
@@ -404,11 +405,13 @@ pub async fn get_card_paydown(
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut account_ids: Vec<String> = Vec::new();
+    let mut debug = false;
 
     for (k, v) in params {
         match k.as_str() {
             "start" => start = Some(v),
             "end" => end = Some(v),
+            "debug" => debug = v == "1" || v == "true" || v == "yes",
             "accounts[]" | "accounts" => {
                 account_ids.push(v);
             }
@@ -420,7 +423,10 @@ pub async fn get_card_paydown(
         }
     }
 
-    match client.get_card_paydown(account_ids, start, end).await {
+    match client
+        .get_card_paydown(account_ids, start, end, debug)
+        .await
+    {
         Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }

@@ -171,6 +171,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-01-01".to_string()),
                 Some("2026-01-31".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -241,6 +242,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-02-01".to_string()),
                 Some("2026-02-28".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -317,6 +319,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-03-01".to_string()),
                 Some("2026-03-31".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -430,6 +433,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-03-01".to_string()),
                 Some("2026-03-31".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -558,6 +562,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-04-01".to_string()),
                 Some("2026-04-30".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -612,6 +617,7 @@ mod tests {
                 vec![],
                 Some("2026-01-01".to_string()),
                 Some("2026-01-31".to_string()),
+                false,
             )
             .await;
 
@@ -655,6 +661,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-01-01".to_string()),
                 Some("2026-03-31".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -762,6 +769,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-01-01".to_string()),
                 Some("2026-02-28".to_string()),
+                false,
             )
             .await
             .unwrap();
@@ -808,6 +816,7 @@ mod tests {
                 vec!["99".to_string()],
                 Some("2026-01-01".to_string()),
                 Some("2026-03-31".to_string()),
+                false,
             )
             .await
             .unwrap();
