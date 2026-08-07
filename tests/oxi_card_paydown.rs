@@ -48,7 +48,72 @@ mod tests {
             .await;
     }
 
-    /// Test: A transfer from card to checking should be classified as a payment (debt-reducing).
+    /// Mock the /v1/accounts endpoint to provide account type info for transaction classification.
+    async fn mock_accounts(server: &mut mockito::Server, accounts: serde_json::Value) {
+        server
+            .mock("GET", "/v1/accounts")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(accounts.to_string())
+            .create_async()
+            .await;
+    }
+
+    /// Standard account mock data used across tests.
+    /// Card(99)=liability, Checking(1)=asset, Restaurant(88)=expense, Grocery(77)=expense.
+    fn default_accounts_mock() -> serde_json::Value {
+        json!({
+            "data": [
+                {
+                    "id": "99",
+                    "attributes": {
+                        "name": "Credit Card",
+                        "type": "liability",
+                        "current_balance": "5000.00",
+                        "currency_symbol": "$"
+                    }
+                },
+                {
+                    "id": "1",
+                    "attributes": {
+                        "name": "Checking",
+                        "type": "asset",
+                        "current_balance": "10000.00",
+                        "currency_symbol": "$"
+                    }
+                },
+                {
+                    "id": "88",
+                    "attributes": {
+                        "name": "Restaurant",
+                        "type": "expense",
+                        "current_balance": "0",
+                        "currency_symbol": "$"
+                    }
+                },
+                {
+                    "id": "77",
+                    "attributes": {
+                        "name": "Grocery Store",
+                        "type": "expense",
+                        "current_balance": "0",
+                        "currency_symbol": "$"
+                    }
+                },
+                {
+                    "id": "55",
+                    "attributes": {
+                        "name": "Credit Card Spending",
+                        "type": "revenue",
+                        "current_balance": "0",
+                        "currency_symbol": "$"
+                    }
+                }
+            ]
+        })
+    }
+
+    /// Test: A transfer from card to checking (asset) should be classified as a payment (debt-reducing).
     #[tokio::test]
     async fn test_card_paydown_transfer_to_asset_is_payment() {
         let mut server = mockito::Server::new_async().await;
@@ -95,6 +160,7 @@ mod tests {
         )
         .await;
 
+        mock_accounts(&mut server, default_accounts_mock()).await;
         mock_balance_history(&mut server, json!([])).await;
 
         let config = make_test_config(url);
@@ -129,6 +195,7 @@ mod tests {
     }
 
     /// Test: A withdrawal from the card should be classified as spending (debt-increasing).
+    /// Firefly III returns a single journal for withdrawals.
     #[tokio::test]
     async fn test_card_paydown_withdrawal_is_spending() {
         let mut server = mockito::Server::new_async().await;
@@ -154,18 +221,6 @@ mod tests {
                                     "date": "2026-02-10",
                                     "currency_code": "USD",
                                     "currency_symbol": "$"
-                                },
-                                {
-                                    "type": "withdrawal",
-                                    "amount": "150.00",
-                                    "source_id": "99",
-                                    "source_name": "Credit Card",
-                                    "destination_id": "88",
-                                    "destination_name": "Restaurant",
-                                    "category_name": "Dining",
-                                    "date": "2026-02-10",
-                                    "currency_code": "USD",
-                                    "currency_symbol": "$"
                                 }
                             ]
                         }
@@ -175,6 +230,7 @@ mod tests {
         )
         .await;
 
+        mock_accounts(&mut server, default_accounts_mock()).await;
         mock_balance_history(&mut server, json!([])).await;
 
         let config = make_test_config(url);
@@ -192,15 +248,90 @@ mod tests {
         let activity = result["monthly_activity"].as_array().unwrap();
         let feb_entry = activity.iter().find(|m| m["month"] == "2026-02").unwrap();
 
-        // Both journals are classified as spending (Firefly returns 2 for withdrawals)
         assert!(
-            (feb_entry["spending"].as_f64().unwrap() - 300.0).abs() < 0.01,
-            "Expected $300 spending (2 journals x $150), got ${}",
+            (feb_entry["spending"].as_f64().unwrap() - 150.0).abs() < 0.01,
+            "Expected $150 spending, got ${}",
             feb_entry["spending"].as_f64().unwrap()
         );
         assert!(
             feb_entry["payments"].as_f64().unwrap() == 0.0,
             "Expected $0 payments"
+        );
+    }
+
+    /// Test: A transfer from card to an expense account should be classified as spending
+    /// (debt-increasing), NOT as a payment. This is the default Firefly III behavior for
+    /// credit card purchases (when default destination is "use a revenue account").
+    #[tokio::test]
+    async fn test_card_paydown_transfer_to_revenue_is_spending() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        mock_transactions(
+            &mut server,
+            json!({
+                "data": [
+                    {
+                        "type": "transactions",
+                        "id": "1",
+                        "attributes": {
+                            "transactions": [
+                                {
+                                    "type": "transfer",
+                                    "amount": "200.00",
+                                    "source_id": "99",
+                                    "source_name": "Credit Card",
+                                    "destination_id": "55",
+                                    "destination_name": "Credit Card Spending",
+                                    "date": "2026-03-15",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$"
+                                },
+                                {
+                                    "type": "transfer",
+                                    "amount": "200.00",
+                                    "source_id": "55",
+                                    "source_name": "Credit Card Spending",
+                                    "destination_id": "99",
+                                    "destination_name": "Credit Card",
+                                    "date": "2026-03-15",
+                                    "currency_code": "USD",
+                                    "currency_symbol": "$"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }),
+        )
+        .await;
+
+        mock_accounts(&mut server, default_accounts_mock()).await;
+        mock_balance_history(&mut server, json!([])).await;
+
+        let config = make_test_config(url);
+        let client = FireflyClient::new(config);
+
+        let result = client
+            .get_card_paydown(
+                vec!["99".to_string()],
+                Some("2026-03-01".to_string()),
+                Some("2026-03-31".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let activity = result["monthly_activity"].as_array().unwrap();
+        let mar_entry = activity.iter().find(|m| m["month"] == "2026-03").unwrap();
+
+        assert!(
+            (mar_entry["spending"].as_f64().unwrap() - 200.0).abs() < 0.01,
+            "Expected $200 spending (transfer to revenue), got ${}",
+            mar_entry["spending"].as_f64().unwrap()
+        );
+        assert!(
+            mar_entry["payments"].as_f64().unwrap() == 0.0,
+            "Expected $0 payments (transfer to revenue is spending, not payment)"
         );
     }
 
@@ -212,7 +343,7 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
-        // Spending of $300 and payment of $1000 in March
+        // Spending of $300 (single withdrawal journal) and payment of $1000 in March
         mock_transactions(
             &mut server,
             json!({
@@ -271,7 +402,7 @@ mod tests {
         )
         .await;
 
-        // Balance data: Feb end = 5000, Mar end = 4350
+        // Balance data in Firefly III array format with key/value
         // Interest = 4350 - 5000 - 300 + 1000 = 50
         mock_balance_history(
             &mut server,
@@ -281,13 +412,15 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"date": "2026-02-28", "ba": 5000.00},
-                        {"date": "2026-03-31", "ba": 4350.00}
+                        {"key": "2026-02-28", "value": "5000.00"},
+                        {"key": "2026-03-31", "value": "4350.00"}
                     ]
                 }
             ]),
         )
         .await;
+
+        mock_accounts(&mut server, default_accounts_mock()).await;
 
         let config = make_test_config(url);
         let client = FireflyClient::new(config);
@@ -330,90 +463,9 @@ mod tests {
         );
     }
 
-    /// Test: A transfer to an account named "Interest Expense" is classified as a payment,
-    /// not as interest. Interest is now derived from balance delta, not transaction names.
-    #[tokio::test]
-    async fn test_card_paydown_transfer_named_interest_is_payment() {
-        let mut server = mockito::Server::new_async().await;
-        let url = server.url();
-
-        mock_transactions(
-            &mut server,
-            json!({
-                "data": [
-                    {
-                        "type": "transactions",
-                        "id": "1",
-                        "attributes": {
-                            "transactions": [
-                                {
-                                    "type": "transfer",
-                                    "amount": "25.50",
-                                    "source_id": "99",
-                                    "source_name": "Credit Card",
-                                    "destination_id": "77",
-                                    "destination_name": "Interest Expense",
-                                    "category_name": "Credit Card Interest",
-                                    "date": "2026-03-01",
-                                    "currency_code": "USD",
-                                    "currency_symbol": "$"
-                                },
-                                {
-                                    "type": "transfer",
-                                    "amount": "25.50",
-                                    "source_id": "77",
-                                    "source_name": "Interest Expense",
-                                    "destination_id": "99",
-                                    "destination_name": "Credit Card",
-                                    "category_name": "Credit Card Interest",
-                                    "date": "2026-03-01",
-                                    "currency_code": "USD",
-                                    "currency_symbol": "$"
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }),
-        )
-        .await;
-
-        // No balance data — interest should be 0, transfer classified as payment
-        mock_balance_history(&mut server, json!([])).await;
-
-        let config = make_test_config(url);
-        let client = FireflyClient::new(config);
-
-        let result = client
-            .get_card_paydown(
-                vec!["99".to_string()],
-                Some("2026-03-01".to_string()),
-                Some("2026-03-31".to_string()),
-            )
-            .await
-            .unwrap();
-
-        let activity = result["monthly_activity"].as_array().unwrap();
-        let mar_entry = activity.iter().find(|m| m["month"] == "2026-03").unwrap();
-
-        // Without balance data, transfer is classified as payment, interest is 0
-        assert!(
-            (mar_entry["payments"].as_f64().unwrap() - 25.50).abs() < 0.01,
-            "Expected $25.50 payments (transfer to 'Interest Expense' is now a payment), got ${}",
-            mar_entry["payments"].as_f64().unwrap()
-        );
-        assert!(
-            mar_entry["spending"].as_f64().unwrap() == 0.0,
-            "Expected $0 spending"
-        );
-        assert!(
-            mar_entry["interest"].as_f64().unwrap() == 0.0,
-            "Expected $0 interest (no balance data to derive from)"
-        );
-    }
-
     /// Test: Mixed activity in a single month with correct net paydown calculation.
     /// Includes balance data to verify interest is derived from balance delta.
+    /// Uses Firefly III key/value format for balance entries.
     #[tokio::test]
     async fn test_card_paydown_mixed_activity() {
         let mut server = mockito::Server::new_async().await;
@@ -468,17 +520,6 @@ mod tests {
                                     "date": "2026-04-20",
                                     "currency_code": "USD",
                                     "currency_symbol": "$"
-                                },
-                                {
-                                    "type": "withdrawal",
-                                    "amount": "200.00",
-                                    "source_id": "99",
-                                    "source_name": "Credit Card",
-                                    "destination_id": "88",
-                                    "destination_name": "Grocery Store",
-                                    "date": "2026-04-20",
-                                    "currency_code": "USD",
-                                    "currency_symbol": "$"
                                 }
                             ]
                         }
@@ -488,8 +529,8 @@ mod tests {
         )
         .await;
 
-        // Balance: Mar end = 8000, Apr end = 7425
-        // interest = 7425 - 8000 - 400 + 1000 = 25
+        // Balance in Firefly III object format: {"date": value}
+        // interest = 7425 - 8000 - 200 + 1000 = 225
         // net_paydown = 8000 - 7425 = 575
         mock_balance_history(
             &mut server,
@@ -499,13 +540,15 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"date": "2026-03-31", "ba": 8000.00},
-                        {"date": "2026-04-30", "ba": 7425.00}
+                        {"key": "2026-03-31", "value": "8000.00"},
+                        {"key": "2026-04-30", "value": "7425.00"}
                     ]
                 }
             ]),
         )
         .await;
+
+        mock_accounts(&mut server, default_accounts_mock()).await;
 
         let config = make_test_config(url);
         let client = FireflyClient::new(config);
@@ -527,12 +570,13 @@ mod tests {
             "Expected $1000 payments"
         );
         assert!(
-            (apr_entry["spending"].as_f64().unwrap() - 400.0).abs() < 0.01,
-            "Expected $400 spending (2 journals x $200)"
+            (apr_entry["spending"].as_f64().unwrap() - 200.0).abs() < 0.01,
+            "Expected $200 spending, got ${}",
+            apr_entry["spending"].as_f64().unwrap()
         );
         assert!(
-            (apr_entry["interest"].as_f64().unwrap() - 25.0).abs() < 0.01,
-            "Expected $25 interest (derived from balance delta), got ${}",
+            (apr_entry["interest"].as_f64().unwrap() - 225.0).abs() < 0.01,
+            "Expected $225 interest (derived from balance delta), got ${}",
             apr_entry["interest"].as_f64().unwrap()
         );
         assert!(
@@ -544,10 +588,10 @@ mod tests {
         // Check summary
         let summary = &result["summary"];
         assert!((summary["total_payments"].as_f64().unwrap() - 1000.0).abs() < 0.01,);
-        assert!((summary["total_spending"].as_f64().unwrap() - 400.0).abs() < 0.01,);
+        assert!((summary["total_spending"].as_f64().unwrap() - 200.0).abs() < 0.01,);
         assert!(
-            (summary["total_interest"].as_f64().unwrap() - 25.0).abs() < 0.01,
-            "Expected $25 total interest"
+            (summary["total_interest"].as_f64().unwrap() - 225.0).abs() < 0.01,
+            "Expected $225 total interest"
         );
         assert!(
             (summary["total_net_paydown"].as_f64().unwrap() - 575.0).abs() < 0.01,
@@ -576,14 +620,16 @@ mod tests {
     }
 
     /// Test: Balance data is correctly included from the balance history API.
+    /// Uses Firefly III object format for entries: {"date": value}
     #[tokio::test]
     async fn test_card_paydown_includes_balance() {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
         mock_transactions(&mut server, json!({"data": []})).await;
+        mock_accounts(&mut server, default_accounts_mock()).await;
 
-        // Mock balance history with card balance data
+        // Mock balance history with card balance data in Firefly III key/value format
         mock_balance_history(
             &mut server,
             json!([
@@ -592,9 +638,9 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"date": "2026-01-31", "ba": 5000.00},
-                        {"date": "2026-02-28", "ba": 4500.00},
-                        {"date": "2026-03-31", "ba": 3800.00}
+                        {"key": "2026-01-31", "value": "5000.00"},
+                        {"key": "2026-02-28", "value": "4500.00"},
+                        {"key": "2026-03-31", "value": "3800.00"}
                     ]
                 }
             ]),
@@ -690,6 +736,8 @@ mod tests {
         )
         .await;
 
+        mock_accounts(&mut server, default_accounts_mock()).await;
+
         mock_balance_history(
             &mut server,
             json!([
@@ -698,8 +746,8 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"date": "2026-01-31", "ba": 4500.00},
-                        {"date": "2026-02-28", "ba": 4500.00}
+                        {"key": "2026-01-31", "value": "4500.00"},
+                        {"key": "2026-02-28", "value": "4500.00"}
                     ]
                 }
             ]),
@@ -723,5 +771,62 @@ mod tests {
             .as_i64()
             .unwrap();
         assert_eq!(projected, 9, "Expected 9 months to payoff");
+    }
+
+    /// Test: Balance parsing works with Firefly III object format entries.
+    #[tokio::test]
+    async fn test_card_paydown_balance_object_format() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        mock_transactions(&mut server, json!({"data": []})).await;
+        mock_accounts(&mut server, default_accounts_mock()).await;
+
+        // Balance data in object format: {"date": value}
+        mock_balance_history(
+            &mut server,
+            json!([
+                {
+                    "label": "Credit Card",
+                    "currency_symbol": "$",
+                    "currency_code": "USD",
+                    "entries": {
+                        "2026-01-31T00:00:00+00:00": "5000",
+                        "2026-02-28T00:00:00+00:00": "4500",
+                        "2026-03-31T00:00:00+00:00": "3800"
+                    }
+                }
+            ]),
+        )
+        .await;
+
+        let config = make_test_config(url);
+        let client = FireflyClient::new(config);
+
+        let result = client
+            .get_card_paydown(
+                vec!["99".to_string()],
+                Some("2026-01-01".to_string()),
+                Some("2026-03-31".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let activity = result["monthly_activity"].as_array().unwrap();
+        let jan_balance = activity.iter().find(|m| m["month"] == "2026-01").unwrap()["balance"]
+            .as_f64()
+            .unwrap();
+        let feb_balance = activity.iter().find(|m| m["month"] == "2026-02").unwrap()["balance"]
+            .as_f64()
+            .unwrap();
+
+        assert!(
+            (jan_balance - 5000.0).abs() < 0.01,
+            "Jan balance should be $5000 from object format"
+        );
+        assert!(
+            (feb_balance - 4500.0).abs() < 0.01,
+            "Feb balance should be $4500 from object format"
+        );
     }
 }

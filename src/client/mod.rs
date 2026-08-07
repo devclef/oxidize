@@ -179,6 +179,17 @@ impl FireflyClient {
 
         let card_ids: std::collections::HashSet<String> = account_ids.iter().cloned().collect();
 
+        // Fetch account types to properly classify transfers.
+        // Transfers from card to expense/revenue = spending (debt-increasing).
+        // Transfers from card to asset/liability = payment (debt-reducing).
+        let account_types: std::collections::HashMap<String, String> = self
+            .get_accounts(None)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| (a.id, a.account_type))
+            .collect();
+
         // Classify journals: payments and spending only.
         // Interest is derived from balance delta (see below).
         let mut monthly_payments: std::collections::HashMap<String, f64> =
@@ -234,8 +245,10 @@ impl FireflyClient {
                 }
 
                 // Classification for liability (credit card) accounts:
-                // - "transfer" from card to non-card = payment (debt-reducing)
                 // - "withdrawal" from card = spending (debt-increasing)
+                // - "transfer" from card to expense/revenue = spending (debt-increasing)
+                // - "transfer" from card to asset/liability = payment (debt-reducing)
+                // - "transfer" from card to another card = skip
                 // Interest is NOT classified from transactions; it's derived from balance delta.
                 if !card_ids.contains(source_id) {
                     // Journal where card is NOT the source — skip for classification
@@ -249,13 +262,25 @@ impl FireflyClient {
                         *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
                     }
                     "transfer" => {
-                        // Transfer from card: check if dest is another card or not
+                        // Transfer from card: check destination to classify
                         if card_ids.contains(dest_id) {
                             // Transfer between card accounts — skip
                             continue;
                         }
-                        // All transfers from card to non-card are payments (debt-reducing)
-                        *monthly_payments.entry(month_key.to_string()).or_insert(0.0) += amount;
+                        // Check destination account type to distinguish spending from payments
+                        let dest_type = account_types.get(dest_id).map(|s| s.as_str());
+                        match dest_type {
+                            Some("expense") | Some("revenue") => {
+                                // Transfer to expense/revenue = spending (increases debt)
+                                *monthly_spending.entry(month_key.to_string()).or_insert(0.0) +=
+                                    amount;
+                            }
+                            _ => {
+                                // Transfer to asset/liability = payment (reduces debt)
+                                *monthly_payments.entry(month_key.to_string()).or_insert(0.0) +=
+                                    amount;
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -466,21 +491,15 @@ impl FireflyClient {
             std::collections::HashMap::new();
 
         for dataset in &chart_line {
-            if let Some(entries) = dataset.entries.as_array() {
-                for entry in entries {
-                    if let (Some(date), Some(ba)) = (
-                        entry.get("date").and_then(|d| d.as_str()),
-                        entry.get("ba").and_then(|b| b.as_f64()),
-                    ) {
-                        // Extract YYYY-MM from date string
-                        let month_key = if date.len() >= 7 {
-                            &date[..7]
-                        } else {
-                            continue;
-                        };
-                        *monthly_balances.entry(month_key.to_string()).or_insert(0.0) += ba;
-                    }
-                }
+            for (date, value) in parse_chart_entries(&dataset.entries) {
+                // Extract YYYY-MM from date string (handles "2026-01-31", "2026-01-31T00:00:00+00:00", etc.)
+                let date_part = date.split('T').next().unwrap_or(&date);
+                let month_key = if date_part.len() >= 7 {
+                    &date_part[..7]
+                } else {
+                    continue;
+                };
+                *monthly_balances.entry(month_key.to_string()).or_insert(0.0) += value;
             }
         }
 
@@ -729,8 +748,7 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         // Seed all period keys with 0.0
-        let period_keys = Self::generate_period_keys(&start, &end, &period_val)
-            .unwrap_or_default();
+        let period_keys = Self::generate_period_keys(&start, &end, &period_val).unwrap_or_default();
         let last_period_key = period_keys.last().cloned();
         for key in &period_keys {
             earned_entries.insert(key.clone(), 0.0);
@@ -1068,32 +1086,20 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         for dataset in &asset_data {
-            if let Some(entries) = dataset.entries.as_array() {
-                for entry in entries {
-                    if let (Some(date), Some(amount)) = (
-                        entry.get("date").and_then(|d| d.as_str()),
-                        entry.get("ba").and_then(|b| b.as_f64()),
-                    ) {
-                        *net_worth_entries.entry(date.to_string()).or_insert(0.0) += amount;
-                        if currency_symbol.is_none() {
-                            currency_symbol = dataset.currency_symbol.clone();
-                            currency_code = dataset.currency_code.clone();
-                        }
-                    }
+            for (date, amount) in parse_chart_entries(&dataset.entries) {
+                let date_part = date.split('T').next().unwrap_or(&date).to_string();
+                *net_worth_entries.entry(date_part).or_insert(0.0) += amount;
+                if currency_symbol.is_none() {
+                    currency_symbol = dataset.currency_symbol.clone();
+                    currency_code = dataset.currency_code.clone();
                 }
             }
         }
 
         for dataset in &liability_data {
-            if let Some(entries) = dataset.entries.as_array() {
-                for entry in entries {
-                    if let (Some(date), Some(amount)) = (
-                        entry.get("date").and_then(|d| d.as_str()),
-                        entry.get("ba").and_then(|b| b.as_f64()),
-                    ) {
-                        *net_worth_entries.entry(date.to_string()).or_insert(0.0) -= amount;
-                    }
-                }
+            for (date, amount) in parse_chart_entries(&dataset.entries) {
+                let date_part = date.split('T').next().unwrap_or(&date).to_string();
+                *net_worth_entries.entry(date_part).or_insert(0.0) -= amount;
             }
         }
 
@@ -2012,7 +2018,11 @@ impl FireflyClient {
                         continue;
                     }
                     // For the last (possibly partial) month, clamp key to end date.
-                    let key_date = if last_of_month > end { end } else { last_of_month };
+                    let key_date = if last_of_month > end {
+                        end
+                    } else {
+                        last_of_month
+                    };
                     key_date.format("%Y-%m-%dT00:00:00+00:00").to_string()
                 }
                 "1Q" => {
@@ -2852,6 +2862,50 @@ impl FireflyClient {
         });
         links
     }
+}
+
+/// Parse chart entries into (date, value) pairs.
+/// Handles both Firefly III entry formats:
+/// - Object: {"2026-01-01T00:00:00+00:00": "5000", ...}
+/// - Array: [{key: "2026-01-01", value: "5000"}, ...]
+/// Also handles internal {date, ba} format from cached/derived data.
+fn parse_chart_entries(entries: &serde_json::Value) -> Vec<(String, f64)> {
+    let mut result = Vec::new();
+
+    // Array format: [{key/date, value/ba}, ...]
+    if let Some(entries_arr) = entries.as_array() {
+        for item in entries_arr {
+            let key = item
+                .get("key")
+                .or_else(|| item.get("date"))
+                .and_then(|k| k.as_str());
+            let value = item
+                .get("value")
+                .or_else(|| item.get("ba"))
+                .and_then(|v| v.as_f64())
+                .or_else(|| {
+                    item.get("value")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<f64>().ok())
+                });
+            if let (Some(k), Some(v)) = (key, value) {
+                result.push((k.to_string(), v));
+            }
+        }
+    }
+    // Object format: {"2026-01-01T...": "5000", ...}
+    else if let Some(entries_obj) = entries.as_object() {
+        for (key, value) in entries_obj {
+            let v = value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()));
+            if let Some(v) = v {
+                result.push((key.clone(), v));
+            }
+        }
+    }
+
+    result
 }
 
 /// Aggregate monthly chart data into quarterly buckets.
