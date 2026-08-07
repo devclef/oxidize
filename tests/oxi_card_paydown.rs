@@ -98,7 +98,7 @@ mod tests {
                     "attributes": {
                         "name": "Credit Card",
                         "type": "liability",
-                        "current_balance": "5000.00",
+                        "current_balance": "-5000.00",
                         "currency_symbol": "$"
                     }
                 },
@@ -368,7 +368,7 @@ mod tests {
     }
 
     /// Test: Interest is detected from "Interest:" transaction descriptions.
-    /// Given: start_balance=5000, spending=300, payments=1000, interest=50, end_balance=4350
+    /// Given: start_balance=-5000, spending=300, payments=1000, interest=50, end_balance=-4350
     /// Expected net_paydown = 1000 - 300 - 50 = 650
     #[tokio::test]
     async fn test_card_paydown_interest_from_balance_delta() {
@@ -464,8 +464,8 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"key": "2026-02-28", "value": "5000.00"},
-                        {"key": "2026-03-31", "value": "4350.00"}
+                        {"key": "2026-02-28", "value": "-5000.00"},
+                        {"key": "2026-03-31", "value": "-4350.00"}
                     ]
                 }
             ]),
@@ -511,8 +511,8 @@ mod tests {
             mar_entry["net_paydown"].as_f64().unwrap()
         );
         assert!(
-            (mar_entry["balance"].as_f64().unwrap() - 4350.0).abs() < 0.01,
-            "Expected $4350 balance"
+            (mar_entry["balance"].as_f64().unwrap() - (-4350.0)).abs() < 0.01,
+            "Expected $-4350 balance (debt reduced from -5000)"
         );
     }
 
@@ -612,8 +612,8 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"key": "2026-03-31", "value": "8000.00"},
-                        {"key": "2026-04-30", "value": "7425.00"}
+                        {"key": "2026-03-31", "value": "-8000.00"},
+                        {"key": "2026-04-30", "value": "-7425.00"}
                     ]
                 }
             ]),
@@ -704,6 +704,7 @@ mod tests {
         mock_accounts(&mut server, default_accounts_mock()).await;
 
         // Mock balance history with card balance data in Firefly III key/value format
+        // Credit cards have NEGATIVE balances (owe money)
         mock_balance_history(
             &mut server,
             json!([
@@ -712,9 +713,9 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"key": "2026-01-31", "value": "5000.00"},
-                        {"key": "2026-02-28", "value": "4500.00"},
-                        {"key": "2026-03-31", "value": "3800.00"}
+                        {"key": "2026-01-31", "value": "-5000.00"},
+                        {"key": "2026-02-28", "value": "-4500.00"},
+                        {"key": "2026-03-31", "value": "-3800.00"}
                     ]
                 }
             ]),
@@ -746,22 +747,22 @@ mod tests {
             .unwrap();
 
         assert!(
-            (jan_balance - 5000.0).abs() < 0.01,
-            "Jan balance should be $5000"
+            (jan_balance - (-5000.0)).abs() < 0.01,
+            "Jan balance should be $-5000 (credit card debt)"
         );
         assert!(
-            (feb_balance - 4500.0).abs() < 0.01,
-            "Feb balance should be $4500"
+            (feb_balance - (-4500.0)).abs() < 0.01,
+            "Feb balance should be $-4500"
         );
         assert!(
-            (mar_balance - 3800.0).abs() < 0.01,
-            "Mar balance should be $3800"
+            (mar_balance - (-3800.0)).abs() < 0.01,
+            "Mar balance should be $-3800"
         );
 
         // Check summary current balance
         assert!(
-            (result["summary"]["current_balance"].as_f64().unwrap() - 3800.0).abs() < 0.01,
-            "Current balance should be $3800"
+            (result["summary"]["current_balance"].as_f64().unwrap() - (-3800.0)).abs() < 0.01,
+            "Current balance should be $-3800 (credit card debt)"
         );
     }
 
@@ -821,8 +822,8 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": [
-                        {"key": "2026-01-31", "value": "4500.00"},
-                        {"key": "2026-02-28", "value": "4500.00"}
+                        {"key": "2026-01-31", "value": "-4500.00"},
+                        {"key": "2026-02-28", "value": "-4500.00"}
                     ]
                 }
             ]),
@@ -842,7 +843,7 @@ mod tests {
             .await
             .unwrap();
 
-        // With $500/month avg paydown and $4500 balance, projected payoff = 9 months
+        // With $500/month avg paydown and $-4500 balance (card debt), projected payoff = 9 months
         let projected = result["summary"]["projected_payoff_months"]
             .as_i64()
             .unwrap();
@@ -859,6 +860,7 @@ mod tests {
         mock_accounts(&mut server, default_accounts_mock()).await;
 
         // Balance data in object format: {"date": value}
+        // Credit cards have NEGATIVE balances (owe money)
         mock_balance_history(
             &mut server,
             json!([
@@ -867,9 +869,9 @@ mod tests {
                     "currency_symbol": "$",
                     "currency_code": "USD",
                     "entries": {
-                        "2026-01-31T00:00:00+00:00": "5000",
-                        "2026-02-28T00:00:00+00:00": "4500",
-                        "2026-03-31T00:00:00+00:00": "3800"
+                        "2026-01-31T00:00:00+00:00": "-5000",
+                        "2026-02-28T00:00:00+00:00": "-4500",
+                        "2026-03-31T00:00:00+00:00": "-3800"
                     }
                 }
             ]),
@@ -898,12 +900,12 @@ mod tests {
             .unwrap();
 
         assert!(
-            (jan_balance - 5000.0).abs() < 0.01,
-            "Jan balance should be $5000 from object format"
+            (jan_balance - (-5000.0)).abs() < 0.01,
+            "Jan balance should be $-5000 from object format"
         );
         assert!(
-            (feb_balance - 4500.0).abs() < 0.01,
-            "Feb balance should be $4500 from object format"
+            (feb_balance - (-4500.0)).abs() < 0.01,
+            "Feb balance should be $-4500 from object format"
         );
     }
 }

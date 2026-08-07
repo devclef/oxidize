@@ -365,9 +365,10 @@ impl FireflyClient {
         };
         let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
 
-        // Fetch per-account balance charts to avoid contaminating the combined
-        // balance with unrelated account changes (e.g., checking account outflows).
-        // Each account's chart is fetched individually for correct delta calculation.
+        // Fetch per-account balance charts.
+        // Credit cards in Firefly III are asset accounts with NEGATIVE balances.
+        // We need per-account data to identify which accounts are the actual cards
+        // (negative = debt) vs funding accounts like checking (positive = funds).
         let per_account_balances: std::collections::HashMap<String, std::collections::HashMap<String, f64>> = {
             let mut map = std::collections::HashMap::new();
             for id in &account_ids {
@@ -384,12 +385,29 @@ impl FireflyClient {
             map
         };
 
-        // Build combined balance map from per-account balances for the balance field.
-        let combined_balances: std::collections::HashMap<String, f64> = {
+        // Identify card accounts: those with negative latest balance (debt).
+        // Funding accounts (checking, savings) have positive balances.
+        let card_account_ids: std::collections::HashSet<String> = per_account_balances
+            .iter()
+            .filter_map(|(id, bal_map)| {
+                // Check the latest balance point for this account
+                bal_map.iter()
+                    .max_by_key(|(month, _)| month.as_str())
+                    .and_then(|(_, bal)| {
+                        if *bal < 0.0 { Some(id.clone()) } else { None }
+                    })
+            })
+            .collect();
+
+        // Build card-only balance map (sum of accounts with negative balance = debt).
+        // This excludes checking/savings accounts that would contaminate the delta.
+        let card_balances: std::collections::HashMap<String, f64> = {
             let mut combined = std::collections::HashMap::new();
-            for (_, acc_balances) in &per_account_balances {
-                for (month, bal) in acc_balances {
-                    *combined.entry(month.clone()).or_insert(0.0) += bal;
+            for (id, bal_map) in &per_account_balances {
+                if card_account_ids.contains(id) {
+                    for (month, bal) in bal_map {
+                        *combined.entry(month.clone()).or_insert(0.0) += bal;
+                    }
                 }
             }
             combined
@@ -398,7 +416,7 @@ impl FireflyClient {
         // Build monthly activity from transaction data.
         // Interest is detected directly from "Interest:" transaction descriptions.
         // Net paydown = payments - spending - interest (from transaction classification).
-        // Balance comes from the combined per-account chart data.
+        // Balance comes from card-only chart data (negative = debt owed).
         let mut monthly_activity: Vec<serde_json::Value> = Vec::new();
         let mut total_payments = 0.0;
         let mut total_spending = 0.0;
@@ -411,8 +429,8 @@ impl FireflyClient {
             let spending = *monthly_spending.entry(month.clone()).or_insert(0.0);
             let interest = *monthly_interest.entry(month.clone()).or_insert(0.0);
 
-            // Get combined ending balance from per-account chart data
-            let balance = combined_balances.get(month).copied().unwrap_or(0.0);
+            // Get card ending balance from per-account chart data (negative = debt)
+            let balance = card_balances.get(month).copied().unwrap_or(0.0);
 
             // Net paydown from transaction data (not balance delta):
             // payments reduce debt, spending and interest increase debt.
@@ -457,13 +475,14 @@ impl FireflyClient {
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(m, n)| serde_json::json!({ "month": m, "net_paydown": n }));
 
-        // Project payoff: months until balance is 0 at current avg rate
+        // Project payoff: months until balance reaches 0 at current avg paydown rate.
+        // Card balances are negative (debt owed), so we check last_balance < 0.
         let last_balance = monthly_activity
             .last()
             .and_then(|m| m.get("balance").and_then(|b| b.as_f64()))
             .unwrap_or(0.0);
-        let projected_months = if avg_monthly > 0.0 && last_balance > 0.0 {
-            Some((last_balance / avg_monthly).ceil() as i32)
+        let projected_months = if avg_monthly > 0.0 && last_balance < 0.0 {
+            Some((last_balance.abs() / avg_monthly).ceil() as i32)
         } else {
             None
         };
@@ -494,10 +513,11 @@ impl FireflyClient {
                     })
                 })
                 .collect();
-            let debug_combined: Vec<serde_json::Value> = combined_balances
+            let debug_card_balances: Vec<serde_json::Value> = card_balances
                 .iter()
                 .map(|(k, v)| serde_json::json!({ "month": k, "balance": v }))
                 .collect::<Vec<_>>();
+            let debug_card_ids: Vec<String> = card_account_ids.iter().map(|s| s.to_string()).collect();
 
             let debug_account_types: Vec<serde_json::Value> = account_types
                 .iter()
@@ -511,10 +531,11 @@ impl FireflyClient {
                     "card_ids": account_ids,
                 },
                 "accounts_fetched": debug_account_types,
+                "detected_card_accounts": debug_card_ids,
                 "transactions_total": transactions.len(),
                 "classifications": debug_classifications,
                 "balances_per_account": debug_balances,
-                "balances_combined": debug_combined,
+                "balances_card_only": debug_card_balances,
                 "balance_fetch_url": format!(
                     "{}/v1/chart/account/overview?start={}&end={}&period=1M{}",
                     self.config.firefly_url.as_str(),
