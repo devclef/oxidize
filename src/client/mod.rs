@@ -142,9 +142,12 @@ impl FireflyClient {
         info!("Budget limit cache cleared");
     }
 
-    /// Analyze credit card paydown activity for the given liability accounts.
-    /// Returns monthly breakdown of payments (debt-reducing), spending (debt-increasing),
-    /// and interest (derived from balance delta), along with monthly ending balances and summary stats.
+    /// Analyze credit card paydown activity for the given card accounts.
+    /// Returns monthly breakdown of payments (transfers from other asset accounts
+    /// into the card, i.e. debt-reducing) and spending (flows from the card to
+    /// expense/revenue accounts, i.e. debt-increasing), along with monthly ending
+    /// balances and summary stats. Interest is not tracked: it cannot be reliably
+    /// derived from the transaction data, and interest transactions surface as spending.
     ///
     /// When `debug` is true, bypasses caching and includes raw data in the response
     /// (account types, classified transactions, balance points) for troubleshooting.
@@ -177,42 +180,151 @@ impl FireflyClient {
                 .format("%Y-%m-%d")
                 .to_string()
         });
+        let start_naive =
+            chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d").map_err(|e| e.to_string())?;
+        let end_naive =
+            chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").map_err(|e| e.to_string())?;
 
-        // Fetch all transactions involving the card accounts
+        // Fetch all transactions involving the selected accounts
         let transactions = self
             .fetch_all_transactions(&start, &end, Some(&account_ids), None)
             .await?;
 
-        let card_ids: std::collections::HashSet<String> = account_ids.iter().cloned().collect();
-
-        // Fetch account types to properly classify transfers.
-        // Transfers from card to expense/revenue = spending (debt-increasing).
-        // Transfers from card to asset/liability = payment (debt-reducing).
+        // Fetch account types (and current balances) to classify journal direction.
         // Firefly III's /v1/accounts defaults to asset-only without a type filter,
         // so we must explicitly fetch each account type.
-        let all_account_types: std::collections::HashMap<String, String> = {
-            let mut map = std::collections::HashMap::new();
-            for atype in &["asset", "expense", "revenue", "liability", "liabilities", "cash", "loan"] {
-                if let Ok(accounts) = self.get_accounts(Some(atype.to_string())).await {
-                    for a in accounts {
-                        map.insert(a.id, a.account_type);
+        let mut account_types: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let mut account_current_balances: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        for atype in &[
+            "asset",
+            "expense",
+            "revenue",
+            "liability",
+            "liabilities",
+            "cash",
+            "loan",
+        ] {
+            if let Ok(accounts) = self.get_accounts(Some(atype.to_string())).await {
+                for a in accounts {
+                    account_types.insert(a.id.clone(), a.account_type);
+                    if let Ok(bal) = a.balance.parse::<f64>() {
+                        account_current_balances.insert(a.id.clone(), bal);
                     }
+                }
+            }
+        }
+
+        // Generate all month keys in range for completeness
+        let mut all_months: Vec<String> = Vec::new();
+        let mut current = start_naive;
+        while current <= end_naive {
+            all_months.push(current.format("%Y-%m").to_string());
+            // Move to next month
+            let next_month = if current.month() == 12 {
+                current
+                    .with_year(current.year() + 1)
+                    .unwrap()
+                    .with_month(1)
+                    .unwrap()
+            } else {
+                current.with_month(current.month() + 1).unwrap()
+            };
+            current = next_month;
+        }
+
+        // Fetch balance history — start one month earlier so the first month
+        // in the range has a baseline balance point.
+        let balance_start = if start_naive.month() == 1 {
+            start_naive
+                .with_year(start_naive.year() - 1)
+                .unwrap()
+                .with_month(12)
+                .unwrap()
+        } else {
+            start_naive.with_month(start_naive.month() - 1).unwrap()
+        };
+        let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
+
+        // Fetch per-account balance charts.
+        // Credit cards in Firefly III are asset accounts with NEGATIVE balances.
+        // We need per-account data to identify which of the requested accounts
+        // are the actual cards (negative = debt) vs funding accounts like
+        // checking (positive = funds).
+        let per_account_balances: std::collections::HashMap<String, std::collections::HashMap<String, f64>> = {
+            let mut map = std::collections::HashMap::new();
+            for id in &account_ids {
+                if let Ok(acc_balances) = self
+                    .fetch_card_balances(std::slice::from_ref(id), &balance_start_str, &end)
+                    .await
+                {
+                    map.insert(id.clone(), acc_balances);
                 }
             }
             map
         };
-        let account_types = &all_account_types;
+
+        // Identify the actual card accounts among the requested ones.
+        // A card is a liability-type account, or an account with a negative
+        // balance (current, or latest historical). Funding accounts such as
+        // checking have positive balances and must NOT be treated as cards:
+        // transfers from them into a card are payments, not card-to-card moves.
+        let card_accounts: std::collections::HashSet<String> = {
+            let mut set = std::collections::HashSet::new();
+            for id in &account_ids {
+                let is_liability =
+                    account_types.get(id).map(|t| t == "liability").unwrap_or(false);
+                let current_negative =
+                    account_current_balances.get(id).map(|b| *b < 0.0).unwrap_or(false);
+                let history_negative = per_account_balances
+                    .get(id)
+                    .and_then(|bal_map| bal_map.iter().max_by_key(|(m, _)| m.as_str()))
+                    .map(|(_, bal)| *bal < 0.0)
+                    .unwrap_or(false);
+                if is_liability || current_negative || history_negative {
+                    set.insert(id.clone());
+                }
+            }
+            // Fallback: if no signal identified any card (e.g. the balance
+            // APIs failed), treat every requested account as a card.
+            if set.is_empty() {
+                account_ids.iter().cloned().collect()
+            } else {
+                set
+            }
+        };
+
+        // Build card-only balance map (sum of card accounts = debt; negative = owed).
+        // This excludes checking/savings accounts that would contaminate the line.
+        let card_balances: std::collections::HashMap<String, f64> = {
+            let mut combined = std::collections::HashMap::new();
+            for (id, bal_map) in &per_account_balances {
+                if card_accounts.contains(id) {
+                    for (month, bal) in bal_map {
+                        *combined.entry(month.clone()).or_insert(0.0) += bal;
+                    }
+                }
+            }
+            combined
+        };
 
         // Debug: collect raw classification details
         let mut debug_classifications: Vec<serde_json::Value> = Vec::new();
 
-        // Classify journals: payments, spending, and interest.
+        // Classify journals by direction:
+        // - Payment: transfer from another ASSET account into the card
+        //   (reduces the card's negative balance).
+        // - Spending: flow from the card to an expense/revenue account
+        //   (increases the card's negative balance).
+        // Firefly III returns both sides of an asset<->asset transfer, so
+        // each transfer is counted exactly once, on the side touching a card.
+        // Interest is NOT tracked: it cannot be reliably derived from the
+        // transaction data, and interest transactions surface as spending.
         let mut monthly_payments: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> payments
         let mut monthly_spending: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new(); // month -> spending
-        let mut monthly_interest: std::collections::HashMap<String, f64> =
-            std::collections::HashMap::new(); // month -> interest
         let mut currency_symbol: Option<String> = None;
         let mut currency_code: Option<String> = None;
 
@@ -265,52 +377,54 @@ impl FireflyClient {
                         .map(String::from);
                 }
 
-                // Classification for liability (credit card) accounts:
-                // - "withdrawal" from card = spending (debt-increasing)
-                // - "transfer" from card to expense/revenue = spending (debt-increasing)
-                // - "transfer" from card to asset/liability = payment (debt-reducing)
-                // - "transfer" from card to another card = skip
-                // Interest is NOT classified from transactions; it's derived from balance delta.
-                if !card_ids.contains(source_id) {
-                    // Journal where card is NOT the source — skip for classification
-                    // (these are the reverse-perspective journals from Firefly III)
-                    continue;
-                }
-
+                let source_is_card = card_accounts.contains(source_id);
+                let dest_is_card = card_accounts.contains(dest_id);
+                let source_type = account_types.get(source_id).map(|s| s.as_str());
                 let dest_type = account_types.get(dest_id).map(|s| s.as_str());
-                // Check if this is an interest withdrawal (e.g. "Interest: Amex Elite")
-                let is_interest = description.to_lowercase().starts_with("interest:");
-                let classification = match journal_type {
-                    "withdrawal" => {
-                        if is_interest {
-                            // Interest charges are tracked separately, not as spending.
-                            *monthly_interest.entry(month_key.to_string()).or_insert(0.0) += amount;
-                            "interest(withdrawal)"
-                        } else {
-                            // Spending on the card (increases debt)
-                            *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
+
+                let classification = if source_is_card && dest_is_card {
+                    // Money moving between the user's own cards does not
+                    // change total card debt.
+                    "skip(card-to-card)"
+                } else if dest_is_card {
+                    // Money flowing INTO the card. A payment only when it
+                    // comes from another asset account (e.g. checking -> card).
+                    // A revenue source is the reverse side of a card purchase
+                    // routed through a revenue destination, not a payment.
+                    if source_type == Some("asset") {
+                        *monthly_payments.entry(month_key.to_string()).or_insert(0.0) += amount;
+                        "payment(into card from asset)"
+                    } else {
+                        "skip(into card from non-asset)"
+                    }
+                } else if source_is_card {
+                    // Money flowing OUT of the card.
+                    match journal_type {
+                        "withdrawal" => {
+                            // Card purchase: card -> expense account.
+                            *monthly_spending.entry(month_key.to_string()).or_insert(0.0) +=
+                                amount;
                             "spending(withdrawal)"
                         }
-                    }
-                    "transfer" => {
-                        if card_ids.contains(dest_id) {
-                            "skip(card-to-card)";
-                            continue;
-                        }
-                        match dest_type {
+                        "transfer" => match dest_type {
                             Some("expense") | Some("revenue") => {
+                                // Card purchase routed through an
+                                // expense/revenue destination.
                                 *monthly_spending.entry(month_key.to_string()).or_insert(0.0) +=
                                     amount;
-                                &format!("spending(transfer->{:?})", dest_type)
+                                "spending(transfer to non-asset)"
                             }
                             _ => {
-                                *monthly_payments.entry(month_key.to_string()).or_insert(0.0) +=
-                                    amount;
-                                &format!("payment(transfer->{:?})", dest_type)
+                                // Reverse side of a payment into the card
+                                // (asset -> card); counted on the other
+                                // journal of the same transaction.
+                                "skip(payment reverse side)"
                             }
-                        }
+                        },
+                        _ => "skip(unknown_type)",
                     }
-                    _ => "skip(unknown_type)",
+                } else {
+                    "skip(no card involved)"
                 };
 
                 if debug {
@@ -322,6 +436,7 @@ impl FireflyClient {
                         "amount": amount,
                         "source_id": source_id,
                         "dest_id": dest_id,
+                        "source_type": source_type.unwrap_or("unknown"),
                         "dest_type": dest_type.unwrap_or("unknown"),
                         "description": description,
                         "classified_as": classification,
@@ -330,117 +445,29 @@ impl FireflyClient {
             }
         }
 
-        // Generate all month keys in range for completeness
-        let mut all_months: Vec<String> = Vec::new();
-        let start_date =
-            chrono::NaiveDate::parse_from_str(&start, "%Y-%m-%d").map_err(|e| e.to_string())?;
-        let end_date =
-            chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").map_err(|e| e.to_string())?;
-        let mut current = start_date;
-        while current <= end_date {
-            all_months.push(current.format("%Y-%m").to_string());
-            // Move to next month
-            let next_month = if current.month() == 12 {
-                current
-                    .with_year(current.year() + 1)
-                    .unwrap()
-                    .with_month(1)
-                    .unwrap()
-            } else {
-                current.with_month(current.month() + 1).unwrap()
-            };
-            current = next_month;
-        }
-
-        // Fetch balance history — start one month earlier to get previous month's
-        // ending balance, which is needed to derive interest for the first month.
-        let balance_start = if start_date.month() == 1 {
-            start_date
-                .with_year(start_date.year() - 1)
-                .unwrap()
-                .with_month(12)
-                .unwrap()
-        } else {
-            start_date.with_month(start_date.month() - 1).unwrap()
-        };
-        let balance_start_str = balance_start.format("%Y-%m-%d").to_string();
-
-        // Fetch per-account balance charts.
-        // Credit cards in Firefly III are asset accounts with NEGATIVE balances.
-        // We need per-account data to identify which accounts are the actual cards
-        // (negative = debt) vs funding accounts like checking (positive = funds).
-        let per_account_balances: std::collections::HashMap<String, std::collections::HashMap<String, f64>> = {
-            let mut map = std::collections::HashMap::new();
-            for id in &account_ids {
-                match self
-                    .fetch_card_balances(&[id.clone()], &balance_start_str, &end)
-                    .await
-                {
-                    Ok(acc_balances) => {
-                        map.insert(id.clone(), acc_balances);
-                    }
-                    Err(_) => {}
-                }
-            }
-            map
-        };
-
-        // Identify card accounts: those with negative latest balance (debt).
-        // Funding accounts (checking, savings) have positive balances.
-        let card_account_ids: std::collections::HashSet<String> = per_account_balances
-            .iter()
-            .filter_map(|(id, bal_map)| {
-                // Check the latest balance point for this account
-                bal_map.iter()
-                    .max_by_key(|(month, _)| month.as_str())
-                    .and_then(|(_, bal)| {
-                        if *bal < 0.0 { Some(id.clone()) } else { None }
-                    })
-            })
-            .collect();
-
-        // Build card-only balance map (sum of accounts with negative balance = debt).
-        // This excludes checking/savings accounts that would contaminate the delta.
-        let card_balances: std::collections::HashMap<String, f64> = {
-            let mut combined = std::collections::HashMap::new();
-            for (id, bal_map) in &per_account_balances {
-                if card_account_ids.contains(id) {
-                    for (month, bal) in bal_map {
-                        *combined.entry(month.clone()).or_insert(0.0) += bal;
-                    }
-                }
-            }
-            combined
-        };
-
-        // Build monthly activity from transaction data.
-        // Interest is detected directly from "Interest:" transaction descriptions.
-        // Net paydown = payments - spending - interest (from transaction classification).
+        // Build monthly activity from transaction classification.
+        // net_paydown = payments - spending (positive = debt reduced).
         // Balance comes from card-only chart data (negative = debt owed).
         let mut monthly_activity: Vec<serde_json::Value> = Vec::new();
         let mut total_payments = 0.0;
         let mut total_spending = 0.0;
-        let mut total_interest = 0.0;
         let mut months_with_activity = 0;
         let mut total_net_paydown = 0.0;
 
         for month in &all_months {
             let payments = *monthly_payments.entry(month.clone()).or_insert(0.0);
             let spending = *monthly_spending.entry(month.clone()).or_insert(0.0);
-            let interest = *monthly_interest.entry(month.clone()).or_insert(0.0);
 
             // Get card ending balance from per-account chart data (negative = debt)
             let balance = card_balances.get(month).copied().unwrap_or(0.0);
 
-            // Net paydown from transaction data (not balance delta):
-            // payments reduce debt, spending and interest increase debt.
-            let net_paydown = payments - spending - interest;
+            // Payments reduce the card's negative balance, spending increases it.
+            let net_paydown = payments - spending;
 
-            if payments > 0.01 || spending > 0.01 || interest > 0.01 {
+            if payments > 0.01 || spending > 0.01 {
                 months_with_activity += 1;
                 total_payments += payments;
                 total_spending += spending;
-                total_interest += interest;
                 total_net_paydown += net_paydown;
             }
 
@@ -448,7 +475,6 @@ impl FireflyClient {
                 "month": month,
                 "payments": payments,
                 "spending": spending,
-                "interest": interest,
                 "net_paydown": net_paydown,
                 "balance": balance,
             }));
@@ -492,7 +518,6 @@ impl FireflyClient {
             "summary": {
                 "total_payments": total_payments,
                 "total_spending": total_spending,
-                "total_interest": total_interest,
                 "total_net_paydown": total_net_paydown,
                 "avg_monthly_paydown": avg_monthly,
                 "current_balance": last_balance,
@@ -517,7 +542,7 @@ impl FireflyClient {
                 .iter()
                 .map(|(k, v)| serde_json::json!({ "month": k, "balance": v }))
                 .collect::<Vec<_>>();
-            let debug_card_ids: Vec<String> = card_account_ids.iter().map(|s| s.to_string()).collect();
+            let debug_card_ids: Vec<String> = card_accounts.iter().map(|s| s.to_string()).collect();
 
             let debug_account_types: Vec<serde_json::Value> = account_types
                 .iter()

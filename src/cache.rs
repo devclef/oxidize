@@ -38,7 +38,7 @@ pub struct DataCache {
 /// Cache version: increment to invalidate all existing cached entries.
 /// Bumped to 2 to clear entries created with the broken date parser that
 /// only accepted +00:00 timezone offsets.
-const CACHE_VERSION: &str = "2";
+const CACHE_VERSION: &str = "3";
 
 impl DataCache {
     pub fn new(ttl_seconds: u64) -> Self {

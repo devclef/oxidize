@@ -1698,7 +1698,6 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
     const balances = activity.map(a => a.balance || 0);
     const payments = activity.map(a => a.payments || 0);
     const spending = activity.map(a => a.spending || 0);
-    const interest = activity.map(a => a.interest || 0);
     const netPaydown = activity.map(a => a.net_paydown || 0);
 
     // Determine chart layout: two stacked canvases (balance on top, activity below)
@@ -1820,13 +1819,6 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                         borderWidth: 1,
                     },
                     {
-                        label: 'Interest',
-                        data: interest.map(v => -v),
-                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.8)' : 'rgba(245, 158, 11, 0.8)',
-                        borderColor: isDark ? '#fbbf24' : '#f59e0b',
-                        borderWidth: 1,
-                    },
-                    {
                         label: 'Net Paydown',
                         type: 'line',
                         data: netPaydown,
@@ -1849,7 +1841,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Monthly Activity (up = payments, down = spending/interest)',
+                        text: 'Monthly Activity (up = payments, down = spending)',
                         color: chartTextColor,
                         font: { size: 12 },
                     },

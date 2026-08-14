@@ -1734,7 +1734,6 @@ function renderCardPaydownPreview(ctx, data) {
     const months = activity.map(a => a.month);
     const payments = activity.map(a => a.payments || 0);
     const spending = activity.map(a => (a.spending || 0) * -1);
-    const interest = activity.map(a => (a.interest || 0) * -1);
     const netPaydown = activity.map(a => a.net_paydown || 0);
     const balances = activity.map(a => a.balance || 0);
 
@@ -1759,13 +1758,6 @@ function renderCardPaydownPreview(ctx, data) {
                     data: spending,
                     backgroundColor: 'rgba(239, 68, 68, 0.8)',
                     borderColor: '#ef4444',
-                    borderWidth: 1,
-                },
-                {
-                    label: 'Interest',
-                    data: interest,
-                    backgroundColor: 'rgba(245, 158, 11, 0.8)',
-                    borderColor: '#f59e0b',
                     borderWidth: 1,
                 },
                 {
