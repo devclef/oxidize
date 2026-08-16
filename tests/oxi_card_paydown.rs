@@ -76,7 +76,15 @@ mod tests {
         // The card-paydown endpoint fetches accounts per type.
         // Register a mock for each type-filtered request, returning only matching accounts.
         let all_accounts = accounts.clone();
-        for atype in &["asset", "expense", "revenue", "liability", "liabilities", "cash", "loan"] {
+        for atype in &[
+            "asset",
+            "expense",
+            "revenue",
+            "liability",
+            "liabilities",
+            "cash",
+            "loan",
+        ] {
             let filtered: Vec<serde_json::Value> = all_accounts["data"]
                 .as_array()
                 .unwrap()

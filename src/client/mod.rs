@@ -252,7 +252,10 @@ impl FireflyClient {
         // We need per-account data to identify which of the requested accounts
         // are the actual cards (negative = debt) vs funding accounts like
         // checking (positive = funds).
-        let per_account_balances: std::collections::HashMap<String, std::collections::HashMap<String, f64>> = {
+        let per_account_balances: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = {
             let mut map = std::collections::HashMap::new();
             for id in &account_ids {
                 if let Ok(acc_balances) = self
@@ -273,10 +276,14 @@ impl FireflyClient {
         let card_accounts: std::collections::HashSet<String> = {
             let mut set = std::collections::HashSet::new();
             for id in &account_ids {
-                let is_liability =
-                    account_types.get(id).map(|t| t == "liability").unwrap_or(false);
-                let current_negative =
-                    account_current_balances.get(id).map(|b| *b < 0.0).unwrap_or(false);
+                let is_liability = account_types
+                    .get(id)
+                    .map(|t| t == "liability")
+                    .unwrap_or(false);
+                let current_negative = account_current_balances
+                    .get(id)
+                    .map(|b| *b < 0.0)
+                    .unwrap_or(false);
                 let history_negative = per_account_balances
                     .get(id)
                     .and_then(|bal_map| bal_map.iter().max_by_key(|(m, _)| m.as_str()))
@@ -402,8 +409,7 @@ impl FireflyClient {
                     match journal_type {
                         "withdrawal" => {
                             // Card purchase: card -> expense account.
-                            *monthly_spending.entry(month_key.to_string()).or_insert(0.0) +=
-                                amount;
+                            *monthly_spending.entry(month_key.to_string()).or_insert(0.0) += amount;
                             "spending(withdrawal)"
                         }
                         "transfer" => match dest_type {
@@ -3009,6 +3015,7 @@ impl FireflyClient {
 /// Handles both Firefly III entry formats:
 /// - Object: {"2026-01-01T00:00:00+00:00": "5000", ...}
 /// - Array: [{key: "2026-01-01", value: "5000"}, ...]
+///
 /// Also handles internal {date, ba} format from cached/derived data.
 fn parse_chart_entries(entries: &serde_json::Value) -> Vec<(String, f64)> {
     let mut result = Vec::new();
