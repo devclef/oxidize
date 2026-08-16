@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v3';
+const CACHE_NAME = 'oxidize-cache-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/style.css',
@@ -14,6 +14,14 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
     })
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+    )
   );
 });
 

@@ -1,12 +1,30 @@
 const THEME_KEY = 'oxidize_theme';
 
-function initTheme() {
+function getInitialTheme() {
     const savedTheme = localStorage.getItem(THEME_KEY);
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return (savedTheme === 'dark' || (!savedTheme && prefersDark)) ? 'dark' : 'light';
+}
 
-    const theme = (savedTheme === 'dark' || (!savedTheme && prefersDark)) ? 'dark' : 'light';
+function updateThemeIcons(theme) {
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+    if (sunIcon && moonIcon) {
+        sunIcon.style.display = theme === 'light' ? 'block' : 'none';
+        moonIcon.style.display = theme === 'dark' ? 'block' : 'none';
+    }
+}
+
+function initTheme() {
+    // Apply the theme as early as possible (script loads in <head>) to avoid
+    // a flash of the wrong theme; icons are updated once the DOM is ready.
+    const theme = getInitialTheme();
     document.documentElement.setAttribute('data-theme', theme);
-    updateThemeIcons(theme);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => updateThemeIcons(theme));
+    } else {
+        updateThemeIcons(theme);
+    }
 }
 
 function toggleTheme() {
@@ -18,15 +36,6 @@ function toggleTheme() {
     updateThemeIcons(newTheme);
 
     window.dispatchEvent(new CustomEvent('themeChanged', { detail: newTheme }));
-}
-
-function updateThemeIcons(theme) {
-    const sunIcon = document.getElementById('theme-icon-sun');
-    const moonIcon = document.getElementById('theme-icon-moon');
-    if (sunIcon && moonIcon) {
-        sunIcon.style.display = theme === 'light' ? 'block' : 'none';
-        moonIcon.style.display = theme === 'dark' ? 'block' : 'none';
-    }
 }
 
 initTheme();

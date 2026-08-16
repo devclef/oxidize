@@ -5,6 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Budget Comparison</title>
+    <script>
+        (function () {
+            var s = localStorage.getItem('oxidize_theme');
+            var dark = s === 'dark' || (!s && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        })();
+    </script>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
@@ -464,8 +471,8 @@
     function getChartColors() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         return {
-            textColor: isDark ? '#eaeaea' : '#333',
-            gridColor: isDark ? '#444' : '#ddd',
+            textColor: isDark ? '#d4d4de' : '#333',
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd',
         };
     }
 

@@ -5,6 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Sankey Flow</title>
+    <script>
+        (function () {
+            var s = localStorage.getItem('oxidize_theme');
+            var dark = s === 'dark' || (!s && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        })();
+    </script>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3"></script>
@@ -640,10 +647,10 @@
     function getThemeColors() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         return {
-            textColor: isDark ? '#e2e8f0' : '#1a1a2e',
-            mutedText: isDark ? '#94a3b8' : '#6b7280',
-            nodeStroke: isDark ? '#334155' : '#d1d5db',
-            linkBase: isDark ? 'rgba(148,163,184,' : 'rgba(100,116,139,',
+            textColor: isDark ? '#d4d4de' : '#1a1a2e',
+            mutedText: isDark ? '#8a8a98' : '#6b7280',
+            nodeStroke: isDark ? 'rgba(255, 255, 255, 0.12)' : '#d1d5db',
+            linkBase: isDark ? 'rgba(139, 139, 164,' : 'rgba(100,116,139,',
         };
     }
 
@@ -755,7 +762,7 @@
                     return colorScale(d.name);
                 }
                 const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                return isDark ? '#475569' : '#94a3b8';
+                return isDark ? '#8a8a98' : '#94a3b8';
             })
             .attr('rx', 3)
             .attr('stroke', colors.nodeStroke);

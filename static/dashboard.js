@@ -1,6 +1,7 @@
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 const SAVED_LISTS_KEY = 'firefly_saved_account_lists';
 let widgetCharts = {};
+let widgetSankeyData = {};
 let widgetDatasetVisibility = {};
 let widgetsCache = [];
 let dashboardsCache = [];
@@ -587,7 +588,7 @@ const pctLabelPlugin = {
         if (!chartArea) return;
 
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const textColor = isDark ? '#b0b0b0' : '#666';
+        const textColor = isDark ? '#8a8a98' : '#666';
 
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             if (!dataset.data || dataset.hidden) return;
@@ -634,17 +635,35 @@ const CONFIG = window.OXIDIZE_CONFIG || {
 window.addEventListener("themeChanged", (e) => { updateWidgetChartsTheme(e.detail); });
 function updateWidgetChartsTheme(theme) {
     const isDark = theme === 'dark';
-    const textColor = isDark ? '#eaeaea' : '#333';
-    const gridColor = isDark ? '#444' : '#ddd';
+    const textColor = isDark ? '#d4d4de' : '#333';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
     Object.values(widgetCharts).forEach(chart => {
-        if (chart && chart.options && chart.options.scales) {
+        if (!chart) return;
+        if (chart.options && chart.options.scales) {
             chart.options.scales.x.grid = { color: gridColor };
             chart.options.scales.x.ticks = { color: textColor };
             chart.options.scales.y.grid = { color: gridColor };
             chart.options.scales.y.ticks = { color: textColor };
             chart.update('none');
         }
+        // Pie charts have no scales; re-color slices and legend for the new theme
+        if (chart.config && chart.config.type === 'pie') {
+            const colors = getPiePalette();
+            const n = chart.data.labels.length;
+            chart.data.datasets[0].backgroundColor = colors.slice(0, n).map(c => c + 'cc');
+            chart.data.datasets[0].borderColor = colors.slice(0, n);
+            if (chart.options.plugins && chart.options.plugins.legend) {
+                chart.options.plugins.legend.labels = { color: textColor, padding: 12 };
+            }
+            chart.update('none');
+        }
+    });
+
+    // Sankey widgets are D3 SVGs that capture theme colors at render time; redraw them.
+    Object.entries(widgetSankeyData).forEach(([widgetId, data]) => {
+        const container = document.getElementById(`${widgetId}-sankey`);
+        if (container) renderSankeyChart(container, data);
     });
 }
 
@@ -678,6 +697,7 @@ async function deleteWidget(id) {
         widgetCharts[id].destroy();
         delete widgetCharts[id];
     }
+    delete widgetSankeyData[id];
 
     try {
         await fetch(`/api/widgets/${id}`, { method: 'DELETE' });
@@ -1029,8 +1049,8 @@ async function renderEarnedSpentChart(ctx, widget, labels, history, _canvasId, c
 function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
     const opts = getChartOptions(widget);
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
-    const chartGridColor = isDark ? '#444' : '#ddd';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
     // Find earned and spent datasets from history
     const earnedDataset = history.find(ds => ds.label === 'earned');
@@ -1041,8 +1061,8 @@ function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
 
     // Earned is typically positive (income), spent is typically positive (expense)
     // We'll show earned in green and spent in red
-    const earnedColor = isDark ? '#58d68d' : '#27ae60';
-    const spentColor = isDark ? '#ec7063' : '#e74c3c';
+    const earnedColor = isDark ? '#34d399' : '#27ae60';
+    const spentColor = isDark ? '#f87171' : '#e74c3c';
 
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
@@ -1122,8 +1142,8 @@ function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
 function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
     const opts = getChartOptions(widget);
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
-    const chartGridColor = isDark ? '#444' : '#ddd';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
     const earnedDataset = history.find(ds => ds.label === 'earned');
     const spentDataset = history.find(ds => ds.label === 'spent');
@@ -1133,7 +1153,7 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
 
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
-    const lineColor = isDark ? '#3498db' : '#2980b9';
+    const lineColor = isDark ? '#7c83f7' : '#2980b9';
     const pointColor = deltaData.map(v => v >= 0 ? '#27ae60' : '#e74c3c');
 
     if (widgetCharts[widget.id]) {
@@ -1210,8 +1230,8 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
 function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
     const opts = getChartOptions(widget);
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
-    const chartGridColor = isDark ? '#444' : '#ddd';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
     const earnedDataset = history.find(ds => ds.label === 'earned');
     const spentDataset = history.find(ds => ds.label === 'spent');
@@ -1221,8 +1241,8 @@ function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
 
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
-    const greenColor = isDark ? '#58d68d' : '#27ae60';
-    const redColor = isDark ? '#ec7063' : '#e74c3c';
+    const greenColor = isDark ? '#34d399' : '#27ae60';
+    const redColor = isDark ? '#f87171' : '#e74c3c';
 
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
@@ -1323,13 +1343,23 @@ function filterChartLineByNames(chartLine, budgetNames) {
     return chartLine.filter(ds => nameSet.has(ds.label));
 }
 
+function getPiePalette() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    // Dark variant brightens the saturated hues and swaps the two dark slate
+    // swatches for light neutrals so every slice stays visible on dark bg.
+    return isDark
+        ? ['#5dade2', '#ec7063', '#58d68d', '#f5b041', '#af7ac5', '#48c9b0', '#eb984e', '#85929e', '#45b39d', '#f1948a',
+           '#5499c7', '#dc7633', '#a569bd', '#aeb6bf', '#f4d03f']
+        : ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
+           '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
+}
+
 // Render a pie chart for widget data
 function renderPieChartWidget(ctx, widget, labels, data) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
 
-    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
-                    '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
+    const colors = getPiePalette();
 
     // Sort slices largest-first so the pie chart reads clockwise from biggest to smallest
     const indexed = labels.map((label, i) => ({ label, value: data[i] }));
@@ -1484,6 +1514,7 @@ async function renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, e
         const response = await fetch('/api/sankey/flows?' + params.toString());
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
+        widgetSankeyData[widget.id] = data;
         renderSankeyChart(sankeyDiv, data);
     } catch (e) {
         if (errorDiv) errorDiv.textContent = 'Failed to load Sankey data: ' + e.message;
@@ -1495,9 +1526,9 @@ function renderSankeyChart(container, data) {
 
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const colors = {
-        textColor: isDark ? '#e2e8f0' : '#1a1a2e',
-        mutedText: isDark ? '#94a3b8' : '#6b7280',
-        nodeStroke: isDark ? '#334155' : '#d1d5db',
+        textColor: isDark ? '#d4d4de' : '#1a1a2e',
+        mutedText: isDark ? '#8a8a98' : '#6b7280',
+        nodeStroke: isDark ? 'rgba(255, 255, 255, 0.12)' : '#d1d5db',
     };
     const symbol = data.currency_symbol || data.currency_code || '';
 
@@ -1609,7 +1640,7 @@ function renderSankeyChart(container, data) {
         .attr('width', 14)
         .attr('fill', d => {
             if (d.depth === 0) return colorScale(d.name);
-            return isDark ? '#475569' : '#94a3b8';
+            return isDark ? '#8a8a98' : '#94a3b8';
         })
         .attr('rx', 3)
         .attr('stroke', colors.nodeStroke)
@@ -1680,8 +1711,8 @@ async function renderCardPaydownWidget(widget, canvasId, allGroups, effectiveSta
 
 function renderCardPaydownChart(ctx, widget, data, canvasId) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#eaeaea' : '#333';
-    const chartGridColor = isDark ? '#444' : '#ddd';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
     const activity = data.monthly_activity || [];
     const summary = data.summary || {};
@@ -1748,13 +1779,13 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                 datasets: [{
                     label: 'Card Balance',
                     data: balances,
-                    borderColor: isDark ? '#4ade80' : '#22c55e',
-                    backgroundColor: isDark ? 'rgba(74, 222, 128, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                    borderColor: isDark ? '#34d399' : '#22c55e',
+                    backgroundColor: isDark ? 'rgba(52, 211, 153, 0.1)' : 'rgba(34, 197, 94, 0.1)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.3,
                     pointRadius: balances.length > 24 ? 0 : 3,
-                    pointBackgroundColor: isDark ? '#4ade80' : '#22c55e',
+                    pointBackgroundColor: isDark ? '#34d399' : '#22c55e',
                 }]
             },
             options: {
@@ -1807,8 +1838,8 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                     {
                         label: 'Payments',
                         data: payments,
-                        backgroundColor: isDark ? 'rgba(74, 222, 128, 0.8)' : 'rgba(34, 197, 94, 0.8)',
-                        borderColor: isDark ? '#4ade80' : '#22c55e',
+                        backgroundColor: isDark ? 'rgba(52, 211, 153, 0.8)' : 'rgba(34, 197, 94, 0.8)',
+                        borderColor: isDark ? '#34d399' : '#22c55e',
                         borderWidth: 1,
                     },
                     {
@@ -1822,12 +1853,12 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                         label: 'Net Paydown',
                         type: 'line',
                         data: netPaydown,
-                        borderColor: isDark ? '#60a5fa' : '#3b82f6',
+                        borderColor: isDark ? '#7c83f7' : '#3b82f6',
                         backgroundColor: 'transparent',
                         borderWidth: 2,
                         tension: 0.3,
                         pointRadius: netPaydown.length > 24 ? 0 : 3,
-                        pointBackgroundColor: isDark ? '#60a5fa' : '#3b82f6',
+                        pointBackgroundColor: isDark ? '#7c83f7' : '#3b82f6',
                     }
                 ]
             },
@@ -2128,8 +2159,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
             // Generate colors for budgets
             const colors = generateColors(filteredHistory.length);
@@ -2266,8 +2297,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
             // Generate colors for categories
             const colors = generateColors(history.length);
@@ -2405,8 +2436,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
             // Generate colors for subcategories
             const colors = generateColors(filteredHistory.length);
@@ -2566,10 +2597,10 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             const opts = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
-            const chartColor = isDark ? '#5dade2' : '#3498db';
-            const forecastColor = isDark ? '#a0a0a0' : '#888';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+            const chartColor = isDark ? '#7c83f7' : '#3498db';
+            const forecastColor = isDark ? '#8a8a98' : '#888';
 
             // Forecast
             let chartLabels = labels;
@@ -2807,8 +2838,8 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             const opts2 = getChartOptions(widget);
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = isDark ? '#eaeaea' : '#333';
-            const chartGridColor = isDark ? '#444' : '#ddd';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
             // Forecast for split mode
             let splitLabels = labels;
