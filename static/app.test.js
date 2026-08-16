@@ -1172,3 +1172,107 @@ describe('Round End Date', () => {
         expect(result).toBe('2026-05-02');
     });
 });
+
+describe('Type Filter Pills', () => {
+    // Mirrors the pill click handler in app.js
+    function makePillHandler(selectedTypes, pills) {
+        return function clickPill(type) {
+            if (type === 'all') {
+                // "All" is exclusive: only the All pill is highlighted
+                selectedTypes.clear();
+                selectedTypes.add('all');
+                pills.forEach(p => { p.active = p.type === 'all'; });
+            } else {
+                selectedTypes.delete('all');
+                const pill = pills.find(p => p.type === type);
+                pill.active = !pill.active;
+                if (pill.active) {
+                    selectedTypes.add(type);
+                } else {
+                    selectedTypes.delete(type);
+                }
+                // Never allow an empty selection
+                if (selectedTypes.size === 0) {
+                    selectedTypes.add(type);
+                    pill.active = true;
+                }
+                pills.find(p => p.type === 'all').active = false;
+            }
+        };
+    }
+
+    function setup() {
+        const pills = [
+            { type: 'all', active: true },
+            { type: 'asset', active: false },
+            { type: 'liability', active: false },
+        ];
+        const selectedTypes = new Set(['all']);
+        const clickPill = makePillHandler(selectedTypes, pills);
+        return { pills, selectedTypes, clickPill };
+    }
+
+    it('should select only "all" when the All pill is clicked', () => {
+        const { pills, selectedTypes, clickPill } = setup();
+        clickPill('asset');
+        clickPill('liability');
+        clickPill('all');
+
+        expect(Array.from(selectedTypes)).toEqual(['all']);
+        expect(pills[0].active).toBe(true);
+        expect(pills[1].active).toBe(false);
+        expect(pills[2].active).toBe(false);
+    });
+
+    it('should deselect "all" when an individual type is clicked', () => {
+        const { pills, selectedTypes, clickPill } = setup();
+        clickPill('asset');
+
+        expect(selectedTypes.has('all')).toBe(false);
+        expect(selectedTypes.has('asset')).toBe(true);
+        expect(pills[0].active).toBe(false);
+        expect(pills[1].active).toBe(true);
+    });
+
+    it('should keep at least one type selected when the last type is toggled off', () => {
+        const { selectedTypes, clickPill } = setup();
+        clickPill('asset');
+        clickPill('asset'); // toggles asset off -> nothing left -> asset re-selected
+
+        expect(selectedTypes.size).toBeGreaterThan(0);
+        expect(selectedTypes.has('asset')).toBe(true);
+    });
+});
+
+describe('Chart Theme Update', () => {
+    // Mirrors the guard logic in updateChartTheme (app.js)
+    function themeUpdateSteps(chart) {
+        const steps = [];
+        if (!chart) return steps;
+        if (chart.config && chart.config.type === 'pie') {
+            steps.push('pie-recolor');
+            return steps;
+        }
+        if (chart.options && chart.options.scales) {
+            ['x', 'y'].forEach(axis => {
+                if (chart.options.scales[axis]) steps.push(`scale-${axis}`);
+            });
+            steps.push('update');
+        }
+        return steps;
+    }
+
+    it('should not touch scales for pie charts', () => {
+        const pie = { config: { type: 'pie' }, options: { scales: {} } };
+        expect(themeUpdateSteps(pie)).toEqual(['pie-recolor']);
+    });
+
+    it('should skip missing axes without throwing', () => {
+        const line = { config: { type: 'line' }, options: { scales: { x: {} } } };
+        expect(themeUpdateSteps(line)).toEqual(['scale-x', 'update']);
+    });
+
+    it('should be a no-op when no chart is rendered', () => {
+        expect(themeUpdateSteps(null)).toEqual([]);
+    });
+});

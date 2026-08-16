@@ -124,19 +124,7 @@ function updateChartTheme(theme) {
     const textColor = isDark ? '#d4d4de' : '#333';
     const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
-    if (balanceChart && balanceChart.options && balanceChart.options.scales) {
-        balanceChart.options.scales.x.grid = { color: gridColor };
-        balanceChart.options.scales.x.ticks = { color: textColor };
-        balanceChart.options.scales.y.grid = { color: gridColor };
-        balanceChart.options.scales.y.ticks = { color: textColor };
-
-        // Update legend colors if present
-        if (balanceChart.options.plugins && balanceChart.options.plugins.legend) {
-            balanceChart.options.plugins.legend.labels = { color: textColor };
-        }
-
-        balanceChart.update('none');
-    }
+    if (!balanceChart) return;
 
     // Pie charts have no scales; re-color slices and legend for the new theme
     if (balanceChart.config && balanceChart.config.type === 'pie') {
@@ -147,6 +135,23 @@ function updateChartTheme(theme) {
         if (balanceChart.options.plugins && balanceChart.options.plugins.legend) {
             balanceChart.options.plugins.legend.labels = { color: textColor, padding: 12 };
         }
+        balanceChart.update('none');
+        return;
+    }
+
+    if (balanceChart.options && balanceChart.options.scales) {
+        const scales = balanceChart.options.scales;
+        ['x', 'y'].forEach(axis => {
+            if (!scales[axis]) return;
+            scales[axis].grid = { color: gridColor };
+            scales[axis].ticks = { color: textColor };
+        });
+
+        // Update legend colors if present
+        if (balanceChart.options.plugins && balanceChart.options.plugins.legend) {
+            balanceChart.options.plugins.legend.labels = { color: textColor };
+        }
+
         balanceChart.update('none');
     }
 }
@@ -2589,7 +2594,7 @@ function renderGroups() {
     groupsList.innerHTML = '';
 
     if (groups.length === 0) {
-        groupsList.innerHTML = '<p style="opacity: 0.7; padding: 0.5rem;">No groups yet. Click "+ Create Group" to get started.</p>';
+        groupsList.innerHTML = '<div class="empty-state"><p>No groups yet. Create one to save a set of accounts for quick selection.</p></div>';
         return;
     }
 
@@ -2638,10 +2643,12 @@ function renderGroups() {
         actions.className = 'group-actions';
 
         const editBtn = document.createElement('button');
+        editBtn.className = 'ghost-btn';
         editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', () => openGroupModal(group.id));
 
         const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'ghost-btn ghost-btn-danger';
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', async () => {
             if (confirm(`Delete group "${group.name}"?`)) {
@@ -2702,7 +2709,7 @@ function openGroupModal(groupId = null) {
         title.textContent = 'Create Group';
 
         if (allAccounts.length === 0) {
-            accountsList.innerHTML = '<p style="opacity: 0.7;">Fetch accounts first to create groups.</p>';
+            accountsList.innerHTML = '<p class="modal-note">Fetch accounts first to create groups.</p>';
         } else {
             allAccounts.forEach(account => {
                 const item = document.createElement('div');
@@ -3011,9 +3018,11 @@ function toggleAccountsSection() {
     if (content.style.display === 'none') {
         content.style.display = 'block';
         btn.textContent = 'Collapse';
+        btn.setAttribute('aria-expanded', 'true');
     } else {
         content.style.display = 'none';
         btn.textContent = 'Expand';
+        btn.setAttribute('aria-expanded', 'false');
     }
 }
 
@@ -3367,10 +3376,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const type = pill.dataset.type;
 
         if (type === 'all') {
-            // Select all, deselect others
+            // Select all; only the "All" pill is highlighted
             selectedTypes.clear();
             selectedTypes.add('all');
-            typeFilterPills.querySelectorAll('.type-pill').forEach(p => p.classList.add('active'));
+            typeFilterPills.querySelectorAll('.type-pill').forEach(p => {
+                p.classList.toggle('active', p.dataset.type === 'all');
+            });
         } else {
             // Deselect "all"
             selectedTypes.delete('all');
@@ -3423,18 +3434,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Advanced options toggle
     const advancedOptions = document.getElementById('advanced-options');
-    const toggleAdvancedBtn = document.createElement('button');
-    toggleAdvancedBtn.type = 'button';
-    toggleAdvancedBtn.className = 'more-options-toggle';
-    toggleAdvancedBtn.id = 'toggle-advanced-btn';
-    toggleAdvancedBtn.textContent = 'Show advanced options';
-    advancedOptions.prepend(toggleAdvancedBtn);
+    const toggleAdvancedBtn = document.getElementById('toggle-advanced-btn');
 
     let advancedVisible = false;
     toggleAdvancedBtn.addEventListener('click', () => {
         advancedVisible = !advancedVisible;
         advancedOptions.classList.toggle('visible', advancedVisible);
-        toggleAdvancedBtn.textContent = advancedVisible ? 'Hide advanced options' : 'Show advanced options';
+        toggleAdvancedBtn.textContent = advancedVisible ? 'Hide advanced options' : 'Advanced options';
     });
 
     // Set default dates (last 30 days)
@@ -3445,7 +3451,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('end-date').valueAsDate = endDate;
     document.getElementById('start-date').valueAsDate = startDate;
 
-    app.innerHTML = '<div class="loading">Select a type and click "Fetch Accounts" to begin.</div>';
+    app.innerHTML = '<div class="empty-state"><p>Pick an account type above, then click <strong>Fetch Accounts</strong> to start building a graph.</p></div>';
 
     fetchAccountsBtn.addEventListener('click', fetchAccounts);
     updateChartBtn.addEventListener('click', fetchChartData);
@@ -3646,9 +3652,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 sorted.sort((a, b) => b.subcategories.length - a.subcategories.length || a.name.localeCompare(b.name));
                 break;
             case 'subcat_asc':
-                sorted.sort((a, b) => a.subcategories.length - b.subcategories.length || a.name.localeCompare(b.name));
-                break;
-            case 'PLACEHOLDER_REMOVE':
                 sorted.sort((a, b) => a.subcategories.length - b.subcategories.length || a.name.localeCompare(b.name));
                 break;
             case 'name_desc':
@@ -3901,19 +3904,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
             // Toggle earned chart type selector visibility
-            const earnedSelector = document.getElementById('earned-chart-type-selector');
-            if (earnedSelector) {
-                earnedSelector.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
+            const earnedGroup = document.getElementById('earned-chart-type-group');
+            if (earnedGroup) {
+                earnedGroup.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
             }
             // Toggle chart type selector (line/pie) visibility - hide for card_paydown
-            const chartTypeSelector = document.getElementById('chart-type-selector');
-            if (chartTypeSelector) {
-                chartTypeSelector.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
+            const chartTypeGroup = document.getElementById('chart-type-selector')?.closest('.toggle-group');
+            if (chartTypeGroup) {
+                chartTypeGroup.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
             }
             // Toggle advanced options visibility for card_paydown (some don't apply)
-            const advancedOptions = document.getElementById('advanced-options');
-            if (advancedOptions) {
-                advancedOptions.style.display = widgetType === 'card_paydown' ? 'none' : '';
+            const advancedSection = document.getElementById('advanced-section');
+            if (advancedSection) {
+                advancedSection.style.display = widgetType === 'card_paydown' ? 'none' : '';
             }
              // Toggle budgets section visibility
             const budgetsSection = document.getElementById('budgets-section');
@@ -3946,9 +3949,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             // Show/hide category graph mode toggle (visible for expenses_by_category and category_subcat)
-            const graphModeToggle = document.getElementById('category-graph-mode-selector');
-            if (graphModeToggle) {
-                graphModeToggle.style.display = (widgetType === 'expenses_by_category' || widgetType === 'category_subcat') ? 'flex' : 'none';
+            const graphModeGroup = document.getElementById('category-graph-mode-group');
+            if (graphModeGroup) {
+                graphModeGroup.style.display = (widgetType === 'expenses_by_category' || widgetType === 'category_subcat') ? 'flex' : 'none';
             }
             fetchChartData();
         });

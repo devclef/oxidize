@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v4';
+const CACHE_NAME = 'oxidize-cache-v5';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/style.css',
