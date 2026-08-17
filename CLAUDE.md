@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI assista
 
 ## Project Overview
 
-Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, monthly summaries), and presents it via a web UI with configurable chart widgets and account groups. Local state (widgets, groups) is persisted in a SQLite database.
+Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across five pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), and Sankey Flow (`/sankey`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
 
 ## Commands
 
@@ -54,7 +54,7 @@ Browser (vanilla JS + Chart.js)
 Actix-Web Server (main.rs)
     │
     ├─► Static file serving (/static/*)
-    ├─► HTML page handlers (/, /dashboard, /summary)
+    ├─► HTML page handlers (/, /dashboard, /avg-cost, /budget-comparison, /sankey)
     ├─► API handlers (/api/*)
     │       │
     │       ▼
@@ -77,36 +77,48 @@ src/
 ├── client/
 │   └── mod.rs        # FireflyClient: all Firefly III API interactions
 ├── handlers/
-│   ├── mod.rs        # Handler module declarations
-│   ├── account.rs    # /api/accounts, /api/balance-history, /api/earned-spent, etc.
-│   ├── dashboard.rs  # GET /dashboard (serves static HTML)
-│   ├── index.rs      # GET / (serves index.html with injected config)
-│   ├── group.rs      # CRUD for account groups
-│   ├── summary.rs    # GET /summary page + GET /api/summary/monthly
-│   └── widget.rs     # CRUD for dashboard widgets
+│   ├── mod.rs               # Handler module declarations
+│   ├── account.rs           # /api/accounts, /api/balance-history, /api/earned-spent, budgets, card paydown, etc.
+│   ├── avg_cost.rs          # GET /avg-cost page + GET /api/budgets/avg-cost
+│   ├── budget_comparison.rs # GET /budget-comparison page
+│   ├── category.rs          # GET /api/categories/list, /api/categories/subcategory-spend
+│   ├── dashboard.rs         # GET /dashboard (serves dashboard.html with injected config)
+│   ├── dashboard_api.rs     # CRUD for /api/dashboards
+│   ├── index.rs             # GET / (serves index.html with injected config), /api/manifest, favicon
+│   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
+│   ├── group.rs             # CRUD for account groups
+│   └── widget.rs            # CRUD for dashboard widgets
 ├── models/
-│   ├── mod.rs        # Re-exports all model types
-│   ├── account.rs    # AccountArray, AccountRead, AccountAttributes, SimpleAccount
-│   ├── chart.rs      # ChartLine (Vec<ChartDataSet>), CategoryExpense
-│   ├── group.rs      # Group (id, name, account_ids)
-│   ├── summary.rs    # MonthlySummary
-│   └── widget.rs     # Widget, ChartOptions (with custom null-safe deserializer)
+│   ├── mod.rs       # Re-exports all model types
+│   ├── account.rs   # AccountArray, SimpleAccount
+│   ├── budget.rs    # BudgetRead, BudgetComparison, AvgCost* response types, budget period limits
+│   ├── category.rs  # CategoryRead, ParentCategory, CategoryListResponse
+│   ├── chart.rs     # ChartLine (Vec<ChartDataSet>)
+│   ├── dashboard.rs # Dashboard (named collection of widgets)
+│   ├── group.rs     # Group (id, name, account_ids)
+│   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
+│   └── widget.rs    # Widget, ChartOptions (with custom null-safe deserializer)
 └── storage/
     └── mod.rs        # SQLite CRUD for widgets and groups
 
 static/               # Frontend assets (served at /static/)
-├── index.html        # Main page
-├── dashboard.html    # Dashboard page
-├── summary.html      # Summary page
-├── app.js            # Main page JS logic
-├── dashboard.js      # Dashboard JS logic
-├── date-utils.js     # Shared date utility functions
-├── theme.js          # Dark/light theme toggle
-├── style.css         # Shared styles with CSS variables for theming
-├── app.test.js       # Vitest tests for app.js
-├── dashboard.test.js # Vitest tests for dashboard.js
-├── manifest.json     # PWA manifest
-└── sw.js             # Service worker
+├── index.html             # Graph Builder page
+├── dashboard.html         # Dashboard page
+├── avg-cost.html          # Average Cost per Budget page (inline page script)
+├── budget-comparison.html # Budget Comparison page (inline page script)
+├── sankey.html            # Sankey Flow page (inline page script)
+├── app.js                 # Graph Builder page JS logic
+├── dashboard.js           # Dashboard page JS logic
+├── date-utils.js          # Shared date utility functions
+├── theme.js               # Dark/light theme toggle + PWA theme-color sync
+├── ui.js                  # Shared UI kit: toasts, confirm/prompt dialogs, currency formatting
+├── style.css              # Shared styles with CSS variables for theming
+├── app.test.js            # Vitest tests for app.js
+├── dashboard.test.js      # Vitest tests for dashboard.js
+├── ui.test.js             # Vitest tests for ui.js
+├── icons/                 # PWA/favicon icons (192 + 512)
+├── manifest.json          # PWA manifest
+└── sw.js                  # Service worker
 
 tests/                # Backend integration tests (cargo test)
 ├── oxi_*.rs          # Named after YouTrack ticket IDs (e.g., oxi_37_earned_spent_date_parsing.rs)
@@ -127,13 +139,16 @@ docs/superpowers/     # Internal docs: plans/ and specs/
 
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
-| `firefly_url` | `FIREFLY_III_URL` | `https://demo.firefly-iii.org` | Firefly III base URL |
+| `firefly_url` | `FIREFLY_III_URL` | `https://demo.firefly-iii.org/api` | Firefly III base URL |
 | `firefly_token` | `FIREFLY_III_ACCESS_TOKEN` | *(empty string)* | API access token |
 | `host` | `HOST` | `0.0.0.0` | Server bind address |
 | `port` | `PORT` | `8080` | Server port |
 | `account_types` | `ACCOUNT_TYPES` | `asset,cash,expense,revenue,liability` | Comma-separated list for UI filter dropdown |
 | `auto_fetch_accounts` | `AUTO_FETCH_ACCOUNTS` | `false` | Auto-fetch accounts on page load |
-| `data_dir` | `DATA_DIR` | `./data` | Directory for the SQLite database file |
+| `data_dir` | `DATA_DIR` | `~/.oxidize/data` | Directory for the SQLite database file |
+| `cache_ttl` | `CACHE_TTL` | `3600` | Chart cache TTL in seconds |
+| `time_ranges` | `TIME_RANGES` | `7d,30d,3m,6m,1y,ytd` | Comma-separated list of relative time range presets |
+| `default_time_range` | `DEFAULT_TIME_RANGE` | `30d` | Which time range preset is pre-selected |
 
 The `firefly_url` is wrapped in a `FireflyUrl` newtype that validates the URL on construction:
 - Must parse as a valid URL
@@ -153,7 +168,16 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 | `get_earned_spent(start, end, period, account_ids)` | Fetches transactions and aggregates into earned/spent chart lines by period |
 | `get_expenses_by_category(start, end, account_ids)` | Fetches transactions and groups expenses by category |
 | `get_net_worth(start, end, period)` | Calculates net worth (assets minus liabilities) over time |
-| `get_monthly_summary(month, year, account_ids, account_type)` | Computes monthly income, expenses, savings, and savings rate |
+| `get_budgets()` | Lists budgets from Firefly III |
+| `get_budget_spent(start, end)` | Spent per budget for a period |
+| `get_budget_spent_history(start, end, period, account_ids)` | Monthly spent-per-budget time series |
+| `get_budget_limit(...)` | Budget period limits |
+| `get_budget_comparison(start, end, budget_names)` | This year vs last year, with projections against budget limits |
+| `get_categories()` | Top-level categories with subcategories |
+| `get_subcategory_spend_chart(parent_categories, subcategories, start, end, period, account_ids, graph_mode)` | Spending by subcategory |
+| `get_avg_cost(budget_names, mode, months, account_ids, month, year)` | Average monthly cost per budget (`LastNMonths` or `PreviousYearSameMonth`) |
+| `get_sankey_flows(account_ids, flow_type, start, end, categories, subcategories, budgets)` | Sankey flow data (between accounts / by category / subcategory / budget) |
+| `get_card_paydown(...)` | Credit card paydown analysis (per-account balances and summary stats) |
 
 **Internal helper methods:**
 | Method | Description |
@@ -184,22 +208,27 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 
 #### Storage (`src/storage/mod.rs`)
 
-SQLite persistence for widgets and groups:
+SQLite persistence for dashboards, widgets, and groups:
 - Database file: `{DATA_DIR}/oxidize.db`
-- `DATA_DIR` is set once via `OnceLock` at startup from `config.data_dir`
+- `DATA_DIR` is set once via `OnceLock` at startup from `config.data_dir` (default `~/.oxidize/data`)
 - `with_db(closure)` pattern: opens a new connection per operation (no connection pool)
 - Uses `rusqlite` with positional params
-- Vec fields (accounts, account_ids) are stored as JSON strings in TEXT columns
+- Vec fields (accounts, account_ids, group_ids, dashboard_ids, …) are stored as JSON strings in TEXT columns
 - `ChartOptions` is stored as a JSON string in a TEXT column
 - Has inline migrations using `ALTER TABLE ADD COLUMN` (errors are silently ignored if column already exists)
 
 **SQLite tables:**
 ```sql
--- widgets table
+-- widgets table (group_ids, budget_ids, budget_names, parent_categories,
+-- subcategories, earned_chart_type, category_graph_mode, dashboard_ids,
+-- date_range_source, sankey_flow_type, chart_type added via migrations)
 CREATE TABLE widgets (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     accounts TEXT NOT NULL,          -- JSON array of account ID strings
+    group_ids TEXT NOT NULL DEFAULT '[]',
+    budget_ids TEXT NOT NULL DEFAULT '[]',
+    budget_names TEXT NOT NULL DEFAULT '[]',
     start_date TEXT,
     end_date TEXT,
     interval TEXT,
@@ -209,8 +238,27 @@ CREATE TABLE widgets (
     display_order INTEGER NOT NULL DEFAULT 0,
     width INTEGER NOT NULL DEFAULT 12,
     chart_height INTEGER NOT NULL DEFAULT 300,
+    dashboard_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array; widget belongs to N dashboards
     created_at TEXT NOT NULL,        -- RFC 3339 timestamp
     updated_at TEXT NOT NULL
+);
+
+-- dashboards table
+CREATE TABLE dashboards (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    start_date TEXT,
+    end_date TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- chart_cache table (persisted chart data, TTL cleanup on access)
+CREATE TABLE chart_cache (
+    key TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
 );
 
 -- groups table
@@ -233,7 +281,9 @@ CREATE TABLE groups (
 
 **`Group`** — named collection of account IDs for filtering
 
-**`MonthlySummary`** — computed monthly financial summary (total_income, total_expenses, savings, savings_rate)
+**`Dashboard`** — named dashboard; widgets are assigned via their `dashboard_ids` JSON array (a widget can belong to multiple dashboards)
+
+**`BudgetComparison` / `AvgCostResponse`** — budget comparison (this year vs last year, projections vs limits) and average-cost-per-budget payloads
 
 **`ChartLine`** = `Vec<ChartDataSet>` where each dataset has a label, currency info, and entries (a `serde_json::Value` map of date→number)
 
@@ -258,7 +308,11 @@ No build step or bundler — plain JavaScript files served from `/static/`.
 
 **`date-utils.js`** — Shared date formatting and range calculation utilities
 
-**`theme.js`** — Dark/light mode toggle, persisted to localStorage
+**`theme.js`** — Dark/light mode toggle, persisted to localStorage; also keeps the PWA `<meta name="theme-color">` in sync with the active theme
+
+**`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors, and the shared spinner. Tested by `ui.test.js`.
+
+The tool pages (`avg-cost.html`, `budget-comparison.html`, `sankey.html`) keep their page logic in inline `<script>` blocks rather than separate files.
 
 **`style.css`** — Uses CSS custom properties (variables) for theming:
 - `:root` for light mode defaults
@@ -267,27 +321,31 @@ No build step or bundler — plain JavaScript files served from `/static/`.
 
 ### HTML Pages and Config Injection
 
-The index (`/`) and summary (`/summary`) handlers inject server-side config into HTML before serving:
+All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` script tag before `</head>`:
 ```html
 <script>
     window.OXIDIZE_CONFIG = {
         accountTypes: [...],
-        autoFetchAccounts: true/false
+        autoFetchAccounts: true/false,   // index + dashboard only
+        timeRanges: [...],               // index + dashboard only
+        defaultTimeRange: "..."          // index + dashboard only
     };
 </script>
 ```
 - `index.rs` reads `./static/index.html` from the filesystem at runtime (`std::fs::read_to_string`)
-- `summary.rs` uses `include_str!("../../static/summary.html")` (compiled into the binary)
-- `dashboard.rs` uses `include_str!("../../static/dashboard.html")` (no config injection)
+- `avg_cost.rs`, `budget_comparison.rs`, and `sankey.rs` read their HTML at runtime and fall back to the `include_str!`-compiled copy if the file is missing
+- `dashboard.rs` uses `include_str!("../../static/dashboard.html")` (compiled into the binary)
 
 ## API Endpoints Reference
 
 ### HTML Pages
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | Main page (index.html with injected config) |
-| `GET` | `/dashboard` | Dashboard page |
-| `GET` | `/summary` | Summary page (with injected config) |
+| `GET` | `/` | Graph Builder page (index.html with injected config) |
+| `GET` | `/dashboard` | Dashboard page (with injected config) |
+| `GET` | `/avg-cost` | Average Cost per Budget page (with injected config) |
+| `GET` | `/budget-comparison` | Budget Comparison page (with injected config) |
+| `GET` | `/sankey` | Sankey Flow page (with injected config) |
 
 ### Account Data (proxied from Firefly III)
 | Method | Path | Query Params | Description |
@@ -297,7 +355,17 @@ The index (`/`) and summary (`/summary`) handlers inject server-side config into
 | `GET` | `/api/earned-spent` | `start`, `end`, `period`, `accounts[]` | Earned vs spent chart data |
 | `GET` | `/api/expenses-by-category` | `start`, `end`, `accounts[]` | Expenses grouped by category |
 | `GET` | `/api/net-worth` | `start`, `end`, `period` | Net worth over time |
-| `GET` | `/api/summary/monthly` | `month`, `year`, `account_ids` (comma-separated), `account_type` | Monthly financial summary |
+| `GET` | `/api/earned-spent/since` | `since`, `end`, `period`, `accounts[]` | Earned vs spent from a start point onward |
+| `GET` | `/api/budgets/list` | `start`, `end` | Budget list |
+| `GET` | `/api/budgets/spent` | `start`, `end` | Spent per budget for the period |
+| `GET` | `/api/budgets/spent-history` | `start`, `end`, `period`, `accounts[]` | Spent-per-budget time series |
+| `GET` | `/api/budgets/comparison` | `start`, `end`, `budget_names` (repeatable) | This year vs last year + projections vs limits |
+| `GET` | `/api/budgets/avg-cost` | `budget_names` (repeatable), `mode`, `months`, `account_ids` (comma-separated), `month`, `year` | Average monthly cost per budget |
+| `GET` | `/api/card-paydown` | `start`, `end`, `accounts[]`, `debug` | Credit card paydown analysis |
+| `POST` | `/api/card-paydown/refresh` | — | Clear card paydown cache |
+| `GET` | `/api/categories/list` | — | Top-level categories with subcategories |
+| `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]` | Spending by subcategory |
+| `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]` | Sankey flow data |
 
 ### Cache Management
 | Method | Path | Description |
@@ -305,6 +373,7 @@ The index (`/`) and summary (`/summary`) handlers inject server-side config into
 | `POST` | `/api/refresh` | Clear ALL caches |
 | `POST` | `/api/accounts/refresh` | Clear accounts cache only |
 | `POST` | `/api/accounts/balance-history/refresh` | Clear balance history cache only |
+| `POST` | `/api/budgets/spent/refresh` | Clear budget-spent cache only |
 
 ### Widget CRUD
 | Method | Path | Description |
@@ -321,6 +390,15 @@ The index (`/`) and summary (`/summary`) handlers inject server-side config into
 | `POST` | `/api/groups` | Create group (must have ≥1 account_id) |
 | `PUT` | `/api/groups/{id}` | Update group (path ID must match body ID, ≥1 account_id) |
 | `DELETE` | `/api/groups/{id}` | Delete group |
+
+### Dashboard CRUD
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/dashboards` | List all dashboards |
+| `GET` | `/api/dashboards/{id}/widgets` | List widgets assigned to a dashboard |
+| `POST` | `/api/dashboards` | Create dashboard (JSON body: `Dashboard`, non-empty name) |
+| `PUT` | `/api/dashboards/{id}` | Update dashboard (path ID must match body ID, non-empty name) |
+| `DELETE` | `/api/dashboards/{id}` | Delete dashboard (widgets keep their data) |
 
 ### Static Files
 | Method | Path | Description |
@@ -343,7 +421,10 @@ The index (`/`) and summary (`/summary`) handlers inject server-side config into
 | `RUST_LOG` | `info` | Log level (trace, debug, info, warn, error) |
 | `ACCOUNT_TYPES` | `asset,cash,expense,revenue,liability` | Account types for the UI filter dropdown |
 | `AUTO_FETCH_ACCOUNTS` | `false` | Auto-load accounts and chart on page load |
-| `DATA_DIR` | `./data` | Directory for the SQLite database (`oxidize.db`) |
+| `DATA_DIR` | `~/.oxidize/data` | Directory for the SQLite database (`oxidize.db`) |
+| `CACHE_TTL` | `3600` | Chart cache TTL in seconds |
+| `TIME_RANGES` | `7d,30d,3m,6m,1y,ytd` | Relative time range presets |
+| `DEFAULT_TIME_RANGE` | `30d` | Pre-selected time range preset |
 
 ## Dependencies
 
