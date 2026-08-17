@@ -125,8 +125,8 @@
     let navYear = null;    // target year for comparison
     let lastAvgCostData = null;  // cache last response for re-render
 
-    function formatCurrency(amount, symbol) {
-        return OxiUI.formatCurrency(amount, { symbol: symbol || '' });
+    function formatCurrency(amount) {
+        return OxiUI.formatCurrency(amount);
     }
 
     function renderCheckItems(container, items, cbClass, nameAttr) {
@@ -265,14 +265,12 @@
             return sortAsc ? va - vb : vb - va;
         });
 
-        const symbol = data.budgets[0].currency_symbol || data.budgets[0].currency_code || '';
-
         tbody.innerHTML = sorted.map(b => {
             const maxAmount = Math.max(...b.monthly_data.map(m => m.amount), 1);
             const bars = b.monthly_data.map(m => {
                 const height = Math.max((m.amount / maxAmount) * 100, 3);
                 return '<div class="mini-bar" style="height:' + height + '%">' +
-                    '<span class="bar-tooltip">' + m.label + ': ' + formatCurrency(m.amount, symbol) + '</span>' +
+                    '<span class="bar-tooltip">' + m.label + ': ' + formatCurrency(m.amount) + '</span>' +
                 '</div>';
             }).join('');
 
@@ -282,10 +280,10 @@
 
             return '<tr>' +
                 '<td><strong>' + b.budget_name + '</strong></td>' +
-                '<td class="avg-cell">' + formatCurrency(b.average_cost, symbol) + '</td>' +
-                '<td>' + formatCurrency(b.total_spend, symbol) + '</td>' +
-                '<td>' + formatCurrency(b.min_spend, symbol) + '</td>' +
-                '<td>' + formatCurrency(b.max_spend, symbol) + '</td>' +
+                '<td class="avg-cell">' + formatCurrency(b.average_cost) + '</td>' +
+                '<td>' + formatCurrency(b.total_spend) + '</td>' +
+                '<td>' + formatCurrency(b.min_spend) + '</td>' +
+                '<td>' + formatCurrency(b.max_spend) + '</td>' +
                 '<td>' + b.monthly_data.length + ' (' + modeLabel + ')</td>' +
                 '<td class="bar-cell"><div class="mini-bar-container">' + bars + '</div></td>' +
             '</tr>';
@@ -298,10 +296,10 @@
         const totalMax = sorted.reduce((s, b) => s + b.max_spend, 0);
         tbody.innerHTML += '<tr class="total-row">' +
             '<td>Total</td>' +
-            '<td class="avg-cell">' + formatCurrency(totalAvg, symbol) + '</td>' +
-            '<td>' + formatCurrency(totalSpend, symbol) + '</td>' +
-            '<td>' + formatCurrency(totalMin, symbol) + '</td>' +
-            '<td>' + formatCurrency(totalMax, symbol) + '</td>' +
+            '<td class="avg-cell">' + formatCurrency(totalAvg) + '</td>' +
+            '<td>' + formatCurrency(totalSpend) + '</td>' +
+            '<td>' + formatCurrency(totalMin) + '</td>' +
+            '<td>' + formatCurrency(totalMax) + '</td>' +
             '<td>\u2014</td>' +
             '<td></td>' +
         '</tr>';

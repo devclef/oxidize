@@ -5,7 +5,7 @@
  *  - OxiUI.toast(message, type)      non-blocking notifications
  *  - OxiUI.confirm(opts)             Promise<boolean> confirm dialog
  *  - OxiUI.prompt(opts)              Promise<string|null> input dialog
- *  - OxiUI.formatCurrency(v, opts)   consistent currency formatting
+ *  - OxiUI.formatCurrency(v, opts)   consistent amount formatting (no currency symbol)
  *  - OxiUI.getChartColors()          theme-aware chart colors
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
  */
@@ -155,6 +155,8 @@
                 return;
             }
         }
+        const errEl = currentError();
+        if (errEl) errEl.textContent = '';
         settle(true);
     }
 
@@ -234,15 +236,16 @@
         });
     }
 
-    // ── Currency formatting ─────────────────────────────────────────────
-    // opts: { symbol, code, decimals, compact }
+    // ── Amount formatting ───────────────────────────────────────────────
+    // No currency symbol is rendered on purpose: amounts stay generic for
+    // whatever currency the user's Firefly instance uses.
+    // opts: { decimals, compact }
     // compact: abbreviate 1,234 -> 1.2K and 1,234,567 -> 1.2M
     function formatCurrency(value, opts) {
         const num = typeof value === 'number' ? value : parseFloat(value);
         if (!isFinite(num)) return '\u2014';
         opts = opts || {};
         const decimals = opts.decimals != null ? opts.decimals : 2;
-        const symbol = opts.symbol || '';
         const abs = Math.abs(num);
         const sign = num < 0 ? '-' : '';
         let body;
@@ -256,7 +259,7 @@
                 maximumFractionDigits: decimals
             });
         }
-        return sign + symbol + body;
+        return sign + body;
     }
 
     // ── Theme-aware chart colors ────────────────────────────────────────

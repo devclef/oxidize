@@ -1449,11 +1449,9 @@ function renderNetWorthChart(ctx, history) {
     // Extract labels and data from history
     let labels = [];
     let data = [];
-    let currencySymbol = '';
 
     if (history && history.length > 0) {
         const dataset = history[0];
-        currencySymbol = dataset.currency_symbol || '';
 
         if (Array.isArray(dataset.entries)) {
             labels = dataset.entries.map(e => e.date || e.key);
@@ -1515,7 +1513,7 @@ function renderNetWorthChart(ctx, history) {
                     ticks: {
                         color: chartTextColor,
                         callback: function(value) {
-                            return currencySymbol + value.toLocaleString();
+                            return value.toLocaleString();
                         }
                     }
                 },
@@ -1542,7 +1540,7 @@ function renderNetWorthChart(ctx, history) {
                     callbacks: {
                         label: function(context) {
                             if (context.parsed.y !== null) {
-                                return 'Net Worth: ' + currencySymbol + context.parsed.y.toLocaleString();
+                                return 'Net Worth: ' + context.parsed.y.toLocaleString();
                             }
                             return '';
                         }
@@ -1711,7 +1709,7 @@ function getPiePalette() {
            '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
 }
 
-function renderPieChart(ctx, labels, data, currencySymbol = '') {
+function renderPieChart(ctx, labels, data) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
 
@@ -1753,7 +1751,7 @@ function renderPieChart(ctx, labels, data, currencySymbol = '') {
                             const value = context.parsed.value;
                             const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
                             const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
-                            return context.label + ': ' + currencySymbol + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
+                            return context.label + ': ' + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
                         }
                     }
                 }
@@ -1764,8 +1762,6 @@ function renderPieChart(ctx, labels, data, currencySymbol = '') {
 
 function renderCardPaydownPreview(ctx, data) {
     const activity = data.monthly_activity || [];
-    const summary = data.summary || {};
-    const symbol = summary.currency_symbol || '$';
 
     if (balanceChart) {
         balanceChart.destroy();
@@ -1842,7 +1838,7 @@ function renderCardPaydownPreview(ctx, data) {
                         label: function(context) {
                             const val = context.parsed.y;
                             const absVal = Math.abs(val);
-                            return context.dataset.label + ': ' + (val >= 0 ? '+' : '-') + symbol + absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            return context.dataset.label + ': ' + (val >= 0 ? '+' : '-') + absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         }
                     }
                 }
@@ -1859,7 +1855,7 @@ function renderCardPaydownPreview(ctx, data) {
                         color: chartTextColor,
                         callback: function(value) {
                             const prefix = value < 0 ? '-' : '';
-                            return prefix + symbol + Math.abs(value).toLocaleString();
+                            return prefix + Math.abs(value).toLocaleString();
                         }
                     },
                     grid: { color: chartGridColor },
@@ -1870,7 +1866,7 @@ function renderCardPaydownPreview(ctx, data) {
                     position: 'right',
                     ticks: {
                         color: chartTextColor,
-                        callback: function(value) { return symbol + value.toLocaleString(); }
+                        callback: function(value) { return value.toLocaleString(); }
                     },
                     grid: { display: false },
                     title: { display: true, text: 'Balance', color: chartTextColor }

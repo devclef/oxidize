@@ -156,12 +156,12 @@
         document.getElementById('budget-filter-panel').style.display = type === 'budget' ? 'block' : 'none';
     }
 
-    function formatCurrency(amount, symbol) {
-        return OxiUI.formatCurrency(amount, { symbol: symbol || '' });
+    function formatCurrency(amount) {
+        return OxiUI.formatCurrency(amount);
     }
 
-    function formatCurrencyCompact(amount, symbol) {
-        return OxiUI.formatCurrency(amount, { symbol: symbol || '', compact: true });
+    function formatCurrencyCompact(amount) {
+        return OxiUI.formatCurrency(amount, { compact: true });
     }
 
     function getSelectedAccountIds() {
@@ -307,8 +307,7 @@
             placeholder.style.display = 'none';
             chartDiv.style.display = 'block';
 
-            const symbol = data.currency_symbol || data.currency_code || '';
-            document.getElementById('total-amount').textContent = formatCurrency(data.total, symbol);
+            document.getElementById('total-amount').textContent = formatCurrency(data.total);
             totalBar.style.display = 'flex';
         } catch (e) {
             errorContainer.textContent = 'Failed to generate flow data: ' + e.message;
@@ -334,7 +333,6 @@
         const tooltip = document.getElementById('tooltip');
 
         const colors = getThemeColors();
-        const symbol = data.currency_symbol || data.currency_code || '';
 
         const width = chartDiv.clientWidth || 1100;
         const height = Math.max(400, Math.min(700, width * 0.55));
@@ -408,7 +406,7 @@
                 tooltip.style.display = 'block';
                 tooltip.innerHTML = '<strong>' + d.source.name + '</strong><br>' +
                     '→ ' + d.target.name + '<br>' +
-                    formatCurrency(d.value, symbol);
+                    formatCurrency(d.value);
                 tooltip.style.left = (event.clientX + 12) + 'px';
                 tooltip.style.top = (event.clientY - 10) + 'px';
                 d3.select(this).attr('stroke-opacity', 0.7);
@@ -468,7 +466,7 @@
             .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
             .attr('y', d => d.y1 - 2)
             .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-            .text(d => formatCurrencyCompact(d.value || 0, symbol));
+            .text(d => formatCurrencyCompact(d.value || 0));
     }
 
     // ── Groups ────────────────────────────────────────────────

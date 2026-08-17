@@ -1543,8 +1543,6 @@ function renderSankeyChart(container, data) {
         mutedText: isDark ? '#8a8a98' : '#6b7280',
         nodeStroke: isDark ? 'rgba(255, 255, 255, 0.12)' : '#d1d5db',
     };
-    const symbol = data.currency_symbol || data.currency_code || '';
-
     const width = container.clientWidth || 1100;
     const height = container.clientHeight || Math.max(400, Math.min(600, width * 0.5));
 
@@ -1598,7 +1596,7 @@ function renderSankeyChart(container, data) {
         if (abs >= 1000000) formatted = (abs / 1000000).toFixed(1) + 'M';
         else if (abs >= 1000) formatted = abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         else formatted = abs.toFixed(2);
-        return (amount < 0 ? '-' : '') + symbol + formatted;
+        return (amount < 0 ? '-' : '') + formatted;
     }
 
     // Draw links
@@ -1685,7 +1683,7 @@ function renderSankeyChart(container, data) {
             const short = val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
                 : val >= 1000 ? (val / 1000).toFixed(1) + 'K'
                 : val.toFixed(0);
-            return symbol + short;
+            return short;
         });
 }
 
@@ -1729,7 +1727,6 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
 
     const activity = data.monthly_activity || [];
     const summary = data.summary || {};
-    const symbol = summary.currency_symbol || '$';
 
     if (!activity.length) {
         const errorEl = document.getElementById(`${canvasId}-error`);
@@ -1819,7 +1816,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return `${symbol}${context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                                return `${context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                             }
                         }
                     }
@@ -1832,7 +1829,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                     y: {
                         ticks: {
                             color: chartTextColor,
-                            callback: function(value) { return symbol + value.toLocaleString(); }
+                            callback: function(value) { return value.toLocaleString(); }
                         },
                         grid: { color: chartGridColor },
                     }
@@ -1904,7 +1901,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                             label: function(context) {
                                 const val = context.parsed.y;
                                 const absVal = Math.abs(val);
-                                return `${context.dataset.label}: ${val >= 0 ? '+' : '-'}${symbol}${absVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                                return `${context.dataset.label}: ${val >= 0 ? '+' : '-'}${absVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                             }
                         }
                     }
@@ -1919,7 +1916,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
                             color: chartTextColor,
                             callback: function(value) {
                                 const prefix = value < 0 ? '-' : '';
-                                return prefix + symbol + Math.abs(value).toLocaleString();
+                                return prefix + Math.abs(value).toLocaleString();
                             }
                         },
                         grid: { color: chartGridColor },
@@ -1943,19 +1940,19 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
         const currentBalance = summary.current_balance || 0;
 
         let html = '';
-        html += `<span class="paydown-stat"><span class="paydown-label">Total Paid</span><span class="paydown-value positive">${symbol}${totalPayments.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
-        html += `<span class="paydown-stat"><span class="paydown-label">Total Spent</span><span class="paydown-value negative">${symbol}${totalSpending.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
-        html += `<span class="paydown-stat"><span class="paydown-label">Net Paydown</span><span class="paydown-value ${totalNet >= 0 ? 'positive' : 'negative'}">${symbol}${totalNet.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
-        html += `<span class="paydown-stat"><span class="paydown-label">Avg/Month</span><span class="paydown-value ${avgMonthly >= 0 ? 'positive' : 'negative'}">${symbol}${avgMonthly.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Total Paid</span><span class="paydown-value positive">${totalPayments.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Total Spent</span><span class="paydown-value negative">${totalSpending.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Net Paydown</span><span class="paydown-value ${totalNet >= 0 ? 'positive' : 'negative'}">${totalNet.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+        html += `<span class="paydown-stat"><span class="paydown-label">Avg/Month</span><span class="paydown-value ${avgMonthly >= 0 ? 'positive' : 'negative'}">${avgMonthly.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
 
         if (currentBalance > 0) {
-            html += `<span class="paydown-stat"><span class="paydown-label">Current Balance</span><span class="paydown-value">${symbol}${currentBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
+            html += `<span class="paydown-stat"><span class="paydown-label">Current Balance</span><span class="paydown-value">${currentBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>`;
         }
         if (projectedMonths != null && projectedMonths > 0) {
             html += `<span class="paydown-stat highlight"><span class="paydown-label">Projected Payoff</span><span class="paydown-value">${projectedMonths} month(s)</span></span>`;
         }
         if (bestMonth) {
-            html += `<span class="paydown-stat"><span class="paydown-label">Best Month</span><span class="paydown-value positive">${bestMonth.month} (+${symbol}${bestMonth.net_paydown.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span></span>`;
+            html += `<span class="paydown-stat"><span class="paydown-label">Best Month</span><span class="paydown-value positive">${bestMonth.month} (+${bestMonth.net_paydown.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span></span>`;
         }
 
         summaryDiv.innerHTML = html;

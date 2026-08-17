@@ -82,8 +82,8 @@
     let monthlyChart = null;
     let cumulativeChart = null;
 
-    function formatCurrency(amount, symbol) {
-        return OxiUI.formatCurrency(amount, { symbol: symbol || '' });
+    function formatCurrency(amount) {
+        return OxiUI.formatCurrency(amount);
     }
 
     function getChartColors() {
@@ -200,7 +200,6 @@
         }
 
         // Aggregate projections across all selected budgets
-        const symbol = data[0].currency_symbol || data[0].currency_code || '$';
         let totalYtd = 0, totalProjected = 0, totalLastYear = 0;
         let totalLimit = 0, hasLimit = false;
         let onTrackCount = 0;
@@ -239,15 +238,15 @@
         document.getElementById('projection-cards').innerHTML = `
             <div class="proj-card ytd">
                 <h3>Year-to-Date</h3>
-                <p class="amount">${formatCurrency(totalYtd, symbol)}</p>
+                <p class="amount">${formatCurrency(totalYtd)}</p>
             </div>
             <div class="proj-card projected">
                 <h3>Projected Annual</h3>
-                <p class="amount">${formatCurrency(totalProjected, symbol)}</p>
+                <p class="amount">${formatCurrency(totalProjected)}</p>
             </div>
             <div class="proj-card last-year">
                 <h3>Previous Year</h3>
-                <p class="amount">${formatCurrency(totalLastYear, symbol)}</p>
+                <p class="amount">${formatCurrency(totalLastYear)}</p>
             </div>
             <div class="proj-card vs-limit">
                 <h3>vs Budget Limit</h3>
@@ -280,7 +279,6 @@
             if (monthlyChart) monthlyChart.destroy();
 
             const colors = getChartColors();
-            const symbol = data[0].currency_symbol || data[0].currency_code || '$';
 
             // Build datasets: one per budget for current year, one per budget for previous year
             // Each group shares a stack key so they stack vertically
@@ -347,7 +345,7 @@
                             callbacks: {
                                 label: function(ctx) {
                                     const val = ctx.parsed.y;
-                                    return ctx.dataset.label + ': ' + formatCurrency(val, symbol);
+                                    return ctx.dataset.label + ': ' + formatCurrency(val);
                                 }
                             }
                         }
@@ -363,7 +361,7 @@
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
-                                    return formatCurrency(v, symbol);
+                                    return formatCurrency(v);
                                 }
                             },
                             grid: { color: colors.gridColor },
@@ -404,8 +402,6 @@
             const chartCtx = canvas.getContext('2d');
 
             if (cumulativeChart) cumulativeChart.destroy();
-
-            const symbol = data[0].currency_symbol || data[0].currency_code || '$';
 
             const colors = getChartColors();
 
@@ -453,7 +449,7 @@
                             callbacks: {
                                 label: function(ctx) {
                                     const val = ctx.raw;
-                                    return ctx.dataset.label + ': ' + formatCurrency(val, symbol);
+                                    return ctx.dataset.label + ': ' + formatCurrency(val);
                                 }
                             }
                         }
@@ -469,7 +465,7 @@
                             ticks: {
                                 color: colors.textColor,
                                 callback: function(v) {
-                                    return formatCurrency(v, symbol);
+                                    return formatCurrency(v);
                                 }
                             },
                             grid: { color: colors.gridColor },

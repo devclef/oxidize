@@ -161,24 +161,29 @@ Goal: make the app feel like one cohesive product instead of five independently-
   can't regress from this work — they were run and pass. I also wrote a throwaway
   jsdom harness exercising the new `ui.js` (toasts, confirm, prompt + validation,
   dialog stacking, focus restore, currency formatting, theme colors) — all passed;
-  the harness was not committed (see "Questions" re: making it permanent).
+  the harness was committed as `static/ui.test.js` (Vitest, jsdom) and runs in CI.
 - `OxiUI.confirm/prompt` replace native dialogs 1:1 semantically (cancel → null/false,
   confirm → true/value). If a future page needs a multi-choice dialog, the same
   overlay can be extended.
-- Currency format stays "symbol first" (`$1,234.56`) — that matches the existing
-  Firefly symbol data and the previous dominant convention. Firefly supports symbol
-  positions per currency; see question 1.
+- Currency amounts now render with **no symbol at all** (plain grouped numbers,
+  e.g. `1,234.56`). Decided in question 1: keep the display generic for whatever
+  currency the user's Firefly instance uses. `OxiUI.formatCurrency` no longer takes
+  or renders a symbol, and all per-page symbol plumbing was removed. The API still
+  returns `currency_symbol`; it is simply no longer displayed.
 - The `.env` has `RUST_LOG=debug`; I left it alone, but note every request will be
   logged verbosely in production.
 
 ## Questions / open items for you
 
-1. **Currency symbol placement** — should symbols ever render *after* the amount
-   (e.g. for some EU currencies in Firefly)? The shared formatter currently always
-   prefixes. If yes, I'd add a `symbolAfter` option driven by the currency data.
-2. **Permanently test `ui.js`?** I verified it with a throwaway jsdom script. Worth
-   committing `static/ui.test.js` (Vitest is already set up for `static/**/*.test.js`)
-   so the dialog/toast logic is covered in CI — say the word and I'll add it.
+1. ~~Currency symbol placement~~ — **Resolved (2026-08-17): no symbol at all.**
+   Amounts render as plain grouped numbers so the UI stays generic for the user's
+   currency. `OxiUI.formatCurrency` drops the symbol option; per-page symbol
+   variables and prefixes removed across app.js, dashboard.js and the tool pages.
+2. ~~Permanently test `ui.js`?~~ — **Resolved (2026-08-17): done.** Committed
+   `static/ui.test.js` (Vitest + jsdom) covering toasts, confirm/prompt (labels,
+   danger, focus + restore, Escape/Enter, backdrop, validation, stacking), amount
+   formatting, theme colors and the spinner. First run surfaced one small fix:
+   validation error text is now cleared on a successful confirm.
 3. **`ACCOUNT_TYPES` on the dashboard** — with the injection-position fix, the
    dashboard now only fetches the configured account types (e.g. `asset,liability`)
    when building widget account tags. If any of your dashboards rely on widget
