@@ -1,6 +1,9 @@
 let allAccounts = [];
 let balanceChart = null;
 let enableComparison = false;
+// Re-runs the last successful chart render (used when display-only options
+// like the trend line change).
+let lastChartRenderAction = null;
 const DASHBOARD_WIDGETS_KEY = 'oxidize_dashboard_widgets';
 let selectedTypes = new Set(['all']);
 let chartErrorEl = null;
@@ -491,6 +494,9 @@ async function fetchChartData() {
                 const chartTextColor = isDark ? '#d4d4de' : '#333';
                 const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
+                // Trend line: dotted moving average per series
+                appendTrendlines(datasets);
+
                 balanceChart = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -657,6 +663,9 @@ async function fetchChartData() {
                 const chartTextColor = isDark ? '#d4d4de' : '#333';
                 const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
+                // Trend line: dotted moving average per series
+                appendTrendlines(datasets);
+
                 balanceChart = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -703,6 +712,10 @@ async function fetchChartData() {
                     }
                 });
             }
+            // Re-render hook for display-only options (trend line, etc.)
+            lastChartRenderAction = () => fetchChartData();
+            // Re-render hook for display-only options (trend line, etc.)
+            lastChartRenderAction = () => fetchChartData();
             return;
         }
 
@@ -924,6 +937,7 @@ const pctLabelPlugin = {
 
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             if (!dataset.data || dataset.hidden) return;
+            if (dataset.isTrendline) return; // no % labels on trend lines
 
             const data = dataset.data;
             if (data.length === 0) return;
@@ -978,6 +992,26 @@ const BUDGET_COLORS = [
 function getSelectedAccountIds() {
     const checkboxes = document.querySelectorAll('.account-select:checked');
     return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Trend line (moving average) option state, read live from the controls
+function getTrendlineSettings() {
+    const enableEl = document.getElementById('enable-trendline');
+    const windowEl = document.getElementById('trendline-window');
+    const enabled = !!(enableEl && enableEl.checked);
+    let window = windowEl ? parseInt(windowEl.value, 10) : 7;
+    if (!isFinite(window) || window < 1) window = 7;
+    return { enabled: enabled, window: window };
+}
+
+// Push a dotted moving-average "trend line" dataset for every series in
+// `datasets` (mutates the array). No-op when the option is disabled.
+function appendTrendlines(datasets) {
+    if (!Array.isArray(datasets) || typeof OxiUI === 'undefined') return;
+    const settings = getTrendlineSettings();
+    if (!settings.enabled) return;
+    OxiUI.addTrendlineDatasets(datasets, { window: settings.window })
+        .forEach(d => datasets.push(d));
 }
 
 function generateColors(count) {
@@ -1067,26 +1101,31 @@ function renderEarnedSpentBarsChart(ctx, history) {
         balanceChart.destroy();
     }
 
+    const datasets = [
+        {
+            label: 'Earned',
+            data: earnedData,
+            backgroundColor: earnedColor,
+            borderColor: earnedColor,
+            borderWidth: 1
+        },
+        {
+            label: 'Spent',
+            data: spentData,
+            backgroundColor: spentColor,
+            borderColor: spentColor,
+            borderWidth: 1
+        }
+    ];
+
+    // Trend line: dotted moving average per series
+    appendTrendlines(datasets);
+
     balanceChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [
-                {
-                    label: 'Earned',
-                    data: earnedData,
-                    backgroundColor: earnedColor,
-                    borderColor: earnedColor,
-                    borderWidth: 1
-                },
-                {
-                    label: 'Spent',
-                    data: spentData,
-                    backgroundColor: spentColor,
-                    borderColor: spentColor,
-                    borderWidth: 1
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,
@@ -1176,21 +1215,26 @@ function renderDeltaLineChart(ctx, history) {
         balanceChart.destroy();
     }
 
+    const chartDatasets = [{
+        label: 'Delta (Earned - Spent)',
+        data: deltaData,
+        borderColor: lineColor,
+        backgroundColor: lineColor + '33',
+        tension: 0.3,
+        pointBackgroundColor: pointColor,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: false
+    }];
+
+    // Trend line: dotted moving average
+    appendTrendlines(chartDatasets);
+
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Delta (Earned - Spent)',
-                data: deltaData,
-                borderColor: lineColor,
-                backgroundColor: lineColor + '33',
-                tension: 0.3,
-                pointBackgroundColor: pointColor,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                fill: false
-            }]
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -1281,17 +1325,22 @@ function renderDeltaBarChart(ctx, history) {
         balanceChart.destroy();
     }
 
+    const chartDatasets = [{
+        label: 'Delta (Earned - Spent)',
+        data: deltaData,
+        backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+        borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+        borderWidth: 1
+    }];
+
+    // Trend line: dotted moving average
+    appendTrendlines(chartDatasets);
+
     balanceChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Delta (Earned - Spent)',
-                data: deltaData,
-                backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
-                borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
-                borderWidth: 1
-            }]
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -1393,6 +1442,9 @@ function renderExpensesByCategoryChart(ctx, datasets) {
         balanceChart.destroy();
     }
 
+    // Trend line: dotted moving average per category
+    appendTrendlines(chartDatasets);
+
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -1489,19 +1541,24 @@ function renderNetWorthChart(ctx, history) {
         balanceChart.destroy();
     }
 
+    const chartDatasets = [{
+        label: 'Net Worth',
+        data: data,
+        borderColor: netWorthColor,
+        backgroundColor: netWorthColor + '20',
+        borderWidth: 2,
+        tension: 0.1,
+        fill: true
+    }];
+
+    // Trend line: dotted moving average
+    appendTrendlines(chartDatasets);
+
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Net Worth',
-                data: data,
-                borderColor: netWorthColor,
-                backgroundColor: netWorthColor + '20',
-                borderWidth: 2,
-                tension: 0.1,
-                fill: true
-            }]
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -1877,6 +1934,7 @@ function renderCardPaydownPreview(ctx, data) {
 }
 
 function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
+    lastChartRenderAction = () => renderChart(history, widgetType, cardPaydownData);
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
     const chartType = getChartType();
@@ -2358,6 +2416,24 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
             dataset.hidden = !datasetVisibility[index];
         });
 
+        // Trend line: dotted moving average per visible dataset (real data only;
+        // stored separately so the forecast extension below doesn't touch it)
+        let splitTrendlines = [];
+        {
+            const tl = getTrendlineSettings();
+            if (tl.enabled) {
+                currentDatasets.forEach((dataset, index) => {
+                    if (dataset.hidden) return;
+                    const trendDs = OxiUI.trendlineDataset(dataset.label, dataset.data, {
+                        window: tl.window,
+                        sourceColor: typeof dataset.borderColor === 'string' ? dataset.borderColor : undefined
+                    });
+                    trendDs.trendOf = index;
+                    splitTrendlines.push(trendDs);
+                });
+            }
+        }
+
         // Forecast for split mode: extend each visible dataset with its own forecast data
         const enableForecastEl = document.getElementById('enable-forecast');
         const forecastDaysEl = document.getElementById('forecast-days');
@@ -2384,6 +2460,11 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                     dataset.data = [...dataset.data, ...result.values];
                 }
             });
+        }
+
+        // Append trend lines after forecast extension (they stay on real data)
+        if (splitTrendlines.length > 0) {
+            currentDatasets.push(...splitTrendlines);
         }
 
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -2552,6 +2633,19 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                 pointRadius: 0,
                 order: 1
             });
+        }
+
+        // Trend line: dotted moving average over the real (non-forecast) data
+        {
+            const tl = getTrendlineSettings();
+            if (tl.enabled) {
+                const trendDs = OxiUI.trendlineDataset('Total Balance', absoluteData, {
+                    window: tl.window,
+                    sourceColor: color
+                });
+                trendDs.trendOf = 0;
+                chartDatasets.push(trendDs);
+            }
         }
 
         balanceChart = new Chart(ctx, {
@@ -2839,6 +2933,12 @@ function renderSplitLegend(accountInfo, datasets) {
             // Toggle visibility
             datasetVisibility[index] = !datasetVisibility[index];
             dataset.hidden = !datasetVisibility[index];
+            // Keep the matching trend line in sync
+            datasets.forEach(d => {
+                if (d && d.isTrendline && d.trendOf === index) {
+                    d.hidden = !datasetVisibility[index];
+                }
+            });
             item.classList.toggle('active');
             item.classList.toggle('hidden');
 
@@ -3176,6 +3276,9 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
         balanceChart.destroy();
     }
     
+    // Trend line: dotted moving average per series
+    appendTrendlines(chartDatasets);
+
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: { labels: labels, datasets: chartDatasets },
@@ -4072,6 +4175,37 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem(FORECAST_DAYS_KEY, forecastDays);
             if (balanceChart) {
                 balanceChart.update();
+            }
+        });
+    }
+
+    // Trend line (moving average) toggle
+    const enableTrendlineEl = document.getElementById('enable-trendline');
+    const trendlineWindowEl = document.getElementById('trendline-window');
+    const TRENDLINE_KEY = 'oxidize_trendline_enabled';
+    const TRENDLINE_WINDOW_KEY = 'oxidize_trendline_window';
+
+    let trendlineEnabled = localStorage.getItem(TRENDLINE_KEY) === 'true';
+    let trendlineWindow = parseInt(localStorage.getItem(TRENDLINE_WINDOW_KEY), 10) || 7;
+
+    if (enableTrendlineEl) {
+        enableTrendlineEl.checked = trendlineEnabled;
+        enableTrendlineEl.addEventListener('change', () => {
+            trendlineEnabled = enableTrendlineEl.checked;
+            localStorage.setItem(TRENDLINE_KEY, trendlineEnabled);
+            if (lastChartRenderAction) {
+                lastChartRenderAction();
+            }
+        });
+    }
+
+    if (trendlineWindowEl) {
+        trendlineWindowEl.value = trendlineWindow;
+        trendlineWindowEl.addEventListener('change', () => {
+            trendlineWindow = parseInt(trendlineWindowEl.value, 10) || 7;
+            localStorage.setItem(TRENDLINE_WINDOW_KEY, trendlineWindow);
+            if (lastChartRenderAction) {
+                lastChartRenderAction();
             }
         });
     }

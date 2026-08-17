@@ -377,3 +377,123 @@ describe('OxiUI.spinnerHtml', () => {
         );
     });
 });
+
+// ── Trend line (moving average) ─────────────────────────────────────────────
+describe('OxiUI.movingAverage', () => {
+    it('computes a trailing window average, starting with partial windows', () => {
+        // values: 1..10, window 3
+        const out = OxiUI.movingAverage([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 3);
+        expect(out).toEqual([
+            1,           // avg(1)
+            1.5,         // avg(1,2)
+            2,           // avg(1,2,3)
+            3,           // avg(2,3,4)
+            4,
+            5,
+            6,
+            7,
+            8,
+            9            // avg(8,9,10)
+        ]);
+    });
+
+    it('window of 1 returns the values unchanged', () => {
+        expect(OxiUI.movingAverage([4, 8, 15], 1)).toEqual([4, 8, 15]);
+    });
+
+    it('ignores null / non-numeric entries inside the window', () => {
+        const out = OxiUI.movingAverage([2, null, 4, 'x', 8], 3);
+        // i=0: avg(2)=2
+        // i=1: avg(2, null)=2
+        // i=2: avg(2, null, 4)=3
+        // i=3: window null,4,'x' -> avg(4)=4
+        // i=4: window 4,'x',8 -> avg(4,8)=6
+        expect(out).toEqual([2, 2, 3, 4, 6]);
+    });
+
+    it('returns null where the whole window has no usable value', () => {
+        expect(OxiUI.movingAverage([null, null, 5], 2)).toEqual([null, null, 5]);
+    });
+
+    it('falls back to the default window of 7 for invalid windows', () => {
+        const long = Array.from({ length: 10 }, (_, i) => i + 1);
+        expect(OxiUI.movingAverage(long, 0)).toEqual(OxiUI.movingAverage(long, 7));
+        expect(OxiUI.movingAverage(long, -3)).toEqual(OxiUI.movingAverage(long, 7));
+        expect(OxiUI.movingAverage(long, 'bogus')).toEqual(OxiUI.movingAverage(long, 7));
+    });
+
+    it('handles empty and non-array input', () => {
+        expect(OxiUI.movingAverage([], 5)).toEqual([]);
+        expect(OxiUI.movingAverage(null, 5)).toEqual([]);
+    });
+});
+
+describe('OxiUI.trendlineDataset', () => {
+    it('builds a dotted line dataset over the moving average', () => {
+        const ds = OxiUI.trendlineDataset('Total Balance', [1, 2, 3, 4], { window: 2 });
+        expect(ds.label).toBe('Total Balance (avg)');
+        expect(ds.data).toEqual([1, 1.5, 2.5, 3.5]);
+        expect(ds.type).toBe('line');
+        expect(ds.borderDash).toEqual([2, 4]);
+        expect(ds.pointRadius).toBe(0);
+        expect(ds.fill).toBe(false);
+        expect(ds.spanGaps).toBe(true);
+        expect(ds.isTrendline).toBe(true);
+        expect(ds.order).toBe(-1); // drawn on top
+    });
+
+    it('matches the source color when it is a plain string', () => {
+        const ds = OxiUI.trendlineDataset('A', [1, 2, 3], { window: 1, sourceColor: '#3498db' });
+        expect(ds.borderColor).toBe('#3498db');
+    });
+
+    it('falls back to the theme-aware amber color for non-string source colors', () => {
+        document.documentElement.removeAttribute('data-theme');
+        expect(OxiUI.trendlineDataset('A', [1, 2], { window: 1, sourceColor: ['#a', '#b'] }).borderColor).toBe('#d97706');
+        document.documentElement.setAttribute('data-theme', 'dark');
+        expect(OxiUI.trendlineDataset('A', [1, 2], { window: 1, sourceColor: null }).borderColor).toBe('#fbbf24');
+    });
+
+    it('uses an explicit color override and defaults to window 7', () => {
+        const long = Array.from({ length: 10 }, (_, i) => i + 1);
+        const ds = OxiUI.trendlineDataset('A', long, { color: '#123456' });
+        expect(ds.borderColor).toBe('#123456');
+        expect(ds.data).toEqual(OxiUI.movingAverage(long, 7));
+    });
+
+    it('names unlabeled series "Average"', () => {
+        expect(OxiUI.trendlineDataset(undefined, [1], {}).label).toBe('Average');
+    });
+});
+
+describe('OxiUI.addTrendlineDatasets', () => {
+    it('adds one trend line per source dataset and records trendOf', () => {
+        const datasets = [
+            { label: 'A', data: [1, 2, 3, 4, 5], borderColor: '#111' },
+            { label: 'B', data: [10, 20, 30, 40, 50], borderColor: ['#222'] }
+        ];
+        const additions = OxiUI.addTrendlineDatasets(datasets, { window: 2 });
+        expect(additions.length).toBe(2);
+        expect(additions[0].label).toBe('A (avg)');
+        expect(additions[0].trendOf).toBe(0);
+        expect(additions[0].borderColor).toBe('#111');
+        expect(additions[1].label).toBe('B (avg)');
+        expect(additions[1].trendOf).toBe(1);
+        expect(additions[1].borderColor).toBe('#d97706'); // non-string source color
+        expect(additions[1].data).toEqual(OxiUI.movingAverage([10, 20, 30, 40, 50], 2));
+        // does not mutate the input
+        expect(datasets.length).toBe(2);
+    });
+
+    it('skips existing trend lines and datasets without array data', () => {
+        const datasets = [
+            { label: 'A', data: [1, 2], isTrendline: true },
+            { label: 'B', data: 'nope' }
+        ];
+        expect(OxiUI.addTrendlineDatasets(datasets, { window: 2 })).toEqual([]);
+    });
+
+    it('returns an empty list for non-array input', () => {
+        expect(OxiUI.addTrendlineDatasets(null, { window: 2 })).toEqual([]);
+    });
+});

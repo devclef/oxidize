@@ -585,7 +585,9 @@ function normalizeChartOptions(opts) {
         show_pct: opts.show_pct ?? false,
         pct_mode: opts.pct_mode || 'from_previous',
         enable_forecast: opts.enable_forecast ?? false,
-        forecast_days: opts.forecast_days ?? 30
+        forecast_days: opts.forecast_days ?? 30,
+        show_trendline: opts.show_trendline ?? false,
+        trendline_window: opts.trendline_window ?? 7
     };
 }
 
@@ -604,6 +606,7 @@ const pctLabelPlugin = {
 
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             if (!dataset.data || dataset.hidden) return;
+            if (dataset.isTrendline) return; // no % labels on trend lines
 
             let absoluteData = dataset.absoluteData || dataset.data;
             if (!Array.isArray(absoluteData)) return;
@@ -802,6 +805,10 @@ async function updateWidgetDateRange(widgetId) {
     const forecastDaysEl = el(`${widgetId}-forecast-days`);
     if (enableForecastEl) widget.chart_options.enable_forecast = enableForecastEl.checked;
     if (forecastDaysEl) widget.chart_options.forecast_days = parseInt(forecastDaysEl.value, 10) || 30;
+    const enableTrendlineEl = el(`${widgetId}-enable-trendline`);
+    const trendlineWindowEl = el(`${widgetId}-trendline-window`);
+    if (enableTrendlineEl) widget.chart_options.show_trendline = enableTrendlineEl.checked;
+    if (trendlineWindowEl) widget.chart_options.trendline_window = parseInt(trendlineWindowEl.value, 10) || 7;
 
     const earnedChartTypeEl = document.getElementById(`${widgetId}-earned-chart-type`);
     if (earnedChartTypeEl) widget.earned_chart_type = earnedChartTypeEl.value;
@@ -1019,6 +1026,12 @@ function renderSplitLegend(widgetId, accountInfo, datasets) {
             widgetDatasetVisibility[widgetId][index] = !widgetDatasetVisibility[widgetId][index];
             if (widgetCharts[widgetId]) {
                 widgetCharts[widgetId].data.datasets[index].hidden = !widgetDatasetVisibility[widgetId][index];
+                // Keep the matching trend line in sync
+                widgetCharts[widgetId].data.datasets.forEach(d => {
+                    if (d && d.isTrendline && d.trendOf === index) {
+                        d.hidden = !widgetDatasetVisibility[widgetId][index];
+                    }
+                });
             }
             item.classList.toggle('active');
             item.classList.toggle('hidden');
@@ -1045,8 +1058,18 @@ function getChartOptions(widget) {
         showPct: raw.show_pct,
         pctMode: raw.pct_mode,
         enableForecast: raw.enable_forecast,
-        forecastDays: raw.forecast_days
+        forecastDays: raw.forecast_days,
+        showTrendline: raw.show_trendline,
+        trendlineWindow: raw.trendline_window
     };
+}
+
+// Append a dotted moving-average "trend line" dataset per series when the
+// widget has the trend line option enabled (mutates `datasets`).
+function appendWidgetTrendlines(datasets, opts) {
+    if (!Array.isArray(datasets) || !opts || !opts.showTrendline) return;
+    OxiUI.addTrendlineDatasets(datasets, { window: opts.trendlineWindow })
+        .forEach(d => datasets.push(d));
 }
 
 async function renderEarnedSpentChart(ctx, widget, labels, history, _canvasId, chartType = 'bars') {
@@ -1081,26 +1104,31 @@ function renderEarnedSpentBarsChartDashboard(ctx, widget, labels, history) {
         widgetCharts[widget.id].destroy();
     }
 
+    const datasets = [
+        {
+            label: 'Earned',
+            data: earnedData,
+            backgroundColor: earnedColor,
+            borderColor: earnedColor,
+            borderWidth: 1
+        },
+        {
+            label: 'Spent',
+            data: spentData,
+            backgroundColor: spentColor,
+            borderColor: spentColor,
+            borderWidth: 1
+        }
+    ];
+
+    // Trend line: dotted moving average per series
+    appendWidgetTrendlines(datasets, opts);
+
     widgetCharts[widget.id] = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [
-                {
-                    label: 'Earned',
-                    data: earnedData,
-                    backgroundColor: earnedColor,
-                    borderColor: earnedColor,
-                    borderWidth: 1
-                },
-                {
-                    label: 'Spent',
-                    data: spentData,
-                    backgroundColor: spentColor,
-                    borderColor: spentColor,
-                    borderWidth: 1
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,
@@ -1173,21 +1201,26 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
         widgetCharts[widget.id].destroy();
     }
 
+    const chartDatasets = [{
+        label: 'Delta (Earned - Spent)',
+        data: deltaData,
+        borderColor: lineColor,
+        backgroundColor: lineColor + '33',
+        tension: 0.3,
+        pointBackgroundColor: pointColor,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: false
+    }];
+
+    // Trend line: dotted moving average
+    appendWidgetTrendlines(chartDatasets, opts);
+
     widgetCharts[widget.id] = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Delta (Earned - Spent)',
-                data: deltaData,
-                borderColor: lineColor,
-                backgroundColor: lineColor + '33',
-                tension: 0.3,
-                pointBackgroundColor: pointColor,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                fill: false
-            }]
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -1261,17 +1294,22 @@ function renderDeltaBarChartDashboard(ctx, widget, labels, history) {
         widgetCharts[widget.id].destroy();
     }
 
+    const chartDatasets = [{
+        label: 'Delta (Earned - Spent)',
+        data: deltaData,
+        backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+        borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
+        borderWidth: 1
+    }];
+
+    // Trend line: dotted moving average
+    appendWidgetTrendlines(chartDatasets, opts);
+
     widgetCharts[widget.id] = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Delta (Earned - Spent)',
-                data: deltaData,
-                backgroundColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
-                borderColor: deltaData.map(v => v >= 0 ? greenColor : redColor),
-                borderWidth: 1
-            }]
+            datasets: chartDatasets
         },
         options: {
             responsive: true,
@@ -2206,6 +2244,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 legendInfo.push({ name: ds.label });
             });
 
+            // Trend line: dotted moving average per series
+            appendWidgetTrendlines(datasets, opts);
+
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
@@ -2342,6 +2383,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 });
                 legendInfo.push({ name: ds.label });
             });
+
+            // Trend line: dotted moving average per series
+            appendWidgetTrendlines(datasets, opts);
 
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
@@ -2482,6 +2526,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 });
                 legendInfo.push({ name: ds.label });
             });
+
+            // Trend line: dotted moving average per series
+            appendWidgetTrendlines(datasets, opts);
 
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
@@ -2654,6 +2701,16 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             }];
             if (forecastDataset) {
                 combinedDatasets.push(forecastDataset);
+            }
+
+            // Trend line: dotted moving average over the real (non-forecast) data
+            if (opts.showTrendline) {
+                const trendDs = OxiUI.trendlineDataset('Total Balance', absoluteData, {
+                    window: opts.trendlineWindow,
+                    sourceColor: chartColor
+                });
+                trendDs.trendOf = 0;
+                combinedDatasets.push(trendDs);
             }
 
             widgetCharts[widget.id] = new Chart(ctx, {
@@ -2851,6 +2908,20 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             const chartTextColor = isDark ? '#d4d4de' : '#333';
             const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
+            // Trend line: dotted moving average per dataset (real data only;
+            // appended after the forecast extension below)
+            let splitTrendlines = [];
+            if (opts2.showTrendline) {
+                datasets.forEach((dataset, index) => {
+                    const trendDs = OxiUI.trendlineDataset(dataset.label, dataset.data, {
+                        window: opts2.trendlineWindow,
+                        sourceColor: typeof dataset.borderColor === 'string' ? dataset.borderColor : undefined
+                    });
+                    trendDs.trendOf = index;
+                    splitTrendlines.push(trendDs);
+                });
+            }
+
             // Forecast for split mode
             let splitLabels = labels;
             let splitDatasets = datasets;
@@ -2873,6 +2944,10 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                         });
                     }
                 }
+            }
+
+            if (splitTrendlines.length > 0) {
+                splitDatasets.push(...splitTrendlines);
             }
 
             widgetCharts[widget.id] = new Chart(ctx, {
@@ -3165,6 +3240,10 @@ async function renderDashboard() {
                         ${widgetType === 'balance' ? `
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-forecast" ${chartOpts.enableForecast ? 'checked' : ''}> Forecast Trend</label>
                         <label>Forecast Days: <input type="number" id="${widget.id}-forecast-days" value="${chartOpts.forecastDays}" min="1" max="365" style="width: 60px;"></label>
+                        ` : ''}
+                        ${widgetType !== 'sankey' ? `
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
+                        <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
                         ` : ''}
                     </div>
                     <div class="widget-settings-section">

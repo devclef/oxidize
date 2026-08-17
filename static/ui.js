@@ -8,6 +8,9 @@
  *  - OxiUI.formatCurrency(v, opts)   consistent amount formatting (no currency symbol)
  *  - OxiUI.getChartColors()          theme-aware chart colors
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
+ *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
+ *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
+ *  - OxiUI.addTrendlineDatasets(..) trend lines for a set of datasets
  */
 (function () {
     'use strict';
@@ -288,12 +291,96 @@
             (label || '') + '</span>';
     }
 
+
+    // ── Trend line (moving average) ────────────────────────────────────
+    // Trailing moving average over a fixed window of points. Null /
+    // non-numeric entries are ignored; an entry is null only when its
+    // whole window contains no usable value. The line starts at the
+    // first point (averaging whatever is available so far).
+    function movingAverage(values, window) {
+        if (!Array.isArray(values) || values.length === 0) return [];
+        let w = Math.floor(Number(window));
+        if (!isFinite(w) || w < 1) w = 7;
+        const out = new Array(values.length);
+        for (let i = 0; i < values.length; i++) {
+            const start = Math.max(0, i - w + 1);
+            let sum = 0;
+            let count = 0;
+            for (let j = start; j <= i; j++) {
+                const v = parseFloat(values[j]);
+                if (isFinite(v)) {
+                    sum += v;
+                    count++;
+                }
+            }
+            out[i] = count > 0 ? sum / count : null;
+        }
+        return out;
+    }
+
+    // Build a dotted "trend line" Chart.js dataset showing the moving
+    // average of a source series.
+    //   sourceLabel  label of the series being averaged (used for the name)
+    //   values       numeric series (may contain nulls)
+    //   opts         { window, color, sourceColor }
+    //   opts.sourceColor  if a plain string, the trend line matches the
+    //                     series color; otherwise the fallback color is used
+    function trendlineDataset(sourceLabel, values, opts) {
+        opts = opts || {};
+        const isDark = document.documentElement &&
+            document.documentElement.getAttribute('data-theme') === 'dark';
+        const fallbackColor = opts.color || (isDark ? '#fbbf24' : '#d97706');
+        const useSourceColor = typeof opts.sourceColor === 'string' && opts.sourceColor.length > 0;
+        const name = sourceLabel ? sourceLabel + ' (avg)' : 'Average';
+        return {
+            label: name,
+            data: movingAverage(values, opts.window != null ? opts.window : 7),
+            type: 'line',
+            borderColor: useSourceColor ? opts.sourceColor : fallbackColor,
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [2, 4],
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            pointHitRadius: 6,
+            fill: false,
+            spanGaps: true,
+            order: -1,
+            isTrendline: true
+        };
+    }
+
+    // Return trend line datasets for every non-trendline dataset in the
+    // given array (does not mutate it). Each result carries
+    // `trendOf: <source index>` so callers can sync visibility.
+    function addTrendlineDatasets(datasets, opts) {
+        opts = opts || {};
+        if (!Array.isArray(datasets)) return [];
+        const window = opts.window != null ? opts.window : 7;
+        const additions = [];
+        datasets.forEach((ds, i) => {
+            if (!ds || ds.isTrendline || !Array.isArray(ds.data)) return;
+            const t = trendlineDataset(ds.label, ds.data, {
+                window: window,
+                color: opts.color,
+                sourceColor: ds.borderColor
+            });
+            t.trendOf = i;
+            additions.push(t);
+        });
+        return additions;
+    }
+
     window.OxiUI = {
         toast: toast,
         confirm: confirmDialog,
         prompt: promptDialog,
         formatCurrency: formatCurrency,
         getChartColors: getChartColors,
-        spinnerHtml: spinnerHtml
+        spinnerHtml: spinnerHtml,
+        movingAverage: movingAverage,
+        trendlineDataset: trendlineDataset,
+        addTrendlineDatasets: addTrendlineDatasets
     };
 })();

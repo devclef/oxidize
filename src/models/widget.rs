@@ -80,6 +80,10 @@ pub struct ChartOptions {
     pub enable_forecast: bool,
     #[serde(default = "default_forecast_days")]
     pub forecast_days: i32,
+    #[serde(default = "default_show_trendline")]
+    pub show_trendline: bool,
+    #[serde(default = "default_trendline_window")]
+    pub trendline_window: i32,
 }
 
 fn default_pct_mode() -> String {
@@ -125,6 +129,12 @@ fn default_enable_forecast() -> bool {
 fn default_forecast_days() -> i32 {
     30
 }
+fn default_show_trendline() -> bool {
+    false
+}
+fn default_trendline_window() -> i32 {
+    7
+}
 
 /// Custom deserializer for Option<ChartOptions> that handles null values.
 fn deserialize_chart_options_for_widget<'de, D>(
@@ -165,4 +175,44 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     deserialize_chart_options_inner(value).map_err(serde::de::Error::custom)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chart_options_defaults_for_legacy_json() {
+        // Widgets saved before the trend line option existed must still
+        // deserialize, picking up the new defaults.
+        let json = r#"{"show_points": false, "x_axis_limit": 6, "y_axis_limit": 4, "fill_area": true, "tension": 0.1, "begin_at_zero": false, "show_pct": false, "pct_mode": "from_previous", "enable_forecast": false, "forecast_days": 30}"#;
+        let opts: ChartOptions = serde_json::from_str(json).unwrap();
+        assert!(!opts.show_trendline);
+        assert_eq!(opts.trendline_window, 7);
+    }
+
+    #[test]
+    fn chart_options_round_trips_trendline_fields() {
+        let json = r#"{"show_trendline": true, "trendline_window": 14}"#;
+        let opts: ChartOptions = serde_json::from_str(json).unwrap();
+        assert!(opts.show_trendline);
+        assert_eq!(opts.trendline_window, 14);
+
+        let out = serde_json::to_value(&opts).unwrap();
+        assert_eq!(out["show_trendline"], true);
+        assert_eq!(out["trendline_window"], 14);
+    }
+
+    #[test]
+    fn widget_deserializes_with_null_chart_options() {
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": [],
+            "chart_options": null
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert!(widget.chart_options.is_none());
+    }
 }
