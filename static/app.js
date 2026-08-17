@@ -160,7 +160,7 @@ async function fetchAccounts() {
     const app = document.getElementById('app');
     const types = Array.from(selectedTypes);
 
-    app.innerHTML = '<div class="loading">Loading accounts...</div>';
+    app.innerHTML = '<div class="loading">' + OxiUI.spinnerHtml('Loading accounts...') + '</div>';
 
     try {
         // If 'all' is selected or nothing is selected, fetch all configured account types
@@ -188,7 +188,7 @@ async function fetchAccounts() {
         }
 
         if (allAccounts.length === 0) {
-            app.innerHTML = '<div class="loading">No accounts found for selected filters.</div>';
+            app.innerHTML = '<div class="empty-state"><p>No accounts found for the selected filters.</p></div>';
             document.getElementById('account-count').textContent = '';
             return;
         }
@@ -228,8 +228,12 @@ async function fetchChartData() {
     chartErrorEl = document.getElementById('chart-error');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
 
-    // Clear previous errors
-    if (chartErrorEl) chartErrorEl.innerHTML = '';
+    // Clear previous errors and show loading feedback
+    const loadingHtml = '<div class="loading">' + OxiUI.spinnerHtml('Loading chart data...') + '</div>';
+    if (chartErrorEl) chartErrorEl.innerHTML = loadingHtml;
+    const updateBtn = document.getElementById('update-chart-btn');
+    const originalBtnText = updateBtn ? updateBtn.textContent : '';
+    if (updateBtn) { updateBtn.disabled = true; updateBtn.textContent = 'Updating\u2026'; }
 
     // Wait for groups to load so split-mode legend has group data
     if (groupsLoadedPromise) {
@@ -838,6 +842,15 @@ async function fetchChartData() {
     } catch (error) {
         console.error('Fetch chart error:', error);
         chartErrorEl.innerHTML = `<div class="error">Failed to load chart data: ${error.message}</div>`;
+    } finally {
+        if (updateBtn) {
+            updateBtn.disabled = false;
+            updateBtn.textContent = originalBtnText;
+        }
+        // Only clear the loading indicator if an error/info message hasn't replaced it
+        if (chartErrorEl && chartErrorEl.innerHTML === loadingHtml) {
+            chartErrorEl.innerHTML = '';
+        }
     }
 }
 
@@ -2651,15 +2664,21 @@ function renderGroups() {
         deleteBtn.className = 'ghost-btn ghost-btn-danger';
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', async () => {
-            if (confirm(`Delete group "${group.name}"?`)) {
-                try {
-                    await deleteGroupFromBackend(group.id);
-                    groups = groups.filter(g => g.id !== group.id);
-                    saveGroups();
-                    renderGroups();
-                } catch (e) {
-                    alert(`Failed to delete group: ${e.message}`);
-                }
+            const ok = await OxiUI.confirm({
+                title: 'Delete Group',
+                message: `Delete "${group.name}"? This cannot be undone.`,
+                confirmLabel: 'Delete',
+                danger: true
+            });
+            if (!ok) return;
+            try {
+                await deleteGroupFromBackend(group.id);
+                groups = groups.filter(g => g.id !== group.id);
+                saveGroups();
+                renderGroups();
+                OxiUI.toast(`Group "${group.name}" deleted.`, 'success');
+            } catch (e) {
+                OxiUI.toast(`Failed to delete group: ${e.message}`, 'error');
             }
         });
 
@@ -2743,7 +2762,8 @@ async function handleGroupSave() {
     const name = nameInput.value.trim();
 
     if (!name) {
-        alert('Please enter a group name');
+        OxiUI.toast('Please enter a group name', 'error');
+        nameInput.focus();
         return;
     }
 
@@ -2751,7 +2771,7 @@ async function handleGroupSave() {
     const accountIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
     if (accountIds.length === 0) {
-        alert('Please select at least one account');
+        OxiUI.toast('Please select at least one account', 'error');
         return;
     }
 
@@ -2773,7 +2793,7 @@ async function handleGroupSave() {
         renderGroups();
         closeGroupModal();
     } catch (e) {
-        alert(`Failed to save group: ${e.message}`);
+        OxiUI.toast(`Failed to save group: ${e.message}`, 'error');
     }
 }
 
@@ -2906,7 +2926,8 @@ async function updateWidgetInStorage(updatedWidget) {
 async function saveGraphAsWidget() {
     const widgetName = document.getElementById('widget-name-input').value.trim();
     if (!widgetName) {
-        alert('Please enter a name for the widget');
+        OxiUI.toast('Please enter a name for the widget', 'error');
+        document.getElementById('widget-name-input').focus();
         return;
     }
 
@@ -2933,7 +2954,7 @@ async function saveGraphAsWidget() {
 
     // Only balance and card_paydown widget types require accounts
     if ((widgetType === 'balance' || widgetType === 'card_paydown') && selectedIds.length === 0) {
-        alert('Please select at least one account');
+        OxiUI.toast('Please select at least one account', 'error');
         return;
     }
 
@@ -2997,9 +3018,9 @@ async function saveGraphAsWidget() {
     try {
         await saveWidgetToStorage(widget);
         document.getElementById('widget-name-input').value = '';
-        alert(`Widget "${widgetName}" saved! View it on the Dashboard.`);
+        OxiUI.toast(`Widget "${widgetName}" saved! Find it on the Dashboard.`, 'success');
     } catch (e) {
-        alert(`Failed to save widget: ${e.message}`);
+        OxiUI.toast(`Failed to save widget: ${e.message}`, 'error');
     }
 }
 
@@ -3049,7 +3070,7 @@ async function refreshData() {
         const result = await response.json();
         console.log('Cache refresh result:', result);
 
-        // Show brief success message
+        OxiUI.toast('Cache cleared — fetching fresh data.', 'success');
         btn.textContent = 'Refreshed!';
         setTimeout(() => {
             btn.textContent = originalText;
@@ -3063,7 +3084,7 @@ async function refreshData() {
         }
     } catch (error) {
         console.error('Refresh error:', error);
-        alert(`Failed to refresh data: ${error.message}`);
+        OxiUI.toast(`Failed to refresh data: ${error.message}`, 'error');
         btn.textContent = originalText;
         btn.disabled = false;
     }
@@ -3863,14 +3884,19 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchChartData();
     }
 
-    function selectSomeCategories() {
-        const minSubcats = prompt('Select categories with at least how many subcategories?', '2');
+    async function selectSomeCategories() {
+        const minSubcats = await OxiUI.prompt({
+            title: 'Select Some Categories',
+            message: 'How many subcategories should a category have to be selected?',
+            defaultValue: '2',
+            confirmLabel: 'Select',
+            validate: (v) => {
+                const n = parseInt(v, 10);
+                return (isNaN(n) || n < 1) ? 'Please enter a number >= 1.' : null;
+            }
+        });
         if (minSubcats === null) return;
         const min = parseInt(minSubcats, 10);
-        if (isNaN(min) || min < 1) {
-            alert('Please enter a number >= 1');
-            return;
-        }
         allCategories.forEach(cat => {
             if (cat.subcategories.length >= min) {
                 selectedSubcategories.set(cat.name, new Set(cat.subcategories));

@@ -1,10 +1,13 @@
 {
   "name": "Oxidize",
   "short_name": "Oxidize",
+  "description": "Personal finance dashboard for Firefly III",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f4f7f6",
-  "theme_color": "#3498db",
+  "background_color": "#fafbfc",
+  "theme_color": "#3b82f6",
   "icons": [
     {
       "src": "/static/icons/icon-192x192.png",

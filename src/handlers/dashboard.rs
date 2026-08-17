@@ -21,7 +21,7 @@ pub async fn dashboard(config: actix_web::web::Data<crate::config::Config>) -> i
         config.default_time_range
     );
 
-    html = html.replace("</body>", &format!("{} </body>", config_script));
+    html = html.replace("</head>", &format!("{} </head>", config_script));
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

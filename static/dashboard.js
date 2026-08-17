@@ -118,7 +118,7 @@ async function saveDashboardDates() {
         if (!res.ok) throw new Error(await res.text());
     } catch (e) {
         console.error('Failed to save dashboard dates:', e);
-        alert('Failed to save date range: ' + e.message);
+        OxiUI.toast('Failed to save date range: ' + e.message, 'error');
     }
 }
 
@@ -198,7 +198,7 @@ async function createNewDashboard() {
         closeNewDashboardModal();
         await switchDashboard(id);
     } catch (e) {
-        alert('Failed to create dashboard: ' + e.message);
+        OxiUI.toast('Failed to create dashboard: ' + e.message, 'error');
     }
 }
 
@@ -288,8 +288,14 @@ async function renderManageList() {
 }
 
 async function renameDashboard(id, oldName) {
-    const name = prompt('New dashboard name:', oldName);
-    if (!name || name.trim() === oldName) return;
+    const name = await OxiUI.prompt({
+        title: 'Rename Dashboard',
+        message: 'Enter a new name for this dashboard.',
+        defaultValue: oldName,
+        confirmLabel: 'Rename',
+        validate: (v) => (v.trim() === '' ? 'Name cannot be empty.' : null)
+    });
+    if (!name || name.trim() === '' || name.trim() === oldName) return;
     try {
         const res = await fetch(`/api/dashboards/${id}`, {
             method: 'PUT',
@@ -306,12 +312,18 @@ async function renameDashboard(id, oldName) {
             titleEl.textContent = d ? d.name : 'Dashboard';
         }
     } catch (e) {
-        alert('Failed to rename: ' + e.message);
+        OxiUI.toast('Failed to rename: ' + e.message, 'error');
     }
 }
 
 async function deleteDashboardConfirm(id, name) {
-    if (!confirm(`Delete dashboard "${name}"? Widgets will lose this dashboard assignment.`)) return;
+    const ok = await OxiUI.confirm({
+        title: 'Delete Dashboard',
+        message: `Delete "${name}"? Widgets will lose this dashboard assignment.`,
+        confirmLabel: 'Delete',
+        danger: true
+    });
+    if (!ok) return;
     try {
         const res = await fetch(`/api/dashboards/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(await res.text());
@@ -335,13 +347,13 @@ async function deleteDashboardConfirm(id, name) {
                 const titleEl = document.getElementById('dashboard-title');
                 if (titleEl) titleEl.textContent = 'Dashboard';
                 document.getElementById('dashboard-container').innerHTML =
-                    '<div class="empty-dashboard"><h3>No Dashboards</h3><p>Create a new dashboard to get started.</p></div>';
+                    '<div class="empty-dashboard"><h3>No Dashboards</h3><p>Open the <strong>Dashboard</strong> menu in the navigation bar and choose <strong>New Dashboard</strong> to get started.</p></div>';
             }
         }
         renderNavDropdown();
         renderManageList();
     } catch (e) {
-        alert('Failed to delete: ' + e.message);
+        OxiUI.toast('Failed to delete dashboard: ' + e.message, 'error');
     }
 }
 
@@ -387,7 +399,7 @@ async function saveWidgetDashboardAssignment(widgetId) {
             await renderDashboard();
         }
     } catch (e) {
-        alert('Failed to update dashboard assignment: ' + e.message);
+        OxiUI.toast('Failed to update dashboard assignment: ' + e.message, 'error');
     }
 }
 
@@ -690,7 +702,8 @@ async function getWidgetsForDashboard(dashboardId) {
 }
 
 async function deleteWidget(id) {
-    if (!confirm('Delete this widget?')) return;
+    const ok = await OxiUI.confirm({ title: 'Delete Widget', message: 'Delete this widget? This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
 
     // Destroy chart if exists
     if (widgetCharts[id]) {
@@ -704,7 +717,7 @@ async function deleteWidget(id) {
         await renderDashboard();
     } catch (e) {
         console.error('Failed to delete widget:', e);
-        alert(`Failed to delete widget: ${e.message}`);
+        OxiUI.toast(`Failed to delete widget: ${e.message}`, 'error');
     }
 }
 
@@ -820,7 +833,7 @@ async function updateWidgetDateRange(widgetId) {
         await renderWidgetChart(widget, widgetId, allAccounts, allGroups);
     } catch (e) {
         console.error('Failed to update widget:', e);
-        alert(`Failed to update widget: ${e.message}`);
+        OxiUI.toast(`Failed to update widget: ${e.message}`, 'error');
     }
 }
 
@@ -1439,7 +1452,7 @@ async function refreshWidget(widgetId) {
         await renderWidgetChart(widget, widgetId, allAccounts, allGroups);
     } catch (e) {
         console.error('Failed to refresh widget:', e);
-        alert(`Failed to refresh widget: ${e.message}`);
+        OxiUI.toast(`Failed to refresh widget: ${e.message}`, 'error');
     } finally {
         if (btn) {
             btn.textContent = '⟳ Refresh';
@@ -3178,7 +3191,7 @@ async function renderDashboard() {
                     <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
                 </div>
                 <div class="widget-body">
-                    <div id="${widget.id}-error" style="color: #e74c3c; font-size: 0.85rem;"></div>
+                    <div id="${widget.id}-error" class="widget-error"></div>
                     <div class="widget-chart" style="height: ${widget.chart_height || 300}px;">
                         <canvas id="${widget.id}" ${widgetType === 'sankey' ? 'style="display:none"' : ''}></canvas>
                         <div id="${widget.id}-sankey" ${widgetType === 'sankey' ? '' : 'style="display:none"'}></div>
@@ -3518,12 +3531,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (navBtn && navMenu) {
         navBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            navMenu.classList.toggle('open');
+            const open = navMenu.classList.toggle('open');
+            navBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
         });
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
-            if (!navMenu.contains(e.target)) {
+            if (!navMenu.contains(e.target) && e.target !== navBtn) {
                 navMenu.classList.remove('open');
+                navBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && navMenu.classList.contains('open')) {
+                navMenu.classList.remove('open');
+                navBtn.setAttribute('aria-expanded', 'false');
             }
         });
     }

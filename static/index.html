@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Graph Builder</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
+    <meta name="theme-color" content="#3b82f6">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
 </head>
 <body>
     <nav class="nav">
+        <span class="nav-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+            Oxidize
+        </span>
         <a href="/" class="active">Graph Builder</a>
         <a href="/dashboard">Dashboard</a>
         <a href="/budget-comparison">Budget Comparison</a>
@@ -329,8 +335,9 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="/static/date-utils.js"></script>
+    <script src="/static/ui.js"></script>
     <script src="/static/app.js"></script>
     <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js'); }); }</script>
 </body>
