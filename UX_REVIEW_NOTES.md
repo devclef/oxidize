@@ -170,8 +170,9 @@ Goal: make the app feel like one cohesive product instead of five independently-
   currency the user's Firefly instance uses. `OxiUI.formatCurrency` no longer takes
   or renders a symbol, and all per-page symbol plumbing was removed. The API still
   returns `currency_symbol`; it is simply no longer displayed.
-- The `.env` has `RUST_LOG=debug`; I left it alone, but note every request will be
-  logged verbosely in production.
+- The local `.env` has `RUST_LOG=debug`; I left it alone (`.env` is gitignored —
+  local dev only). Production log level is set by the deployment environment, not
+  by anything in this repo.
 
 ## Questions / open items for you
 
@@ -184,22 +185,26 @@ Goal: make the app feel like one cohesive product instead of five independently-
    danger, focus + restore, Escape/Enter, backdrop, validation, stacking), amount
    formatting, theme colors and the spinner. First run surfaced one small fix:
    validation error text is now cleared on a successful confirm.
-3. **`ACCOUNT_TYPES` on the dashboard** — with the injection-position fix, the
-   dashboard now only fetches the configured account types (e.g. `asset,liability`)
-   when building widget account tags. If any of your dashboards rely on widget
-   account tags for other types, add them to `ACCOUNT_TYPES` in `.env`.
-4. **PWA theme-color** — `<meta name="theme-color">` is static `#3b82f6`. I could
-   swap it on theme change (light blue ↔ dark indigo) if you want the mobile
-   browser chrome to match dark mode.
-5. **Brand mark** — I used a simple flame line-icon (oxidation theme). If you'd
-   rather reuse the PWA icon or a different glyph, it's a one-line swap per page
-   (or I can pull it into a shared include — though these pages are static, so that
-   would mean either duplication or a small fetch).
-6. **Docs drift** — `CLAUDE.md` still describes `static/summary.html`,
-   `handlers/summary.rs` and `models/summary.rs`, which no longer exist. Want me to
-   update the doc in a separate commit?
-7. **Dependabot config** (`.github/dependabot.yml`) has an empty
-   `package-ecosystem: ""` — it likely never runs. I left it untouched; happy to fix.
+3. ~~**`ACCOUNT_TYPES` on the dashboard**~~ — **Resolved (2026-08-17):** restored
+   the full default set in `.env` (`asset,cash,expense,revenue,liability`) so the
+   dashboard's widget account tags behave exactly as they did before the
+   injection-position fix. Narrow it again if you deliberately want a subset of
+   account types on the dashboard.
+4. ~~**PWA theme-color**~~ — **Resolved (2026-08-17): implemented.** `theme.js`
+   now syncs `<meta name="theme-color">` on init and on every toggle (light
+   `#3b82f6` ↔ dark `#1e1b4b`), so the mobile browser chrome follows the theme.
+   The static value in the HTML is the pre-JS fallback.
+5. ~~**Brand mark**~~ — **Resolved (2026-08-17): keeping the flame.** No change;
+   the glyph stays inline per page — the pages are static, so a shared include
+   would cost an extra fetch (or build tooling) for no visible gain.
+6. ~~**Docs drift**~~ — **Resolved (2026-08-17): `CLAUDE.md` updated** in a
+   separate commit — all `summary` references removed and the doc brought current:
+   5 pages, full handlers/models listings, complete API endpoint tables, config
+   injection on all pages, storage schema (dashboards + chart_cache), and the
+   `CACHE_TTL` / `TIME_RANGES` / `DEFAULT_TIME_RANGE` env vars.
+7. ~~**Dependabot config**~~ — **Resolved (2026-08-17):** `.github/dependabot.yml`
+   now lists `cargo` and `npm` ecosystems (weekly, root directory) so it actually
+   runs.
 
 ## Verification performed
 
@@ -211,3 +216,19 @@ Goal: make the app feel like one cohesive product instead of five independently-
 - Live smoke test on a running server: all 5 pages + `/static/ui.js` +
   `/api/manifest` return 200; config injection, brand, ui.js, theme.js placement
   verified on the served HTML of every page.
+
+### Round 2 (2026-08-17 — resolving open items #3–#7)
+
+- `npm test -- --run` — 113/113 pass, including the new `static/theme.test.js`
+  (7 tests: init, saved-theme and `prefers-color-scheme` fallback, toggle,
+  theme-color meta sync, `themeChanged` event, icon flip). Also surfaced a real
+  robustness gap: `theme.js` only wired the toggle button on
+  `DOMContentLoaded`; it now uses the same `readyState` guard as `initTheme()`.
+- `cargo test` — 123/123; `cargo fmt -- --check` clean; `cargo clippy` clean on
+  the 1.88-pinned toolchain (a local Rust 1.94 flags 4 pre-existing
+  `useless_vec` lints in untouched test files — noted, left alone)
+- `node --check` on every JS file including all inline page scripts
+- Live smoke test: all 5 pages return 200; `theme-color` meta and `theme.js`
+  confirmed on served HTML
+- `.env` (gitignored, local-only): `ACCOUNT_TYPES` restored to the full default
+  set; `RUST_LOG=debug` left as-is for local development
