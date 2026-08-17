@@ -177,7 +177,6 @@ where
     deserialize_chart_options_inner(value).map_err(serde::de::Error::custom)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
