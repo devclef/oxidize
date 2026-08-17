@@ -12,7 +12,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
-env_logger = "0.10"
+env_logger = "0.11"
 log = "0.4"
 serde_urlencoded = "0.7.1"
 rusqlite = { version = "0.31", features = ["bundled", "serde_json"] }
