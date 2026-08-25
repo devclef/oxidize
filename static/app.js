@@ -1012,10 +1012,24 @@ function getTrendlineSettings() {
     return { enabled: enabled, window: window };
 }
 
-// #24: reads the "Stack values" advanced option (line charts only)
+// #24: reads the "Stack values" option (line charts only)
 function getStackingEnabled() {
     const el = document.getElementById('stacked-toggle');
     return !!(el && el.checked);
+}
+
+// #24: widget types that have multi-series line charts a stacked toggle can affect
+const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat'];
+
+// Show/hide the Stacked pill based on the selected widget type and line/pie style.
+function updateStackedToggleVisibility() {
+    const wrap = document.getElementById('stacked-toggle-wrap');
+    if (!wrap) return;
+    const typeSel = document.getElementById('widget-type-select');
+    const widgetType = typeSel ? typeSel.value : 'balance';
+    const chartType = document.querySelector('input[name="chart-type"]:checked')?.value || 'line';
+    const visible = STACKABLE_WIDGET_TYPES.includes(widgetType) && chartType === 'line';
+    wrap.style.display = visible ? '' : 'none';
 }
 
 // Push a dotted moving-average "trend line" dataset for every series in
@@ -4066,6 +4080,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (chartTypeGroup) {
                 chartTypeGroup.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
             }
+            updateStackedToggleVisibility();
             // Toggle advanced options visibility for card_paydown (some don't apply)
             const advancedSection = document.getElementById('advanced-section');
             if (advancedSection) {
@@ -4128,6 +4143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle chart type (line/pie) change
     document.querySelectorAll('input[name="chart-type"]').forEach(radio => {
         radio.addEventListener('change', () => {
+            updateStackedToggleVisibility();
             fetchChartData();
         });
     });
@@ -4254,4 +4270,5 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    updateStackedToggleVisibility();
 });

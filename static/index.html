@@ -239,7 +239,7 @@
                         </div>
                     </div>
 
-                    <!-- Chart type selector (Line / Pie) -->
+                    <!-- Chart type selector (Line / Pie) + stacked toggle -->
                     <div class="toggle-group">
                         <span class="control-caption">Style</span>
                         <div id="chart-type-selector" class="earned-chart-type-selector">
@@ -250,6 +250,10 @@
                             <label class="mode-label">
                                 <input type="radio" name="chart-type" value="pie">
                                 Pie
+                            </label>
+                            <label class="mode-label" id="stacked-toggle-wrap" title="Stack series values vertically (line charts only; per-series trend lines stay unstacked)">
+                                <input type="checkbox" id="stacked-toggle">
+                                Stacked
                             </label>
                         </div>
                     </div>
@@ -306,14 +310,6 @@
                     </label>
                     <label for="trendline-window">Window (points):
                         <input type="number" id="trendline-window" value="7" min="1" max="90" style="width:60px">
-                    </label>
-                </div>
-            </div>
-            <div class="advanced-row forecast-row">
-                <div class="forecast-group">
-                    <label title="Stack series values vertically on line charts (per-series trend lines stay unstacked)">
-                        <input type="checkbox" id="stacked-toggle">
-                        Stack values (line charts)
                     </label>
                 </div>
             </div>

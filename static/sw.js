@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v7';
+const CACHE_NAME = 'oxidize-cache-v8';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/theme.js',
@@ -13,6 +13,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
+  // Activate immediately so new deploys reach users on the next page load
+  // instead of waiting for all tabs running the old version to close.
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
