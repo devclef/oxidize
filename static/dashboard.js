@@ -587,7 +587,8 @@ function normalizeChartOptions(opts) {
         enable_forecast: opts.enable_forecast ?? false,
         forecast_days: opts.forecast_days ?? 30,
         show_trendline: opts.show_trendline ?? false,
-        trendline_window: opts.trendline_window ?? 7
+        trendline_window: opts.trendline_window ?? 7,
+        stacked: opts.stacked ?? false
     };
 }
 
@@ -809,6 +810,8 @@ async function updateWidgetDateRange(widgetId) {
     const trendlineWindowEl = el(`${widgetId}-trendline-window`);
     if (enableTrendlineEl) widget.chart_options.show_trendline = enableTrendlineEl.checked;
     if (trendlineWindowEl) widget.chart_options.trendline_window = parseInt(trendlineWindowEl.value, 10) || 7;
+    const stackedEl = el(`${widgetId}-stacked`);
+    if (stackedEl) widget.chart_options.stacked = stackedEl.checked;
 
     const earnedChartTypeEl = document.getElementById(`${widgetId}-earned-chart-type`);
     if (earnedChartTypeEl) widget.earned_chart_type = earnedChartTypeEl.value;
@@ -1060,7 +1063,8 @@ function getChartOptions(widget) {
         enableForecast: raw.enable_forecast,
         forecastDays: raw.forecast_days,
         showTrendline: raw.show_trendline,
-        trendlineWindow: raw.trendline_window
+        trendlineWindow: raw.trendline_window,
+        stacked: raw.stacked
     };
 }
 
@@ -2247,6 +2251,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             // Trend line: dotted moving average per series
             appendWidgetTrendlines(datasets, opts);
 
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
+
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
@@ -2255,7 +2262,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 type: 'line',
                 data: {
                     labels: allDates,
-                    datasets: datasets
+                    datasets: stackedDatasets
                 },
                 plugins: [tooltipSortAndLegendPlugin],
                 options: {
@@ -2278,7 +2285,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                             }
                         }
                     },
-                    scales: {
+                    scales: OxiUI.applyStackedScales({
                         y: {
                             beginAtZero: opts.beginAtZero,
                             grid: { color: chartGridColor },
@@ -2301,12 +2308,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                                 }
                             }
                         }
-                    }
+                    }, opts.stacked)
                 }
             });
 
             // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, datasets);
+            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
             return;
         }
 
@@ -2387,6 +2394,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             // Trend line: dotted moving average per series
             appendWidgetTrendlines(datasets, opts);
 
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
+
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
@@ -2395,7 +2405,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 type: 'line',
                 data: {
                     labels: allDates,
-                    datasets: datasets
+                    datasets: stackedDatasets
                 },
                 plugins: [tooltipSortAndLegendPlugin],
                 options: {
@@ -2418,7 +2428,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                             }
                         }
                     },
-                    scales: {
+                    scales: OxiUI.applyStackedScales({
                         y: {
                             beginAtZero: opts.beginAtZero,
                             grid: { color: chartGridColor },
@@ -2441,12 +2451,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                                 }
                             }
                         }
-                    }
+                    }, opts.stacked)
                 }
             });
 
             // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, datasets);
+            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
             return;
         }
         // Handle category_subcat widget type
@@ -2530,6 +2540,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             // Trend line: dotted moving average per series
             appendWidgetTrendlines(datasets, opts);
 
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
+
             if (widgetCharts[widget.id]) {
                 widgetCharts[widget.id].destroy();
             }
@@ -2538,7 +2551,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 type: 'line',
                 data: {
                     labels: allDates,
-                    datasets: datasets
+                    datasets: stackedDatasets
                 },
                 plugins: [tooltipSortAndLegendPlugin],
                 options: {
@@ -2561,7 +2574,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                             }
                         }
                     },
-                    scales: {
+                    scales: OxiUI.applyStackedScales({
                         y: {
                             beginAtZero: opts.beginAtZero,
                             grid: { color: chartGridColor },
@@ -2584,12 +2597,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                                 }
                             }
                         }
-                    }
+                    }, opts.stacked)
                 }
             });
 
             // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, datasets);
+            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
             return;
         }
 
@@ -2672,6 +2685,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     forecastDataset = {
                         label: 'Forecast',
                         data: result.values,
+                        isForecast: true,
                         borderColor: forecastColor,
                         backgroundColor: forecastColor + '10',
                         borderWidth: 2,
@@ -2713,11 +2727,14 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 combinedDatasets.push(trendDs);
             }
 
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(combinedDatasets, opts.stacked);
+
             widgetCharts[widget.id] = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
-                    datasets: combinedDatasets
+                    datasets: stackedDatasets
                 },
                 options: {
                     responsive: true,
@@ -2735,7 +2752,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                             }
                         }
                     },
-                    scales: {
+                    scales: OxiUI.applyStackedScales({
                         y: {
                             beginAtZero: opts.beginAtZero,
                             grid: { color: chartGridColor },
@@ -2762,7 +2779,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                                 }
                             }
                         }
-                    }
+                    }, opts.stacked)
                 }
             });
             widgetCharts[widget.id].__pctOpts = { enabled: opts.showPct, mode: opts.pctMode };
@@ -2950,11 +2967,14 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 splitDatasets.push(...splitTrendlines);
             }
 
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(splitDatasets, opts2.stacked);
+
             widgetCharts[widget.id] = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: splitLabels,
-                    datasets: splitDatasets
+                    datasets: stackedDatasets
                 },
                 plugins: [tooltipSortAndLegendPlugin],
                 options: {
@@ -2978,7 +2998,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                             }
                         }
                     },
-                    scales: {
+                    scales: OxiUI.applyStackedScales({
                         y: {
                             beginAtZero: opts2.beginAtZero,
                             grid: { color: chartGridColor },
@@ -3005,13 +3025,13 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                                 }
                             }
                         }
-                    }
+                    }, opts2.stacked)
                 }
             });
             widgetCharts[widget.id].__pctOpts = { enabled: opts2.showPct, mode: opts2.pctMode };
 
             // Render the legend after chart is created
-            renderSplitLegend(widget.id, legendInfo, datasets);
+            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
         }
     } catch (error) {
         console.error('Error rendering widget chart:', error);
@@ -3244,6 +3264,9 @@ async function renderDashboard() {
                         ${widgetType !== 'sankey' ? `
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
                         <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
+                        ` : ''}
+                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat'].includes(widgetType) ? `
+                        <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
                         ` : ''}
                     </div>
                     <div class="widget-settings-section">

@@ -11,6 +11,8 @@
  *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
  *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
  *  - OxiUI.addTrendlineDatasets(..) trend lines for a set of datasets
+ *  - OxiUI.applyStacking(ds, on)    Chart.js stack groups for line charts
+ *  - OxiUI.applyStackedScales(s,on) stacked flag on all chart axes
  */
 (function () {
     'use strict';
@@ -372,6 +374,42 @@
         return additions;
     }
 
+    // ── Stacking (line charts, #24) ──────────────────────────────────
+    // Assign Chart.js `stack` groups to datasets so a line chart can be
+    // drawn stacked. Real series share one group ("data") so their values
+    // stack vertically; auxiliary series (trend lines, forecasts) get a
+    // private group each so they are never stacked on top of anything.
+    // Returns copies - the input array and its datasets are not mutated.
+    // When disabled (or for non-array input) the original array is
+    // returned untouched.
+    function applyStacking(datasets, enabled) {
+        if (!enabled || !Array.isArray(datasets)) return datasets;
+        let auxCount = 0;
+        return datasets.map(function (ds) {
+            if (!ds) return ds;
+            const copy = Object.assign({}, ds);
+            if (ds.isTrendline || ds.isForecast) {
+                copy.stack = 'aux-' + (auxCount++);
+            } else {
+                copy.stack = 'data';
+            }
+            return copy;
+        });
+    }
+
+    // Return a copy of a Chart.js scales config with `stacked: true` on
+    // every axis. When disabled (or for null input) the original object
+    // is returned untouched.
+    function applyStackedScales(scales, enabled) {
+        if (!enabled || !scales || typeof scales !== 'object') return scales;
+        const out = {};
+        Object.keys(scales).forEach(function (key) {
+            out[key] = Object.assign({}, scales[key]);
+            out[key].stacked = true;
+        });
+        return out;
+    }
+
     window.OxiUI = {
         toast: toast,
         confirm: confirmDialog,
@@ -381,6 +419,8 @@
         spinnerHtml: spinnerHtml,
         movingAverage: movingAverage,
         trendlineDataset: trendlineDataset,
-        addTrendlineDatasets: addTrendlineDatasets
+        addTrendlineDatasets: addTrendlineDatasets,
+        applyStacking: applyStacking,
+        applyStackedScales: applyStackedScales
     };
 })();

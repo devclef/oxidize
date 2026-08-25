@@ -84,6 +84,8 @@ pub struct ChartOptions {
     pub show_trendline: bool,
     #[serde(default = "default_trendline_window")]
     pub trendline_window: i32,
+    #[serde(default = "default_stacked")]
+    pub stacked: bool,
 }
 
 fn default_pct_mode() -> String {
@@ -134,6 +136,9 @@ fn default_show_trendline() -> bool {
 }
 fn default_trendline_window() -> i32 {
     7
+}
+fn default_stacked() -> bool {
+    false
 }
 
 /// Custom deserializer for Option<ChartOptions> that handles null values.
@@ -189,6 +194,7 @@ mod tests {
         let opts: ChartOptions = serde_json::from_str(json).unwrap();
         assert!(!opts.show_trendline);
         assert_eq!(opts.trendline_window, 7);
+        assert!(!opts.stacked);
     }
 
     #[test]
@@ -201,6 +207,21 @@ mod tests {
         let out = serde_json::to_value(&opts).unwrap();
         assert_eq!(out["show_trendline"], true);
         assert_eq!(out["trendline_window"], 14);
+    }
+
+    #[test]
+    fn chart_options_round_trips_stacked_field() {
+        // #24: line chart stacking option must persist on saved widgets
+        let json = r#"{"stacked": true}"#;
+        let opts: ChartOptions = serde_json::from_str(json).unwrap();
+        assert!(opts.stacked);
+
+        let out = serde_json::to_value(&opts).unwrap();
+        assert_eq!(out["stacked"], true);
+
+        // Legacy widgets without the field default to unstacked
+        let legacy: ChartOptions = serde_json::from_str(r#"{"show_pct": false}"#).unwrap();
+        assert!(!legacy.stacked);
     }
 
     #[test]

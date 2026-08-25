@@ -497,11 +497,15 @@ async function fetchChartData() {
                 // Trend line: dotted moving average per series
                 appendTrendlines(datasets);
 
+                // Stacking (#24): group series for stacked rendering
+                const stackingEnabled = getStackingEnabled();
+                const stackedDatasets = OxiUI.applyStacking(datasets, stackingEnabled);
+
                 balanceChart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: allDates,
-                        datasets: datasets
+                        datasets: stackedDatasets
                     },
                     options: {
                         responsive: true,
@@ -521,7 +525,7 @@ async function fetchChartData() {
                                 }
                             }
                         },
-                        scales: {
+                        scales: OxiUI.applyStackedScales({
                             y: {
                                 beginAtZero: true,
                                 grid: { color: chartGridColor },
@@ -539,7 +543,7 @@ async function fetchChartData() {
                                     maxRotation: 45
                                 }
                             }
-                        }
+                        }, stackingEnabled)
                     }
                 });
             }
@@ -666,11 +670,15 @@ async function fetchChartData() {
                 // Trend line: dotted moving average per series
                 appendTrendlines(datasets);
 
+                // Stacking (#24): group series for stacked rendering
+                const stackingEnabled = getStackingEnabled();
+                const stackedDatasets = OxiUI.applyStacking(datasets, stackingEnabled);
+
                 balanceChart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: allDates,
-                        datasets: datasets
+                        datasets: stackedDatasets
                     },
                     options: {
                         responsive: true,
@@ -690,7 +698,7 @@ async function fetchChartData() {
                                 }
                             }
                         },
-                        scales: {
+                        scales: OxiUI.applyStackedScales({
                             y: {
                                 beginAtZero: true,
                                 grid: { color: chartGridColor },
@@ -708,7 +716,7 @@ async function fetchChartData() {
                                     maxRotation: 45
                                 }
                             }
-                        }
+                        }, stackingEnabled)
                     }
                 });
             }
@@ -1002,6 +1010,12 @@ function getTrendlineSettings() {
     let window = windowEl ? parseInt(windowEl.value, 10) : 7;
     if (!isFinite(window) || window < 1) window = 7;
     return { enabled: enabled, window: window };
+}
+
+// #24: reads the "Stack values" advanced option (line charts only)
+function getStackingEnabled() {
+    const el = document.getElementById('stacked-toggle');
+    return !!(el && el.checked);
 }
 
 // Push a dotted moving-average "trend line" dataset for every series in
@@ -1445,11 +1459,15 @@ function renderExpensesByCategoryChart(ctx, datasets) {
     // Trend line: dotted moving average per category
     appendTrendlines(chartDatasets);
 
+    // Stacking (#24): group series for stacked rendering
+    const stackingEnabled = getStackingEnabled();
+    const stackedDatasets = OxiUI.applyStacking(chartDatasets, stackingEnabled);
+
     balanceChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: allDates,
-            datasets: chartDatasets
+            datasets: stackedDatasets
         },
         options: {
             responsive: true,
@@ -1469,7 +1487,7 @@ function renderExpensesByCategoryChart(ctx, datasets) {
                     }
                 }
             },
-            scales: {
+            scales: OxiUI.applyStackedScales({
                 y: {
                     beginAtZero: true,
                     grid: { color: chartGridColor },
@@ -1487,7 +1505,7 @@ function renderExpensesByCategoryChart(ctx, datasets) {
                         maxRotation: 45
                     }
                 }
-            }
+            }, stackingEnabled)
         }
     });
 }
@@ -2471,11 +2489,15 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
         const chartTextColor = isDark ? '#d4d4de' : '#333';
         const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
 
+        // Stacking (#24): group series for stacked rendering
+        const stackingEnabled = getStackingEnabled();
+        const stackedDatasets = OxiUI.applyStacking(currentDatasets, stackingEnabled);
+
         balanceChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: splitChartLabels,
-                datasets: currentDatasets
+                datasets: stackedDatasets
             },
             options: {
                 responsive: true,
@@ -2503,7 +2525,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                         }
                     }
                 },
-                scales: {
+                scales: OxiUI.applyStackedScales({
                     y: {
                         beginAtZero: false,
                         grid: { color: chartGridColor },
@@ -2522,7 +2544,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                             minRotation: 45
                         }
                     }
-                }
+                }, stackingEnabled)
             }
         });
 
@@ -2535,7 +2557,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
         individualAccounts.forEach(a => {
             legendInfo.push({ name: a.name, balance: a.balance });
         });
-        renderSplitLegend(legendInfo, currentDatasets);
+        renderSplitLegend(legendInfo, stackedDatasets);
     } else {
         // Combined mode - aggregate all datasets
         // Calculate total anchor balance from unique accounts
@@ -2624,6 +2646,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
             chartDatasets.push({
                 label: 'Forecast',
                 data: forecastData,
+                isForecast: true,
                 borderColor: forecastColor,
                 backgroundColor: forecastColor + '10',
                 borderWidth: 2,
@@ -2648,11 +2671,15 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
             }
         }
 
+        // Stacking (#24): group series for stacked rendering
+        const stackingEnabled = getStackingEnabled();
+        const stackedDatasets = OxiUI.applyStacking(chartDatasets, stackingEnabled);
+
         balanceChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: chartLabels,
-                datasets: chartDatasets
+                datasets: stackedDatasets
             },
             options: {
                 responsive: true,
@@ -2663,7 +2690,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                         labels: { color: chartTextColor }
                     }
                 },
-                scales: {
+                scales: OxiUI.applyStackedScales({
                     y: {
                         beginAtZero: false,
                         grid: { color: chartGridColor },
@@ -2682,7 +2709,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                             minRotation: 45
                         }
                     }
-                }
+                }, stackingEnabled)
             }
         });
     }
@@ -3087,7 +3114,8 @@ async function saveGraphAsWidget() {
         enable_forecast: enableForecastEl ? enableForecastEl.checked : false,
         forecast_days: forecastDaysEl ? (parseInt(forecastDaysEl.value, 10) || 30) : 30,
         show_pct: showPctToggle ? showPctToggle.checked : false,
-        pct_mode: pctModeSelect ? pctModeSelect.value : 'from_previous'
+        pct_mode: pctModeSelect ? pctModeSelect.value : 'from_previous',
+        stacked: getStackingEnabled()
     };
 
     const widget = {
@@ -4204,6 +4232,23 @@ document.addEventListener('DOMContentLoaded', () => {
         trendlineWindowEl.addEventListener('change', () => {
             trendlineWindow = parseInt(trendlineWindowEl.value, 10) || 7;
             localStorage.setItem(TRENDLINE_WINDOW_KEY, trendlineWindow);
+            if (lastChartRenderAction) {
+                lastChartRenderAction();
+            }
+        });
+    }
+
+    // Stacked values toggle (#24): line charts render stacked or unstacked
+    const stackedToggleEl = document.getElementById('stacked-toggle');
+    const STACKED_KEY = 'oxidize_stacked';
+
+    let stackedEnabled = localStorage.getItem(STACKED_KEY) === 'true';
+
+    if (stackedToggleEl) {
+        stackedToggleEl.checked = stackedEnabled;
+        stackedToggleEl.addEventListener('change', () => {
+            stackedEnabled = stackedToggleEl.checked;
+            localStorage.setItem(STACKED_KEY, stackedEnabled);
             if (lastChartRenderAction) {
                 lastChartRenderAction();
             }

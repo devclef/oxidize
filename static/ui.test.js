@@ -497,3 +497,91 @@ describe('OxiUI.addTrendlineDatasets', () => {
         expect(OxiUI.addTrendlineDatasets(null, { window: 2 })).toEqual([]);
     });
 });
+
+// ── Stacking (line charts, #24) ────────────────────────────────────────
+describe('OxiUI.applyStacking', () => {
+    it('returns the original array untouched when disabled', () => {
+        const datasets = [{ label: 'A', data: [1, 2] }, { label: 'B', data: [3, 4] }];
+        const out = OxiUI.applyStacking(datasets, false);
+        expect(out).toBe(datasets);
+        expect(out[0].stack).toBeUndefined();
+        expect(out[1].stack).toBeUndefined();
+    });
+
+    it('groups real series in one shared stack when enabled', () => {
+        const datasets = [
+            { label: 'A', data: [1, 2], borderColor: '#111' },
+            { label: 'B', data: [3, 4], borderColor: '#222' }
+        ];
+        const out = OxiUI.applyStacking(datasets, true);
+        expect(out).not.toBe(datasets);
+        expect(out).toHaveLength(2);
+        expect(out[0].stack).toBe('data');
+        expect(out[1].stack).toBe('data');
+        // other properties are preserved
+        expect(out[0].label).toBe('A');
+        expect(out[0].borderColor).toBe('#111');
+        expect(out[1].data).toEqual([3, 4]);
+        // the original datasets are not mutated
+        expect(datasets[0].stack).toBeUndefined();
+        expect(datasets[1].stack).toBeUndefined();
+    });
+
+    it('keeps trend lines and forecasts in private stack groups', () => {
+        const datasets = [
+            { label: 'A', data: [1] },
+            { label: 'A (avg)', data: [1], isTrendline: true, trendOf: 0 },
+            { label: 'Forecast', data: [2], isForecast: true }
+        ];
+        const out = OxiUI.applyStacking(datasets, true);
+        expect(out[0].stack).toBe('data');
+        expect(out[1].stack).not.toBe('data');
+        expect(out[2].stack).not.toBe('data');
+        expect(out[1].stack).not.toBe(out[2].stack);
+        // markers survive the copy so visibility sync still works
+        expect(out[1].isTrendline).toBe(true);
+        expect(out[1].trendOf).toBe(0);
+        expect(out[2].isForecast).toBe(true);
+    });
+
+    it('passes non-array and null input through', () => {
+        expect(OxiUI.applyStacking(undefined, true)).toBeUndefined();
+        expect(OxiUI.applyStacking(null, true)).toBeNull();
+        expect(OxiUI.applyStacking([null], true)[0]).toBeNull();
+    });
+});
+
+describe('OxiUI.applyStackedScales', () => {
+    it('returns the original scales object when disabled', () => {
+        const scales = { x: { grid: { color: '#ddd' } }, y: { beginAtZero: true } };
+        const out = OxiUI.applyStackedScales(scales, false);
+        expect(out).toBe(scales);
+        expect(out.y.stacked).toBeUndefined();
+    });
+
+    it('marks every axis stacked without mutating the original', () => {
+        const scales = {
+            x: { ticks: { color: '#333' } },
+            y: { beginAtZero: false },
+            y1: { position: 'right' }
+        };
+        const out = OxiUI.applyStackedScales(scales, true);
+        expect(out).not.toBe(scales);
+        expect(out.x.stacked).toBe(true);
+        expect(out.y.stacked).toBe(true);
+        expect(out.y1.stacked).toBe(true);
+        // existing options are preserved
+        expect(out.x.ticks.color).toBe('#333');
+        expect(out.y.beginAtZero).toBe(false);
+        expect(out.y1.position).toBe('right');
+        // the original object is untouched
+        expect(scales.x.stacked).toBeUndefined();
+        expect(scales.y.stacked).toBeUndefined();
+        expect(scales.y1.stacked).toBeUndefined();
+    });
+
+    it('passes null input through', () => {
+        expect(OxiUI.applyStackedScales(null, true)).toBeNull();
+        expect(OxiUI.applyStackedScales(undefined, true)).toBeUndefined();
+    });
+});
