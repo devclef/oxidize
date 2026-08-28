@@ -698,6 +698,50 @@ button:hover {
     margin: 0;
 }
 
+/* Category / budget exclusion selectors */
+.exclusion-select {
+    display: block;
+    margin-top: var(--space-1);
+    min-width: 220px;
+    max-width: 100%;
+    padding: var(--space-1);
+    font-size: var(--text-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.widget-settings .exclusion-select {
+    min-width: 180px;
+    margin-top: 2px;
+}
+
+.exclusions-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0 0 var(--space-1) 0;
+    width: 100%;
+}
+
+.exclusions-group {
+    display: flex;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+}
+
+.exclusions-group label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.modal-body .exclusion-select {
+    width: 100%;
+    margin-top: var(--space-1);
+    box-sizing: border-box;
+}
+
 .more-options-toggle {
     background: transparent;
     border: 1px solid var(--border-color);

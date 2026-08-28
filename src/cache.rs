@@ -3,6 +3,7 @@ use log::debug;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use crate::models::Exclusions;
 use crate::storage::PersistentCache;
 
 /// Cache entry with expiration time
@@ -38,7 +39,7 @@ pub struct DataCache {
 /// Cache version: increment to invalidate all existing cached entries.
 /// Bumped to 2 to clear entries created with the broken date parser that
 /// only accepted +00:00 timezone offsets.
-const CACHE_VERSION: &str = "3";
+const CACHE_VERSION: &str = "4";
 
 impl DataCache {
     pub fn new(ttl_seconds: u64) -> Self {
@@ -223,18 +224,29 @@ impl DataCache {
 
     // ── Budget spent ─────────────────────────────────────────────────
 
-    fn budget_spent_key(start_date: Option<&str>, end_date: Option<&str>) -> String {
+    fn budget_spent_key(
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        exclusions: &Exclusions,
+    ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
-        format!("v{}:budget_spent:{}:{}", CACHE_VERSION, start, end)
+        format!(
+            "v{}:budget_spent:{}:{}:{}",
+            CACHE_VERSION,
+            start,
+            end,
+            exclusions.cache_key()
+        )
     }
 
     pub fn get_budget_spent(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
-        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref());
+        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref(), exclusions);
         Self::get_tiered(&self.budget_spent, &key)
     }
 
@@ -242,9 +254,10 @@ impl DataCache {
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
+        exclusions: &Exclusions,
         data: String,
     ) {
-        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref());
+        let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref(), exclusions);
         Self::set_tiered(&self.budget_spent, &key, &data, self.ttl_seconds);
     }
 
@@ -255,6 +268,7 @@ impl DataCache {
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -264,8 +278,13 @@ impl DataCache {
             None => "all".to_string(),
         };
         format!(
-            "v{}:budget_spent_hist:{}:{}:{}:{}",
-            CACHE_VERSION, start, end, period, accounts
+            "v{}:budget_spent_hist:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            start,
+            end,
+            period,
+            accounts,
+            exclusions.cache_key()
         )
     }
 
@@ -275,12 +294,14 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::budget_spent_history_key(
             start_date.as_deref(),
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            exclusions,
         );
         Self::get_tiered(&self.budget_spent_history, &key)
     }
@@ -291,6 +312,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
         data: String,
     ) {
         let key = Self::budget_spent_history_key(
@@ -298,6 +320,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            exclusions,
         );
         Self::set_tiered(&self.budget_spent_history, &key, &data, self.ttl_seconds);
     }
@@ -309,6 +332,7 @@ impl DataCache {
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -318,8 +342,13 @@ impl DataCache {
             None => "all".to_string(),
         };
         format!(
-            "v{}:earned_spent:{}:{}:{}:{}",
-            CACHE_VERSION, start, end, period, accounts
+            "v{}:earned_spent:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            start,
+            end,
+            period,
+            accounts,
+            exclusions.cache_key()
         )
     }
 
@@ -329,12 +358,14 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::earned_spent_key(
             start_date.as_deref(),
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            exclusions,
         );
         Self::get_tiered(&self.earned_spent, &key)
     }
@@ -345,6 +376,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
         data: String,
     ) {
         let key = Self::earned_spent_key(
@@ -352,6 +384,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            exclusions,
         );
         Self::set_tiered(&self.earned_spent, &key, &data, self.ttl_seconds);
     }
@@ -364,6 +397,7 @@ impl DataCache {
         period: Option<&str>,
         account_ids: Option<&[String]>,
         graph_mode: Option<&str>,
+        exclusions: &Exclusions,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -374,8 +408,14 @@ impl DataCache {
         };
         let mode = graph_mode.unwrap_or("subcategory");
         format!(
-            "v{}:expenses_cat:{}:{}:{}:{}:{}",
-            CACHE_VERSION, start, end, period, accounts, mode
+            "v{}:expenses_cat:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            start,
+            end,
+            period,
+            accounts,
+            mode,
+            exclusions.cache_key()
         )
     }
 
@@ -386,6 +426,7 @@ impl DataCache {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::expenses_category_key(
             start_date.as_deref(),
@@ -393,10 +434,12 @@ impl DataCache {
             period.as_deref(),
             account_ids.as_deref(),
             graph_mode.as_deref(),
+            exclusions,
         );
         Self::get_tiered(&self.expenses_by_category, &key)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_expenses_by_category(
         &self,
         start_date: Option<String>,
@@ -404,6 +447,7 @@ impl DataCache {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
         data: String,
     ) {
         let key = Self::expenses_category_key(
@@ -412,6 +456,7 @@ impl DataCache {
             period.as_deref(),
             account_ids.as_deref(),
             graph_mode.as_deref(),
+            exclusions,
         );
         Self::set_tiered(&self.expenses_by_category, &key, &data, self.ttl_seconds);
     }
@@ -460,6 +505,7 @@ impl DataCache {
 
     // ── Subcategory spend ────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     fn subcategory_spend_key(
         parent_categories: &[String],
         subcategories: &[String],
@@ -468,6 +514,7 @@ impl DataCache {
         period: Option<&str>,
         account_ids: Option<&[String]>,
         graph_mode: Option<&str>,
+        exclusions: &Exclusions,
     ) -> String {
         let parents = parent_categories.join(",");
         let subcats = subcategories.join(",");
@@ -480,8 +527,16 @@ impl DataCache {
         };
         let mode = graph_mode.unwrap_or("subcategory");
         format!(
-            "v{}:subcat_spend:{}:{}:{}:{}:{}:{}:{}",
-            CACHE_VERSION, parents, subcats, start, end, period, accounts, mode
+            "v{}:subcat_spend:{}:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            parents,
+            subcats,
+            start,
+            end,
+            period,
+            accounts,
+            mode,
+            exclusions.cache_key()
         )
     }
 
@@ -495,6 +550,7 @@ impl DataCache {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::subcategory_spend_key(
             parent_categories,
@@ -504,6 +560,7 @@ impl DataCache {
             period.as_deref(),
             account_ids.as_deref(),
             graph_mode.as_deref(),
+            exclusions,
         );
         Self::get_tiered(&self.subcategory_spend, &key)
     }
@@ -518,6 +575,7 @@ impl DataCache {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
         data: String,
     ) {
         let key = Self::subcategory_spend_key(
@@ -528,6 +586,7 @@ impl DataCache {
             period.as_deref(),
             account_ids.as_deref(),
             graph_mode.as_deref(),
+            exclusions,
         );
         Self::set_tiered(&self.subcategory_spend, &key, &data, self.ttl_seconds);
     }
@@ -730,6 +789,7 @@ impl DataCache {
         flow_type: &str,
         start_date: Option<&str>,
         end_date: Option<&str>,
+        exclusions: &Exclusions,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -739,8 +799,13 @@ impl DataCache {
             account_ids.join(",")
         };
         format!(
-            "v{}:sankey:{}:{}:{}:{}",
-            CACHE_VERSION, accounts, flow_type, start, end
+            "v{}:sankey:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            accounts,
+            flow_type,
+            start,
+            end,
+            exclusions.cache_key()
         )
     }
 
@@ -750,12 +815,14 @@ impl DataCache {
         flow_type: &crate::models::SankeyFlowType,
         start_date: Option<&str>,
         end_date: Option<&str>,
+        exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::sankey_flow_key(
             account_ids,
             &serde_json::to_string(flow_type).unwrap_or_default(),
             start_date,
             end_date,
+            exclusions,
         );
         Self::get_tiered(&self.accounts, &key)
     }
@@ -766,6 +833,7 @@ impl DataCache {
         flow_type: &crate::models::SankeyFlowType,
         start_date: String,
         end_date: String,
+        exclusions: &Exclusions,
         data: String,
     ) {
         let key = Self::sankey_flow_key(
@@ -773,8 +841,21 @@ impl DataCache {
             &serde_json::to_string(flow_type).unwrap_or_default(),
             Some(&start_date),
             Some(&end_date),
+            exclusions,
         );
         Self::set_tiered(&self.accounts, &key, &data, self.ttl_seconds);
+    }
+
+    /// Test-only accessor for the earned/spent cache key.
+    #[doc(hidden)]
+    pub fn earned_spent_key_for_test(
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        Self::earned_spent_key(start_date, end_date, period, account_ids, exclusions)
     }
 
     pub fn clear_sankey_flow(&self) {

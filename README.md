@@ -11,6 +11,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Average Cost** - calculate average cost per transaction
 - **Pie Charts** - optional pie chart view for widget data
 - **Dashboard** - custom multi-widget dashboards with per-chart settings
+- **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
 - **Account Groups** - named collections of accounts for reuse across widgets
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -91,15 +92,21 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | GET | `/api/expenses-by-category` | Expenses grouped by category |
 | GET | `/api/net-worth` | Net worth over time |
 
+Chart endpoints that aggregate transactions accept optional
+`exclude_categories[]` (repeatable) and `exclude_budgets[]` (repeatable)
+query parameters. A category entry may be a main category name (excludes all
+of its subcategories) or a full `Parent:Sub` name; matching transactions are
+dropped from the aggregation entirely.
+
 ### Budgets
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/budgets/spent` | Current budget spending |
-| GET | `/api/budgets/spent-history` | Budget spending over time |
+| GET | `/api/budgets/spent` | Current budget spending (supports `exclude_budgets[]`) |
+| GET | `/api/budgets/spent-history` | Budget spending over time (supports `exclude_categories[]`, `exclude_budgets[]`) |
 | GET | `/api/budgets/list` | List all budgets |
-| GET | `/api/budgets/comparison` | Budget vs actual comparison data |
-| GET | `/api/budgets/avg-cost` | Average cost calculation |
+| GET | `/api/budgets/comparison` | Budget vs actual comparison data (supports exclusions) |
+| GET | `/api/budgets/avg-cost` | Average cost calculation (supports exclusions) |
 | POST | `/api/budgets/spent/refresh` | Clear budget spent cache |
 
 ### Categories
@@ -107,7 +114,7 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/categories/list` | List all categories |
-| GET | `/api/categories/subcategory-spend` | Spending by subcategory |
+| GET | `/api/categories/subcategory-spend` | Spending by subcategory (supports exclusions) |
 
 ### Dashboards
 
@@ -123,7 +130,7 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/sankey/flows` | Sankey flow data |
+| GET | `/api/sankey/flows` | Sankey flow data (supports exclusions) |
 
 ### Widgets
 
@@ -133,6 +140,11 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | POST | `/api/widgets` | Create widget |
 | PUT | `/api/widgets/{id}` | Update widget |
 | DELETE | `/api/widgets/{id}` | Delete widget |
+
+Widgets and dashboards support `exclude_categories` and `exclude_budgets`
+arrays. On the dashboard page, exclusions can be configured globally per
+dashboard (gear button next to the date range) and per widget (widget
+Settings panel); effective exclusions are the union of both.
 
 ### Groups
 

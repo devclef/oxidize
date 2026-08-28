@@ -113,6 +113,7 @@ pub async fn get_earned_spent(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -137,7 +138,7 @@ pub async fn get_earned_spent(
     }
 
     match client
-        .get_earned_spent(start, end, period, Some(account_ids))
+        .get_earned_spent(start, end, period, Some(account_ids), &exclusions)
         .await
     {
         Ok(history) => HttpResponse::Ok().json(history),
@@ -155,6 +156,7 @@ pub async fn get_earned_spent_since(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut since: Option<String> = None;
     let mut end: Option<String> = None;
@@ -185,7 +187,7 @@ pub async fn get_earned_spent_since(
     };
 
     match client
-        .get_earned_spent(Some(since), end, period, Some(account_ids))
+        .get_earned_spent(Some(since), end, period, Some(account_ids), &exclusions)
         .await
     {
         Ok(history) => HttpResponse::Ok().json(history),
@@ -202,6 +204,7 @@ pub async fn get_expenses_by_category(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -234,7 +237,7 @@ pub async fn get_expenses_by_category(
     };
 
     match client
-        .get_expenses_by_category(start, end, period, account_ids_opt, graph_mode)
+        .get_expenses_by_category(start, end, period, account_ids_opt, graph_mode, &exclusions)
         .await
     {
         Ok(categories) => HttpResponse::Ok().json(categories),
@@ -277,6 +280,7 @@ pub async fn get_budget_spent(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -289,7 +293,7 @@ pub async fn get_budget_spent(
         }
     }
 
-    match client.get_budget_spent(start, end).await {
+    match client.get_budget_spent(start, end, &exclusions).await {
         Ok(chart) => HttpResponse::Ok().json(chart),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
@@ -304,6 +308,7 @@ pub async fn get_budget_spent_history(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -330,6 +335,7 @@ pub async fn get_budget_spent_history(
             } else {
                 Some(account_ids)
             },
+            &exclusions,
         )
         .await
     {
@@ -371,6 +377,7 @@ pub async fn get_budget_comparison(
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
 
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -385,7 +392,10 @@ pub async fn get_budget_comparison(
         }
     }
 
-    match client.get_budget_comparison(budget_names, start, end).await {
+    match client
+        .get_budget_comparison(budget_names, start, end, &exclusions)
+        .await
+    {
         Ok(comparison) => HttpResponse::Ok().json(comparison),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }

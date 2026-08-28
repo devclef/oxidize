@@ -6,6 +6,7 @@
 mod tests {
     use oxidize::client::FireflyClient;
     use oxidize::config::Config;
+    use oxidize::models::Exclusions;
     use serde_json::json;
 
     /// Test that a BudgetRead correctly deserializes from Firefly III HAL+JSON response
@@ -336,7 +337,10 @@ mod tests {
         };
 
         let client = FireflyClient::new(config);
-        let chart = client.get_budget_spent(None, None).await.unwrap();
+        let chart = client
+            .get_budget_spent(None, None, &Exclusions::default())
+            .await
+            .unwrap();
 
         assert_eq!(chart.len(), 2);
         assert_eq!(chart[0].label, "Groceries");
@@ -387,11 +391,17 @@ mod tests {
         let client = FireflyClient::new(config);
 
         // First call
-        let chart1 = client.get_budget_spent(None, None).await.unwrap();
+        let chart1 = client
+            .get_budget_spent(None, None, &Exclusions::default())
+            .await
+            .unwrap();
         assert_eq!(chart1.len(), 1);
 
         // Second call - should hit cache, no more mocks needed
-        let chart2 = client.get_budget_spent(None, None).await.unwrap();
+        let chart2 = client
+            .get_budget_spent(None, None, &Exclusions::default())
+            .await
+            .unwrap();
         assert_eq!(chart2.len(), 1);
     }
 }

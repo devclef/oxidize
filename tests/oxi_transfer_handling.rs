@@ -12,6 +12,7 @@
 mod tests {
     use oxidize::client::FireflyClient;
     use oxidize::config::Config;
+    use oxidize::models::Exclusions;
     use oxidize::models::SankeyFlowType;
     use serde_json::json;
 
@@ -109,6 +110,7 @@ mod tests {
                 Some("1M".to_string()),
                 Some(vec!["1".to_string()]),
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -193,6 +195,7 @@ mod tests {
                 Some("1M".to_string()),
                 Some(vec!["1".to_string(), "2".to_string()]),
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -261,6 +264,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -337,6 +341,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -408,6 +413,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -482,6 +488,7 @@ mod tests {
                 None,
                 None,
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();
@@ -585,6 +592,7 @@ mod tests {
                 Some("1M".to_string()),
                 Some(vec!["1".to_string()]),
                 None,
+                &Exclusions::default(),
             )
             .await
             .unwrap();

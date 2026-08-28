@@ -9,6 +9,61 @@ let currentDashboardId = null;
 let dashboardLocked = true;
 let dashboardGrid = null;
 let dashboardDates = { start: null, end: null };
+// Dashboard-level exclusions: applied to every widget on the current dashboard
+let dashboardExclusions = { categories: [], budgets: [] };
+// One-time fetch of available category/budget names for exclusion selectors
+let exclusionOptionsPromise = null;
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str === undefined || str === null ? '' : String(str);
+    return div.innerHTML;
+}
+
+function buildCategoryOptionNames(categories) {
+    // Offer main categories (excludes all their subcategories) plus each
+    // subcategory as a full "Parent:Sub" name for fine-grained exclusion.
+    const names = new Set();
+    for (const c of categories || []) {
+        if (c && c.name) names.add(c.name);
+        for (const sub of c.subcategories || []) {
+            names.add(`${c.name}:${sub}`);
+        }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+function getExclusionOptions() {
+    if (!exclusionOptionsPromise) {
+        exclusionOptionsPromise = Promise.all([
+            fetch('/api/categories/list').then(r => (r.ok ? r.json() : [])),
+            fetch('/api/budgets/list').then(r => (r.ok ? r.json() : []))
+        ])
+            .then(([categories, budgets]) => ({
+                categories: buildCategoryOptionNames(categories),
+                budgets: (budgets || []).map(b => b.name).sort((a, b) => a.localeCompare(b))
+            }))
+            .catch(e => {
+                console.error('Failed to load exclusion options:', e);
+                exclusionOptionsPromise = null; // allow retry on next open
+                return { categories: [], budgets: [] };
+            });
+    }
+    return exclusionOptionsPromise;
+}
+
+/// Merge dashboard-level exclusions with a widget's own exclusions.
+function mergeExclusions(dashExclusions, widget) {
+    const categories = new Set([...(dashExclusions?.categories || []), ...(widget?.exclude_categories || [])]);
+    const budgets = new Set([...(dashExclusions?.budgets || []), ...(widget?.exclude_budgets || [])]);
+    return { categories: Array.from(categories), budgets: Array.from(budgets) };
+}
+
+/// Append exclusion params to a URLSearchParams built for a chart request.
+function appendExclusionParams(params, exclusions) {
+    for (const c of exclusions?.categories || []) params.append('exclude_categories[]', c);
+    for (const b of exclusions?.budgets || []) params.append('exclude_budgets[]', b);
+}
 
 // ── Dashboard management ──────────────────────────────────────────────
 
@@ -86,6 +141,10 @@ async function loadDashboardDates() {
         if (dash) {
             dashboardDates.start = dash.start_date || null;
             dashboardDates.end = dash.end_date || null;
+            dashboardExclusions = {
+                categories: dash.exclude_categories || [],
+                budgets: dash.exclude_budgets || []
+            };
         }
     } catch (e) {
         console.error('Failed to load dashboard dates:', e);
@@ -158,6 +217,62 @@ function populateDashboardDateInputs() {
     const endEl = document.getElementById('dashboard-end-date');
     if (startEl) startEl.value = dashboardDates.start || '';
     if (endEl) endEl.value = dashboardDates.end || '';
+}
+
+// ── Dashboard-level exclusions ────────────────────────────────────────
+
+async function openDashboardExclusionsModal() {
+    const overlay = document.getElementById('exclusions-modal-overlay');
+    if (!overlay) return;
+    const options = await getExclusionOptions();
+    const catSel = document.getElementById('dash-exclude-categories');
+    const budgetSel = document.getElementById('dash-exclude-budgets');
+    if (catSel) {
+        catSel.innerHTML = options.categories.map(c =>
+            `<option value="${escapeHtml(c)}" ${dashboardExclusions.categories.includes(c) ? 'selected' : ''}>${escapeHtml(c)}</option>`
+        ).join('');
+    }
+    if (budgetSel) {
+        budgetSel.innerHTML = options.budgets.map(b =>
+            `<option value="${escapeHtml(b)}" ${dashboardExclusions.budgets.includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`
+        ).join('');
+    }
+    overlay.style.display = 'flex';
+}
+
+function closeDashboardExclusionsModal() {
+    const overlay = document.getElementById('exclusions-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function saveDashboardExclusions() {
+    if (!currentDashboardId) return;
+    const catSel = document.getElementById('dash-exclude-categories');
+    const budgetSel = document.getElementById('dash-exclude-budgets');
+    dashboardExclusions = {
+        categories: catSel ? Array.from(catSel.selectedOptions).map(o => o.value) : [],
+        budgets: budgetSel ? Array.from(budgetSel.selectedOptions).map(o => o.value) : []
+    };
+    try {
+        const dashboards = await fetchDashboards();
+        const dash = dashboards.find(d => d.id === currentDashboardId);
+        if (!dash) return;
+        dash.exclude_categories = dashboardExclusions.categories;
+        dash.exclude_budgets = dashboardExclusions.budgets;
+        const res = await fetch(`/api/dashboards/${currentDashboardId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dash)
+        });
+        if (!res.ok) throw new Error(await res.text());
+        closeDashboardExclusionsModal();
+        OxiUI.toast('Dashboard exclusions saved', 'success');
+        // Re-render all widgets so the new global exclusions take effect
+        await renderDashboard();
+    } catch (e) {
+        console.error('Failed to save dashboard exclusions:', e);
+        OxiUI.toast('Failed to save exclusions: ' + e.message, 'error');
+    }
 }
 
 // ── New dashboard modal ───────────────────────────────────────────────
@@ -821,6 +936,15 @@ async function updateWidgetDateRange(widgetId) {
 
     const sankeyFlowTypeEl = document.getElementById(`${widgetId}-sankey-flow-type`);
     if (sankeyFlowTypeEl) widget.sankey_flow_type = sankeyFlowTypeEl.value;
+
+    const exclCatsEl = document.getElementById(`${widgetId}-exclude-categories`);
+    if (exclCatsEl) {
+        widget.exclude_categories = Array.from(exclCatsEl.selectedOptions).map(o => o.value);
+    }
+    const exclBudgetsEl = document.getElementById(`${widgetId}-exclude-budgets`);
+    if (exclBudgetsEl) {
+        widget.exclude_budgets = Array.from(exclBudgetsEl.selectedOptions).map(o => o.value);
+    }
 
     try {
         const response = await fetch(`/api/widgets/${widgetId}`, {
@@ -1566,6 +1690,7 @@ async function renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, e
     allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
 
     try {
+        appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
         const response = await fetch('/api/sankey/flows?' + params.toString());
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
@@ -2043,6 +2168,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             if (effectiveStart) params.append('start', effectiveStart);
             if (effectiveEnd) params.append('end', effectiveEnd);
             if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+            appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
 
             const url = `/api/earned-spent?${params.toString()}`;
             const response = await fetch(url);
@@ -2063,6 +2189,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
             const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
             allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+            appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
 
             const url = `/api/budgets/spent-history?${params.toString()}`;
             const response = await fetch(url);
@@ -2092,6 +2219,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
             const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
             allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+            appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
 
             const url = `/api/categories/subcategory-spend?${params.toString()}`;
             const response = await fetch(url);
@@ -2113,6 +2241,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
             const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
             allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+            appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
 
             const url = `/api/expenses-by-category?${params.toString()}`;
             const response = await fetch(url);
@@ -3069,6 +3198,7 @@ async function renderDashboard() {
     // Fetch all accounts and groups
     const allAccounts = await fetchAccounts();
     const allGroups = await fetchDashboardGroups();
+    const exclusionOptions = await getExclusionOptions();
 
     // Normalize chart_options on all widgets (handles old widgets without pct fields)
     widgets.forEach(widget => {
@@ -3269,6 +3399,22 @@ async function renderDashboard() {
                         <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
                         ` : ''}
                     </div>
+                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey'].includes(widgetType) ? `
+                    <div class="widget-settings-section">
+                        <strong>Exclusions</strong>
+                        <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>
+                        <label>Exclude categories:
+                            <select multiple size="5" id="${widget.id}-exclude-categories" class="exclusion-select">
+                                ${exclusionOptions.categories.map(c => `<option value="${escapeHtml(c)}" ${(widget.exclude_categories || []).includes(c) ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label>Exclude budgets:
+                            <select multiple size="5" id="${widget.id}-exclude-budgets" class="exclusion-select">
+                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${(widget.exclude_budgets || []).includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </label>
+                    </div>
+                    ` : ''}
                     <div class="widget-settings-section">
                         <strong>Width</strong>
                         <label>
@@ -3618,6 +3764,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (applyDateRangeBtn) {
         applyDateRangeBtn.addEventListener('click', applyDashboardDateRange);
     }
+
+    // Dashboard exclusions modal
+    const exclusionsToggle = document.getElementById('dashboard-exclusions-toggle');
+    if (exclusionsToggle) {
+        exclusionsToggle.addEventListener('click', openDashboardExclusionsModal);
+    }
+    document.getElementById('exclusions-modal-close')?.addEventListener('click', closeDashboardExclusionsModal);
+    document.getElementById('exclusions-modal-cancel')?.addEventListener('click', closeDashboardExclusionsModal);
+    document.getElementById('exclusions-modal-save')?.addEventListener('click', saveDashboardExclusions);
+    document.getElementById('exclusions-modal-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeDashboardExclusionsModal();
+    });
 
     // Set dashboard title
     const current = dashboardsCache.find(d => d.id === currentDashboardId);

@@ -15,6 +15,14 @@ pub struct Widget {
     pub parent_categories: Vec<String>,
     #[serde(default)]
     pub subcategories: Vec<String>,
+    /// Categories/budgets entirely excluded from this widget's data.
+    /// Category entries may be parent names (excludes all subcategories)
+    /// or full "Parent:Sub" names.
+    #[serde(default)]
+    pub exclude_categories: Vec<String>,
+    /// Budget names entirely excluded from this widget's data.
+    #[serde(default)]
+    pub exclude_budgets: Vec<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_graph_mode: Option<String>, // "subcategory" (default) or "parent"
@@ -222,6 +230,24 @@ mod tests {
         // Legacy widgets without the field default to unstacked
         let legacy: ChartOptions = serde_json::from_str(r#"{"show_pct": false}"#).unwrap();
         assert!(!legacy.stacked);
+    }
+
+    #[test]
+    fn widget_legacy_json_defaults_exclusion_fields() {
+        // Widgets saved before exclusions existed must still deserialize,
+        // picking up empty exclusion lists.
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": []
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert!(widget.exclude_categories.is_empty());
+        assert!(widget.exclude_budgets.is_empty());
+
+        let out = serde_json::to_value(&widget).unwrap();
+        assert_eq!(out["exclude_categories"].as_array().unwrap().len(), 0);
+        assert_eq!(out["exclude_budgets"].as_array().unwrap().len(), 0);
     }
 
     #[test]

@@ -164,6 +164,24 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN chart_type TEXT DEFAULT 'line'",
         [],
     );
+    // Migration: Add exclusion columns to widgets if they do not exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN exclude_categories TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN exclude_budgets TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    // Migration: Add exclusion columns to dashboards if they do not exist
+    let _ = conn.execute(
+        "ALTER TABLE dashboards ADD COLUMN exclude_categories TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE dashboards ADD COLUMN exclude_budgets TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
     // Initialize persistent chart cache table
     PersistentCache::init(conn);
 }
@@ -225,7 +243,8 @@ impl Storage {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
-                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type, chart_type
+                            widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type, chart_type,
+                            exclude_categories, exclude_budgets
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -257,6 +276,8 @@ impl Storage {
                     let date_range_source: Option<String> = row.get(22)?;
                     let sankey_flow_type: Option<String> = row.get(23)?;
                     let chart_type: Option<String> = row.get(24)?;
+                    let exclude_categories_json: String = row.get(25)?;
+                    let exclude_budgets_json: String = row.get(26)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -270,6 +291,10 @@ impl Storage {
                         serde_json::from_str(&parent_categories_json).unwrap_or_default();
                     let subcategories: Vec<String> =
                         serde_json::from_str(&subcategories_json).unwrap_or_default();
+                    let exclude_categories: Vec<String> =
+                        serde_json::from_str(&exclude_categories_json).unwrap_or_default();
+                    let exclude_budgets: Vec<String> =
+                        serde_json::from_str(&exclude_budgets_json).unwrap_or_default();
                     let dashboard_ids: Vec<String> =
                         serde_json::from_str(&dashboard_ids_json).unwrap_or_default();
                     let chart_options =
@@ -284,6 +309,8 @@ impl Storage {
                         budget_names,
                         parent_categories,
                         subcategories,
+                        exclude_categories,
+                        exclude_budgets,
                         category_graph_mode,
                         start_date,
                         end_date,
@@ -339,6 +366,10 @@ impl Storage {
             serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
         let subcategories_json =
             serde_json::to_string(&widget.subcategories).map_err(|e| e.to_string())?;
+        let exclude_categories_json =
+            serde_json::to_string(&widget.exclude_categories).map_err(|e| e.to_string())?;
+        let exclude_budgets_json =
+            serde_json::to_string(&widget.exclude_budgets).map_err(|e| e.to_string())?;
         with_db(|conn| {
             // If the widget has no dashboard_ids, auto-assign it to the default dashboard
             let dashboard_ids_json = if widget.dashboard_ids.is_empty() {
@@ -359,8 +390,9 @@ impl Storage {
 
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
-                                      chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, chart_type, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                                      chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, chart_type,
+                                      exclude_categories, exclude_budgets, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -384,6 +416,8 @@ impl Storage {
                     &dashboard_ids_json,
                     &widget.sankey_flow_type,
                     &widget.chart_type,
+                    &exclude_categories_json,
+                    &exclude_budgets_json,
                     &now,
                     &now
                 ],
@@ -412,6 +446,10 @@ impl Storage {
             serde_json::to_string(&widget.parent_categories).map_err(|e| e.to_string())?;
         let subcategories_json =
             serde_json::to_string(&widget.subcategories).map_err(|e| e.to_string())?;
+        let exclude_categories_json =
+            serde_json::to_string(&widget.exclude_categories).map_err(|e| e.to_string())?;
+        let exclude_budgets_json =
+            serde_json::to_string(&widget.exclude_budgets).map_err(|e| e.to_string())?;
         let dashboard_ids_json =
             serde_json::to_string(&widget.dashboard_ids).map_err(|e| e.to_string())?;
 
@@ -422,8 +460,9 @@ impl Storage {
                     name = ?1, accounts = ?2, group_ids = ?3, budget_ids = ?4, budget_names = ?5, parent_categories = ?6, subcategories = ?7, category_graph_mode = ?8,
                     start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
                     widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
-                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, chart_type = ?22, updated_at = ?23
-                 WHERE id = ?24",
+                    display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, chart_type = ?22,
+                    exclude_categories = ?23, exclude_budgets = ?24, updated_at = ?25
+                 WHERE id = ?26",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -447,6 +486,8 @@ impl Storage {
                         &widget.date_range_source,
                         &widget.sankey_flow_type,
                         &widget.chart_type,
+                        &exclude_categories_json,
+                        &exclude_budgets_json,
                         &now,
                         &widget.id
                     ],
@@ -571,7 +612,7 @@ impl Storage {
         with_db(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, name, start_date, end_date, created_at, updated_at FROM dashboards ORDER BY created_at ASC",
+                    "SELECT id, name, start_date, end_date, exclude_categories, exclude_budgets, created_at, updated_at FROM dashboards ORDER BY created_at ASC",
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -581,13 +622,21 @@ impl Storage {
                     let name: String = row.get(1)?;
                     let start_date: Option<String> = row.get(2)?;
                     let end_date: Option<String> = row.get(3)?;
-                    let created_at: Option<String> = row.get(4)?;
-                    let updated_at: Option<String> = row.get(5)?;
+                    let exclude_categories_json: String = row.get(4)?;
+                    let exclude_budgets_json: String = row.get(5)?;
+                    let created_at: Option<String> = row.get(6)?;
+                    let updated_at: Option<String> = row.get(7)?;
+                    let exclude_categories: Vec<String> =
+                        serde_json::from_str(&exclude_categories_json).unwrap_or_default();
+                    let exclude_budgets: Vec<String> =
+                        serde_json::from_str(&exclude_budgets_json).unwrap_or_default();
                     Ok(Dashboard {
                         id,
                         name,
                         start_date,
                         end_date,
+                        exclude_categories,
+                        exclude_budgets,
                         created_at,
                         updated_at,
                     })
@@ -602,15 +651,21 @@ impl Storage {
 
     pub fn create_dashboard(dashboard: &Dashboard) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
+        let exclude_categories_json =
+            serde_json::to_string(&dashboard.exclude_categories).map_err(|e| e.to_string())?;
+        let exclude_budgets_json =
+            serde_json::to_string(&dashboard.exclude_budgets).map_err(|e| e.to_string())?;
         with_db(|conn| {
             conn.execute(
-                "INSERT INTO dashboards (id, name, start_date, end_date, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO dashboards (id, name, start_date, end_date, exclude_categories, exclude_budgets, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     &dashboard.id,
                     &dashboard.name,
                     &dashboard.start_date,
                     &dashboard.end_date,
+                    &exclude_categories_json,
+                    &exclude_budgets_json,
                     &now,
                     &now
                 ],
@@ -622,11 +677,23 @@ impl Storage {
 
     pub fn update_dashboard(dashboard: &Dashboard) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
+        let dashboard_exclude_categories_json =
+            serde_json::to_string(&dashboard.exclude_categories).map_err(|e| e.to_string())?;
+        let dashboard_exclude_budgets_json =
+            serde_json::to_string(&dashboard.exclude_budgets).map_err(|e| e.to_string())?;
         with_db(|conn| {
             let rows = conn
                 .execute(
-                    "UPDATE dashboards SET name = ?1, start_date = ?2, end_date = ?3, updated_at = ?4 WHERE id = ?5",
-                    params![&dashboard.name, &dashboard.start_date, &dashboard.end_date, &now, &dashboard.id],
+                    "UPDATE dashboards SET name = ?1, start_date = ?2, end_date = ?3, exclude_categories = ?4, exclude_budgets = ?5, updated_at = ?6 WHERE id = ?7",
+                    params![
+                        &dashboard.name,
+                        &dashboard.start_date,
+                        &dashboard.end_date,
+                        &dashboard_exclude_categories_json,
+                        &dashboard_exclude_budgets_json,
+                        &now,
+                        &dashboard.id
+                    ],
                 )
                 .map_err(|e| e.to_string())?;
 

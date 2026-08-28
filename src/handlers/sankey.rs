@@ -38,6 +38,8 @@ pub async fn get_sankey_flows(
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
 
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
     let mut account_ids: Vec<String> = Vec::new();
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
@@ -93,6 +95,7 @@ pub async fn get_sankey_flows(
             categories_opt,
             subcategories_opt,
             budgets_opt,
+            &exclusions,
         )
         .await
     {

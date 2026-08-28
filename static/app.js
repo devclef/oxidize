@@ -226,6 +226,26 @@ async function fetchAccounts() {
     }
 }
 
+function escapeHtmlAttr(str) {
+    return String(str === undefined || str === null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function getExcludedCategories() {
+    const sel = document.getElementById('exclude-categories-select');
+    return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+}
+
+function getExcludedBudgets() {
+    const sel = document.getElementById('exclude-budgets-select');
+    return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+}
+
+function appendExclusionParams(params) {
+    getExcludedCategories().forEach(c => params.append('exclude_categories[]', c));
+    getExcludedBudgets().forEach(b => params.append('exclude_budgets[]', b));
+}
+
 async function fetchChartData() {
     const chartContainer = document.querySelector('.chart-wrapper');
     chartErrorEl = document.getElementById('chart-error');
@@ -282,6 +302,7 @@ async function fetchChartData() {
             if (startDate) params.append('start', startDate);
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
+            appendExclusionParams(params);
 
             let url = '/api/earned-spent';
             if (params.toString()) {
@@ -325,6 +346,7 @@ async function fetchChartData() {
             if (endDate) params.append('end', endDate);
             if (interval && interval !== 'auto') params.append('period', interval);
             if (categoryGraphMode) params.append('graph_mode', categoryGraphMode);
+            appendExclusionParams(params);
 
             let url = '/api/expenses-by-category';
             if (params.toString()) {
@@ -401,6 +423,7 @@ async function fetchChartData() {
             // Add account IDs for filtering
             const selectedAccountIds = getSelectedAccountIds();
             selectedAccountIds.forEach(id => params.append('accounts[]', id));
+            appendExclusionParams(params);
 
             const url = '/api/budgets/spent-history';
             const fullUrl = params.toString() ? `${url}?${params.toString()}` : url;
@@ -586,6 +609,7 @@ async function fetchChartData() {
             // Add account IDs for filtering
             const selectedAccountIds = getSelectedAccountIds();
             selectedAccountIds.forEach(id => params.append('accounts[]', id));
+            appendExclusionParams(params);
 
             const url = '/api/categories/subcategory-spend';
             const fullUrl = params.toString() ? `${url}?${params.toString()}` : url;
@@ -3150,6 +3174,8 @@ async function saveGraphAsWidget() {
         widget_type: widgetType,
         chart_type: chartType,
         chart_options: chartOptions,
+        exclude_categories: getExcludedCategories(),
+        exclude_budgets: getExcludedBudgets(),
         dashboard_ids: ['default']
     };
 
@@ -3713,6 +3739,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allBudgets = await response.json();
             renderBudgetTypeFilterPills();
             renderBudgets();
+            populateExclusionSelects();
         } catch (e) {
             console.warn('Failed to load budgets:', e);
         }
@@ -3802,8 +3829,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             allCategories = await response.json();
             renderCategories();
+            populateExclusionSelects();
         } catch (e) {
             console.warn('Failed to load categories:', e);
+        }
+    }
+
+    function populateExclusionSelects() {
+        const catSel = document.getElementById('exclude-categories-select');
+        const budgetSel = document.getElementById('exclude-budgets-select');
+        if (catSel) {
+            const names = new Set();
+            for (const c of allCategories) {
+                names.add(c.name);
+                for (const sub of c.subcategories || []) {
+                    names.add(`${c.name}:${sub}`);
+                }
+            }
+            catSel.innerHTML = Array.from(names)
+                .sort((a, b) => a.localeCompare(b))
+                .map(n => `<option value="${escapeHtmlAttr(n)}">${escapeHtmlAttr(n)}</option>`)
+                .join('');
+        }
+        if (budgetSel) {
+            budgetSel.innerHTML = allBudgets
+                .map(b => `<option value="${escapeHtmlAttr(b.name)}">${escapeHtmlAttr(b.name)}</option>`)
+                .join('');
         }
     }
 

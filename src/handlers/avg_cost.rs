@@ -35,6 +35,8 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
 
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
     let mut budget_names: Vec<String> = Vec::new();
     let mut mode: Option<String> = None;
     let mut months: Option<u32> = None;
@@ -91,6 +93,7 @@ pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) ->
             account_ids_opt,
             target_month,
             target_year,
+            &exclusions,
         )
         .await
     {

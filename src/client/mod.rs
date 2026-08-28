@@ -3,8 +3,8 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, ParentCategory, SankeyFlowData, SankeyFlowType,
-    SankeyLink, SimpleAccount,
+    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, ParentCategory, SankeyFlowData,
+    SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
 use log::{debug, error, info};
@@ -25,6 +25,26 @@ fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
         })
         .ok()
+}
+
+/// Extract the (category_name, budget_name) of a journal entry for
+/// exclusion matching. Budgets must be non-empty; "Unbudgeted" journals
+/// are left to budget-name matching (i.e. they only match an explicit
+/// "Unbudgeted" exclusion entry, which is never offered in the UI).
+fn journal_exclusion_names(journal: &serde_json::Value) -> (Option<&str>, Option<&str>) {
+    let category = journal.get("category_name").and_then(|c| c.as_str());
+    let budget = journal
+        .get("budget_name")
+        .and_then(|b| b.as_str())
+        .filter(|b| !b.is_empty());
+    (category, budget)
+}
+
+/// Returns true when the journal entry should be dropped from aggregation
+/// because its category or budget is excluded.
+fn journal_is_excluded(exclusions: &Exclusions, journal: &serde_json::Value) -> bool {
+    let (category, budget) = journal_exclusion_names(journal);
+    exclusions.is_journal_excluded(category, budget)
 }
 
 /// Determines whether a journal entry counts as "spent" from the perspective
@@ -807,6 +827,7 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         // Check cache first
         if let Some(cached_json) = self.cache.get_earned_spent(
@@ -814,6 +835,7 @@ impl FireflyClient {
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            exclusions,
         ) {
             debug!("Cache hit for earned/spent");
             return serde_json::from_str(&cached_json)
@@ -827,13 +849,20 @@ impl FireflyClient {
                 period.clone(),
                 account_ids.clone(),
                 None,
+                exclusions,
             )
             .await;
 
         if let Ok(ref chart_line) = result {
             if let Ok(json) = serde_json::to_string(chart_line) {
-                self.cache
-                    .set_earned_spent(start_date, end_date, period, account_ids, json);
+                self.cache.set_earned_spent(
+                    start_date,
+                    end_date,
+                    period,
+                    account_ids,
+                    exclusions,
+                    json,
+                );
             }
         }
 
@@ -847,6 +876,7 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         since: Option<String>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         use crate::models::chart::ChartDataSet;
 
@@ -930,6 +960,11 @@ impl FireflyClient {
         };
 
         for journal in &all_journals {
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+
             let journal_type = journal.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
             let source_id = journal
@@ -1021,6 +1056,7 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         let is_parent_mode = graph_mode.as_deref() == Some("parent");
         // Check cache first
@@ -1030,6 +1066,7 @@ impl FireflyClient {
             period.clone(),
             account_ids.clone(),
             graph_mode.clone(),
+            exclusions,
         ) {
             debug!("Cache hit for expenses by category");
             return serde_json::from_str(&cached_json)
@@ -1082,6 +1119,11 @@ impl FireflyClient {
 
         for journal in &all_journals {
             if !is_journal_spent(journal, &selected_ids) {
+                continue;
+            }
+
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
                 continue;
             }
 
@@ -1154,6 +1196,7 @@ impl FireflyClient {
                 period,
                 account_ids,
                 graph_mode,
+                exclusions,
                 json,
             );
         }
@@ -1328,6 +1371,7 @@ impl FireflyClient {
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
@@ -1337,9 +1381,9 @@ impl FireflyClient {
         });
 
         // Check cache
-        if let Some(cached) = self
-            .cache
-            .get_budget_spent(Some(start.clone()), Some(end.clone()))
+        if let Some(cached) =
+            self.cache
+                .get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions)
         {
             debug!("Cache hit for budget_spent: {} to {}", start, end);
             let chart: ChartLine = serde_json::from_str(&cached).map_err(|e| e.to_string())?;
@@ -1368,7 +1412,7 @@ impl FireflyClient {
 
         // Cache the raw JSON
         self.cache
-            .set_budget_spent(Some(start), Some(end), body.clone());
+            .set_budget_spent(Some(start), Some(end), exclusions, body.clone());
 
         let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
         let chart = match &value {
@@ -1393,6 +1437,13 @@ impl FireflyClient {
             _ => return Err("Unexpected budget chart response format".to_string()),
         };
         debug!("budget_spent: {} datasets parsed", chart.len());
+
+        // Drop datasets for excluded budgets (Firefly aggregates this endpoint
+        // server-side, so category exclusions cannot be applied here)
+        let mut chart = chart;
+        if !exclusions.budgets.is_empty() {
+            chart.retain(|ds| !exclusions.is_budget_excluded(&ds.label));
+        }
         Ok(chart)
     }
 
@@ -1464,6 +1515,7 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         // Check cache first
         if let Some(cached_json) = self.cache.get_budget_spent_history(
@@ -1471,6 +1523,7 @@ impl FireflyClient {
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            exclusions,
         ) {
             debug!("Cache hit for budget spent history");
             return serde_json::from_str(&cached_json)
@@ -1551,6 +1604,11 @@ impl FireflyClient {
                 continue;
             }
 
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+
             // Only include journal entries that have a budget_name
             let budget_name = match journal.get("budget_name").and_then(|n| n.as_str()) {
                 Some(name) if !name.is_empty() => name.to_string(),
@@ -1609,8 +1667,14 @@ impl FireflyClient {
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&chart) {
-            self.cache
-                .set_budget_spent_history(start_date, end_date, period, account_ids, json);
+            self.cache.set_budget_spent_history(
+                start_date,
+                end_date,
+                period,
+                account_ids,
+                exclusions,
+                json,
+            );
         }
 
         Ok(chart)
@@ -1706,6 +1770,7 @@ impl FireflyClient {
         budget_names: Vec<String>,
         start_date: Option<String>,
         end_date: Option<String>,
+        exclusions: &Exclusions,
     ) -> Result<Vec<BudgetComparison>, String> {
         let now = Utc::now();
         let current_year = now.year();
@@ -1743,6 +1808,7 @@ impl FireflyClient {
                 Some(end.clone()),
                 Some("1M".to_string()),
                 None,
+                exclusions,
             )
             .await?;
 
@@ -1757,6 +1823,7 @@ impl FireflyClient {
                 Some(prev_end.clone()),
                 Some("1M".to_string()),
                 None,
+                exclusions,
             )
             .await?;
 
@@ -1773,6 +1840,11 @@ impl FireflyClient {
         let mut results: Vec<BudgetComparison> = Vec::new();
 
         for budget in &budgets {
+            // Skip excluded budgets entirely
+            if exclusions.is_budget_excluded(&budget.name) {
+                continue;
+            }
+
             // Skip if budget_names filter is specified and this budget is not in it
             if !budget_names.is_empty() && !budget_names.contains(&budget.name) {
                 continue;
@@ -2328,6 +2400,7 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         graph_mode: Option<String>,
+        exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         let is_parent_mode = graph_mode.as_deref() == Some("parent");
         // Check cache first
@@ -2339,6 +2412,7 @@ impl FireflyClient {
             period.clone(),
             account_ids.clone(),
             graph_mode.clone(),
+            exclusions,
         ) {
             debug!("Cache hit for subcategory spend");
             return serde_json::from_str(&cached_json)
@@ -2400,6 +2474,11 @@ impl FireflyClient {
 
         for journal in &all_journals {
             if !is_journal_spent(journal, &selected_ids) {
+                continue;
+            }
+
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
                 continue;
             }
 
@@ -2495,6 +2574,7 @@ impl FireflyClient {
                 period,
                 account_ids,
                 graph_mode,
+                exclusions,
                 json,
             );
         }
@@ -2514,6 +2594,7 @@ impl FireflyClient {
         account_ids: Option<Vec<String>>,
         target_month: Option<u32>,
         target_year: Option<i32>,
+        exclusions: &Exclusions,
     ) -> Result<AvgCostResponse, String> {
         let now = Utc::now();
         let current_year = now.year();
@@ -2575,6 +2656,7 @@ impl FireflyClient {
                 Some(end_date.clone()),
                 Some("1M".to_string()),
                 account_ids.clone(),
+                exclusions,
             )
             .await?;
 
@@ -2586,6 +2668,11 @@ impl FireflyClient {
         let mut results: Vec<AvgCostBudget> = Vec::new();
 
         for dataset in &spent_history {
+            // Skip excluded budgets entirely
+            if exclusions.is_budget_excluded(&dataset.label) {
+                continue;
+            }
+
             // Filter by budget names if specified
             if !budget_names.is_empty() && !budget_names.contains(&dataset.label) {
                 continue;
@@ -2704,6 +2791,7 @@ impl FireflyClient {
         categories: Option<Vec<String>>,
         subcategories: Option<Vec<String>>,
         budgets: Option<Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Result<SankeyFlowData, String> {
         let end = end_date.unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
@@ -2713,10 +2801,13 @@ impl FireflyClient {
         });
 
         // Check cache first
-        if let Some(cached_json) =
-            self.cache
-                .get_sankey_flow(&account_ids, &flow_type, Some(&start), Some(&end))
-        {
+        if let Some(cached_json) = self.cache.get_sankey_flow(
+            &account_ids,
+            &flow_type,
+            Some(&start),
+            Some(&end),
+            exclusions,
+        ) {
             debug!("Cache hit for sankey flow");
             return serde_json::from_str(&cached_json)
                 .map_err(|e| format!("Failed to deserialize cached sankey flow: {}", e));
@@ -2749,18 +2840,25 @@ impl FireflyClient {
 
         let links = match &flow_type {
             SankeyFlowType::Destination => {
-                self.aggregate_sankey_destination(&all_journals, &account_ids)
+                self.aggregate_sankey_destination(&all_journals, &account_ids, exclusions)
             }
-            SankeyFlowType::Budget => {
-                self.aggregate_sankey_budget(&all_journals, &account_ids, budgets.as_ref())
-            }
-            SankeyFlowType::Category => {
-                self.aggregate_sankey_category(&all_journals, &account_ids, categories.as_ref())
-            }
+            SankeyFlowType::Budget => self.aggregate_sankey_budget(
+                &all_journals,
+                &account_ids,
+                budgets.as_ref(),
+                exclusions,
+            ),
+            SankeyFlowType::Category => self.aggregate_sankey_category(
+                &all_journals,
+                &account_ids,
+                categories.as_ref(),
+                exclusions,
+            ),
             SankeyFlowType::Subcategory => self.aggregate_sankey_subcategory(
                 &all_journals,
                 &account_ids,
                 subcategories.as_ref(),
+                exclusions,
             ),
         };
 
@@ -2781,8 +2879,14 @@ impl FireflyClient {
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&result) {
-            self.cache
-                .set_sankey_flow(&account_ids, &flow_type, start.clone(), end.clone(), json);
+            self.cache.set_sankey_flow(
+                &account_ids,
+                &flow_type,
+                start.clone(),
+                end.clone(),
+                exclusions,
+                json,
+            );
         }
 
         Ok(result)
@@ -2793,10 +2897,15 @@ impl FireflyClient {
         &self,
         journals: &[serde_json::Value],
         source_account_ids: &[String],
+        exclusions: &Exclusions,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
         self.aggregate_sankey_by_names(journals, &source_set, |journal, source_set| {
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                return None;
+            }
             let source_id = journal
                 .get("source_id")
                 .and_then(|s| s.as_str())
@@ -2832,12 +2941,17 @@ impl FireflyClient {
         journals: &[serde_json::Value],
         source_account_ids: &[String],
         budget_filter: Option<&Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
         let budget_set: Option<std::collections::HashSet<&str>> =
             budget_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                return None;
+            }
             if !is_journal_spent(journal, ss) {
                 return None;
             }
@@ -2874,12 +2988,17 @@ impl FireflyClient {
         journals: &[serde_json::Value],
         source_account_ids: &[String],
         category_filter: Option<&Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
         let cat_set: Option<std::collections::HashSet<&str>> =
             category_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                return None;
+            }
             if !is_journal_spent(journal, ss) {
                 return None;
             }
@@ -2922,12 +3041,17 @@ impl FireflyClient {
         journals: &[serde_json::Value],
         source_account_ids: &[String],
         subcategory_filter: Option<&Vec<String>>,
+        exclusions: &Exclusions,
     ) -> Vec<SankeyLink> {
         let source_set: std::collections::HashSet<String> =
             source_account_ids.iter().cloned().collect();
         let subcat_set: Option<std::collections::HashSet<&str>> =
             subcategory_filter.map(|v| v.iter().map(|s| s.as_str()).collect());
         self.aggregate_sankey_by_names(journals, &source_set, |journal, ss| {
+            // Drop journals whose category or budget is entirely excluded
+            if journal_is_excluded(exclusions, journal) {
+                return None;
+            }
             if !is_journal_spent(journal, ss) {
                 return None;
             }

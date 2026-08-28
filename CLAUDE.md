@@ -66,6 +66,23 @@ Actix-Web Server (main.rs)
             └─► SQLite database (oxidize.db)
 ```
 
+### Category & Budget Exclusions
+
+Users can exclude categories or budgets *entirely* from historical charts —
+e.g. removing a "Work expenses" category that is later reimbursed. This is
+configurable:
+
+- **Per dashboard (global):** `Dashboard.exclude_categories` / `Dashboard.exclude_budgets`.
+- **Per widget:** `Widget.exclude_categories` / `Widget.exclude_budgets`.
+
+The effective exclusion set is the **union** of dashboard + widget (see
+`mergeExclusions` in `static/dashboard.js`), serialized as repeatable
+`exclude_categories[]` / `exclude_budgets[]` query params. The backend
+(`src/models/exclusions.rs`, `Exclusions`) drops any journal whose category or
+budget matches before aggregation, so excluded amounts never reach the chart.
+A category entry matches by main-category name (all subcategories) or by full
+`Parent:Sub` name. Exclusions are part of the chart cache keys.
+
 ### Source Code Layout
 
 ```
@@ -95,6 +112,7 @@ src/
 │   ├── category.rs  # CategoryRead, ParentCategory, CategoryListResponse
 │   ├── chart.rs     # ChartLine (Vec<ChartDataSet>)
 │   ├── dashboard.rs # Dashboard (named collection of widgets)
+│   ├── exclusions.rs # Exclusions (categories/budgets dropped from aggregation)
 │   ├── group.rs     # Group (id, name, account_ids)
 │   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
 │   └── widget.rs    # Widget, ChartOptions (with custom null-safe deserializer)
@@ -165,18 +183,18 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 |--------|-------------|
 | `get_accounts(type_filter)` | Fetches accounts from Firefly III, maps to `SimpleAccount` |
 | `get_balance_history(account_ids, start, end, period)` | Fetches balance chart data, aggregates multiple datasets into one line, anchors to current balance |
-| `get_earned_spent(start, end, period, account_ids)` | Fetches transactions and aggregates into earned/spent chart lines by period |
-| `get_expenses_by_category(start, end, account_ids)` | Fetches transactions and groups expenses by category |
+| `get_earned_spent(start, end, period, account_ids, exclusions)` | Fetches transactions and aggregates into earned/spent chart lines by period (drops journals matching `exclusions`) |
+| `get_expenses_by_category(start, end, account_ids, graph_mode, exclusions)` | Fetches transactions and groups expenses by category (drops journals matching `exclusions`) |
 | `get_net_worth(start, end, period)` | Calculates net worth (assets minus liabilities) over time |
 | `get_budgets()` | Lists budgets from Firefly III |
-| `get_budget_spent(start, end)` | Spent per budget for a period |
-| `get_budget_spent_history(start, end, period, account_ids)` | Monthly spent-per-budget time series |
+| `get_budget_spent(start, end, exclusions)` | Spent per budget for a period (post-filters excluded budget datasets) |
+| `get_budget_spent_history(start, end, period, account_ids, exclusions)` | Monthly spent-per-budget time series (drops journals matching `exclusions`) |
 | `get_budget_limit(...)` | Budget period limits |
-| `get_budget_comparison(start, end, budget_names)` | This year vs last year, with projections against budget limits |
+| `get_budget_comparison(start, end, budget_names, exclusions)` | This year vs last year, with projections against budget limits (skips excluded budgets) |
 | `get_categories()` | Top-level categories with subcategories |
-| `get_subcategory_spend_chart(parent_categories, subcategories, start, end, period, account_ids, graph_mode)` | Spending by subcategory |
-| `get_avg_cost(budget_names, mode, months, account_ids, month, year)` | Average monthly cost per budget (`LastNMonths` or `PreviousYearSameMonth`) |
-| `get_sankey_flows(account_ids, flow_type, start, end, categories, subcategories, budgets)` | Sankey flow data (between accounts / by category / subcategory / budget) |
+| `get_subcategory_spend_chart(parent_categories, subcategories, start, end, period, account_ids, graph_mode, exclusions)` | Spending by subcategory (drops journals matching `exclusions`) |
+| `get_avg_cost(budget_names, mode, months, account_ids, month, year, exclusions)` | Average monthly cost per budget (`LastNMonths` or `PreviousYearSameMonth`; skips excluded budgets) |
+| `get_sankey_flows(account_ids, flow_type, start, end, categories, subcategories, budgets, exclusions)` | Sankey flow data (between accounts / by category / subcategory / budget; drops journals matching `exclusions`) |
 | `get_card_paydown(...)` | Credit card paydown analysis (per-account balances and summary stats) |
 
 **Internal helper methods:**
@@ -220,8 +238,9 @@ SQLite persistence for dashboards, widgets, and groups:
 **SQLite tables:**
 ```sql
 -- widgets table (group_ids, budget_ids, budget_names, parent_categories,
--- subcategories, earned_chart_type, category_graph_mode, dashboard_ids,
--- date_range_source, sankey_flow_type, chart_type added via migrations)
+-- subcategories, exclude_categories, exclude_budgets, earned_chart_type,
+-- category_graph_mode, dashboard_ids, date_range_source, sankey_flow_type,
+-- chart_type added via migrations)
 CREATE TABLE widgets (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -275,13 +294,14 @@ CREATE TABLE groups (
 
 **`Widget`** — configurable dashboard chart widget:
 - `widget_type`: `"balance"` (default) or `"earned_spent"`
+- `exclude_categories` / `exclude_budgets`: optional name arrays that exclude categories/budgets entirely from the widget's data (merged with dashboard-level exclusions)
 - `chart_options`: optional `ChartOptions` struct with display settings (show_points, fill_area, tension, x/y axis limits, begin_at_zero, show_pct, pct_mode)
 - Has a custom deserializer (`deserialize_chart_options_for_widget`) that strips null fields before deserializing, so partial updates work correctly
 - `display_order`, `width` (1-12 grid), `chart_height` (pixels) control layout
 
 **`Group`** — named collection of account IDs for filtering
 
-**`Dashboard`** — named dashboard; widgets are assigned via their `dashboard_ids` JSON array (a widget can belong to multiple dashboards)
+**`Dashboard`** — named dashboard; widgets are assigned via their `dashboard_ids` JSON array (a widget can belong to multiple dashboards). Also carries global `exclude_categories` / `exclude_budgets` applied to every widget on the dashboard
 
 **`BudgetComparison` / `AvgCostResponse`** — budget comparison (this year vs last year, projections vs limits) and average-cost-per-budget payloads
 
@@ -352,20 +372,20 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 |--------|------|-------------|-------------|
 | `GET` | `/api/accounts` | `type` (optional) | List accounts, filtered by type |
 | `GET` | `/api/accounts/balance-history` | `accounts[]`, `start`, `end`, `period` | Balance chart data |
-| `GET` | `/api/earned-spent` | `start`, `end`, `period`, `accounts[]` | Earned vs spent chart data |
-| `GET` | `/api/expenses-by-category` | `start`, `end`, `accounts[]` | Expenses grouped by category |
+| `GET` | `/api/earned-spent` | `start`, `end`, `period`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Earned vs spent chart data |
+| `GET` | `/api/expenses-by-category` | `start`, `end`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Expenses grouped by category |
 | `GET` | `/api/net-worth` | `start`, `end`, `period` | Net worth over time |
-| `GET` | `/api/earned-spent/since` | `since`, `end`, `period`, `accounts[]` | Earned vs spent from a start point onward |
+| `GET` | `/api/earned-spent/since` | `since`, `end`, `period`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Earned vs spent from a start point onward |
 | `GET` | `/api/budgets/list` | `start`, `end` | Budget list |
-| `GET` | `/api/budgets/spent` | `start`, `end` | Spent per budget for the period |
-| `GET` | `/api/budgets/spent-history` | `start`, `end`, `period`, `accounts[]` | Spent-per-budget time series |
-| `GET` | `/api/budgets/comparison` | `start`, `end`, `budget_names` (repeatable) | This year vs last year + projections vs limits |
-| `GET` | `/api/budgets/avg-cost` | `budget_names` (repeatable), `mode`, `months`, `account_ids` (comma-separated), `month`, `year` | Average monthly cost per budget |
+| `GET` | `/api/budgets/spent` | `start`, `end`, `exclude_budgets[]` | Spent per budget for the period |
+| `GET` | `/api/budgets/spent-history` | `start`, `end`, `period`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spent-per-budget time series |
+| `GET` | `/api/budgets/comparison` | `start`, `end`, `budget_names` (repeatable), `exclude_categories[]`, `exclude_budgets[]` | This year vs last year + projections vs limits |
+| `GET` | `/api/budgets/avg-cost` | `budget_names` (repeatable), `mode`, `months`, `account_ids` (comma-separated), `month`, `year`, `exclude_categories[]`, `exclude_budgets[]` | Average monthly cost per budget |
 | `GET` | `/api/card-paydown` | `start`, `end`, `accounts[]`, `debug` | Credit card paydown analysis |
 | `POST` | `/api/card-paydown/refresh` | — | Clear card paydown cache |
 | `GET` | `/api/categories/list` | — | Top-level categories with subcategories |
-| `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]` | Spending by subcategory |
-| `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]` | Sankey flow data |
+| `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spending by subcategory |
+| `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]`, `exclude_categories[]`, `exclude_budgets[]` | Sankey flow data |
 
 ### Cache Management
 | Method | Path | Description |

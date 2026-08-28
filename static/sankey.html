@@ -91,6 +91,16 @@
                     </div>
                     <div class="check-list compact" id="budget-filter-list"></div>
                 </div>
+                <div id="exclusions-panel" class="filter-panel">
+                    <h4>Exclusions</h4>
+                    <p class="exclusions-hint">Entirely removed from the flow (main category excludes all its subcategories).</p>
+                    <label>Exclude categories
+                        <select multiple size="5" id="exclude-categories-select" class="exclusion-select"></select>
+                    </label>
+                    <label>Exclude budgets
+                        <select multiple size="5" id="exclude-budgets-select" class="exclusion-select"></select>
+                    </label>
+                </div>
                 <div class="date-row">
                     <div>
                         <label for="start-date">From</label>
@@ -199,6 +209,47 @@
                 renderFilterList('budget-filter-list', availableBudgets, 'filter-cb');
             }
         } catch (e) { console.error('Failed to load budgets:', e); }
+
+        populateSankeyExclusionSelects();
+    }
+
+    function getSankeyExcludedCategories() {
+        const sel = document.getElementById('exclude-categories-select');
+        return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+    }
+
+    function getSankeyExcludedBudgets() {
+        const sel = document.getElementById('exclude-budgets-select');
+        return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+    }
+
+    function appendSankeyExclusionParams(params) {
+        getSankeyExcludedCategories().forEach(c => params.append('exclude_categories[]', c));
+        getSankeyExcludedBudgets().forEach(b => params.append('exclude_budgets[]', b));
+    }
+
+    function populateSankeyExclusionSelects() {
+        const catSel = document.getElementById('exclude-categories-select');
+        const budgetSel = document.getElementById('exclude-budgets-select');
+        if (catSel) {
+            // Main categories plus full "Parent:Sub" names for fine-grained exclusion
+            const names = new Set(availableCategories);
+            availableCategories.forEach(parent => {
+                availableSubcategories
+                    .filter(sub => sub.startsWith(parent + ' > '))
+                    .forEach(sub => names.add(parent + ':' + sub.split(' > ')[1]));
+            });
+            catSel.innerHTML = Array.from(names)
+                .sort((a, b) => a.localeCompare(b))
+                .map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>')
+                .join('');
+        }
+        if (budgetSel) {
+            budgetSel.innerHTML = availableBudgets
+                .sort((a, b) => a.localeCompare(b))
+                .map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>')
+                .join('');
+        }
     }
 
     function renderFilterList(listId, items, cbClass) {
@@ -293,6 +344,8 @@
             const selectedBudgets = getSelectedFilterValues('budget-filter-list');
             selectedBudgets.forEach(b => params.append('budgets[]', b));
         }
+
+        appendSankeyExclusionParams(params);
 
         try {
             const response = await fetch('/api/sankey/flows?' + params.toString());
@@ -603,6 +656,8 @@
             earned_chart_type: null,
             widget_type: 'sankey',
             sankey_flow_type: currentFlowType,
+            exclude_categories: getSankeyExcludedCategories(),
+            exclude_budgets: getSankeyExcludedBudgets(),
             chart_options: null,
             dashboard_ids: ['default'],
             width: 12,

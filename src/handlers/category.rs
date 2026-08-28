@@ -32,6 +32,8 @@ pub async fn get_subcategory_spend(
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
 
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
     let mut start: Option<String> = None;
     let mut end: Option<String> = None;
     let mut period: Option<String> = None;
@@ -72,6 +74,7 @@ pub async fn get_subcategory_spend(
                 Some(account_ids)
             },
             graph_mode,
+            &exclusions,
         )
         .await
     {
