@@ -621,7 +621,7 @@ describe('OxiUI.hoverValueGuidePlugin', () => {
     it('draws a dotted horizontal line at the hovered point value', () => {
         const chart = makeChart({
             datasets: [{ data: [1, 2, 3] }],
-            active: [{ datasetIndex: 0, index: 1, x: 100, y: 90 }]
+            active: [{ datasetIndex: 0, index: 1, element: { x: 100, y: 90 } }]
         });
         OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
         const c = chart.ctx;
@@ -638,7 +638,7 @@ describe('OxiUI.hoverValueGuidePlugin', () => {
         document.documentElement.setAttribute('data-theme', 'dark');
         const chart = makeChart({
             datasets: [{ data: [1] }],
-            active: [{ datasetIndex: 0, index: 0, x: 50, y: 40 }]
+            active: [{ datasetIndex: 0, index: 0, element: { x: 50, y: 40 } }]
         });
         OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
         expect(chart.ctx.strokeStyle).toBe('rgba(124, 131, 247, 0.65)');
@@ -655,8 +655,8 @@ describe('OxiUI.hoverValueGuidePlugin', () => {
             type: 'bar',
             datasets: [{ type: 'bar', data: [5] }, { type: 'line', data: [9] }],
             active: [
-                { datasetIndex: 0, index: 0, x: 50, y: 30 },
-                { datasetIndex: 1, index: 0, x: 50, y: 120 }
+                { datasetIndex: 0, index: 0, element: { x: 50, y: 30 } },
+                { datasetIndex: 1, index: 0, element: { x: 50, y: 120 } }
             ]
         });
         OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
@@ -668,7 +668,7 @@ describe('OxiUI.hoverValueGuidePlugin', () => {
         const chart = makeChart({
             type: 'bar',
             datasets: [{ type: 'bar', data: [5] }],
-            active: [{ datasetIndex: 0, index: 0, x: 50, y: 30 }]
+            active: [{ datasetIndex: 0, index: 0, element: { x: 50, y: 30 } }]
         });
         OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
         expect(chart.ctx.calls).toContainEqual(['moveTo', 10, 30]);

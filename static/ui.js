@@ -421,8 +421,8 @@
     //   new Chart(ctx, { ..., plugins: [OxiUI.hoverValueGuidePlugin] })
     //
     // The line is placed at the pixel Y of the first hovered element
-    // that belongs to a line dataset (falling back to the first
-    // hovered element), which keeps it correct on mixed bar/line
+    // from a line dataset (falling back to the first hovered element),
+    // which keeps it correct on mixed bar/line
     // charts and on charts with dual y-axes.
     const hoverValueGuidePlugin = {
         id: 'oxiHoverValueGuide',
@@ -440,8 +440,11 @@
                 const ds = datasets[entry.datasetIndex];
                 return !!ds && (ds.type === 'line' || chart.config.type === 'line');
             };
-            const el = active.find(fromLineDataset) || active[0];
-            if (!el || typeof el.y !== 'number') return;
+            const entry = active.find(fromLineDataset) || active[0];
+            // Chart.js active elements are { datasetIndex, index, element };
+            // pixel coordinates live on the element itself.
+            const point = entry && (entry.element || entry);
+            if (!point || typeof point.y !== 'number') return;
 
             const area = chart.chartArea;
             if (!area) return;
@@ -454,8 +457,8 @@
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
-            ctx.moveTo(area.left, el.y);
-            ctx.lineTo(area.right, el.y);
+            ctx.moveTo(area.left, point.y);
+            ctx.lineTo(area.right, point.y);
             ctx.stroke();
             ctx.restore();
         }
