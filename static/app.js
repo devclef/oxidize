@@ -526,6 +526,7 @@ async function fetchChartData() {
 
                 balanceChart = new Chart(ctx, {
                     type: 'line',
+                    plugins: [OxiUI.hoverValueGuidePlugin],
                     data: {
                         labels: allDates,
                         datasets: stackedDatasets
@@ -700,6 +701,7 @@ async function fetchChartData() {
 
                 balanceChart = new Chart(ctx, {
                     type: 'line',
+                    plugins: [OxiUI.hoverValueGuidePlugin],
                     data: {
                         labels: allDates,
                         datasets: stackedDatasets
@@ -1284,6 +1286,7 @@ function renderDeltaLineChart(ctx, history) {
 
     balanceChart = new Chart(ctx, {
         type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: {
             labels: labels,
             datasets: chartDatasets
@@ -1503,6 +1506,7 @@ function renderExpensesByCategoryChart(ctx, datasets) {
 
     balanceChart = new Chart(ctx, {
         type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: {
             labels: allDates,
             datasets: stackedDatasets
@@ -1612,6 +1616,7 @@ function renderNetWorthChart(ctx, history) {
 
     balanceChart = new Chart(ctx, {
         type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: {
             labels: labels,
             datasets: chartDatasets
@@ -1892,6 +1897,7 @@ function renderCardPaydownPreview(ctx, data) {
 
     balanceChart = new Chart(ctx, {
         type: 'bar',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: {
             labels: months,
             datasets: [
@@ -2533,6 +2539,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
 
         balanceChart = new Chart(ctx, {
             type: 'line',
+            plugins: [OxiUI.hoverValueGuidePlugin],
             data: {
                 labels: splitChartLabels,
                 datasets: stackedDatasets
@@ -2715,6 +2722,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
 
         balanceChart = new Chart(ctx, {
             type: 'line',
+            plugins: [OxiUI.hoverValueGuidePlugin],
             data: {
                 labels: chartLabels,
                 datasets: stackedDatasets
@@ -3349,6 +3357,7 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
 
     balanceChart = new Chart(ctx, {
         type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: { labels: labels, datasets: chartDatasets },
         options: {
             responsive: true,

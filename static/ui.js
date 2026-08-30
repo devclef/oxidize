@@ -410,6 +410,57 @@
         return out;
     }
 
+    // ── Hover value guide (line charts) ───────────────────────────
+    // Chart.js plugin: while the user hovers a point, draw a dotted
+    // horizontal line across the full plot area at the hovered point's
+    // value, so it is easy to see how that value compares to the rest
+    // of the series (its historical context).
+    //
+    // Attach it per chart (not via Chart.register) so bar/pie-only
+    // charts never get the guide:
+    //   new Chart(ctx, { ..., plugins: [OxiUI.hoverValueGuidePlugin] })
+    //
+    // The line is placed at the pixel Y of the first hovered element
+    // that belongs to a line dataset (falling back to the first
+    // hovered element), which keeps it correct on mixed bar/line
+    // charts and on charts with dual y-axes.
+    const hoverValueGuidePlugin = {
+        id: 'oxiHoverValueGuide',
+        afterDatasetsDraw(chart) {
+            let active = [];
+            try {
+                active = chart.getActiveElements() || [];
+            } catch (e) {
+                return;
+            }
+            if (active.length === 0) return;
+
+            const datasets = chart.data.datasets || [];
+            const fromLineDataset = function (entry) {
+                const ds = datasets[entry.datasetIndex];
+                return !!ds && (ds.type === 'line' || chart.config.type === 'line');
+            };
+            const el = active.find(fromLineDataset) || active[0];
+            if (!el || typeof el.y !== 'number') return;
+
+            const area = chart.chartArea;
+            if (!area) return;
+
+            const isDark = !!(document.documentElement &&
+                document.documentElement.getAttribute('data-theme') === 'dark');
+            const ctx = chart.ctx;
+            ctx.save();
+            ctx.strokeStyle = isDark ? 'rgba(124, 131, 247, 0.65)' : 'rgba(41, 128, 185, 0.55)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(area.left, el.y);
+            ctx.lineTo(area.right, el.y);
+            ctx.stroke();
+            ctx.restore();
+        }
+    };
+
     window.OxiUI = {
         toast: toast,
         confirm: confirmDialog,
@@ -421,6 +472,7 @@
         trendlineDataset: trendlineDataset,
         addTrendlineDatasets: addTrendlineDatasets,
         applyStacking: applyStacking,
-        applyStackedScales: applyStackedScales
+        applyStackedScales: applyStackedScales,
+        hoverValueGuidePlugin: hoverValueGuidePlugin
     };
 })();

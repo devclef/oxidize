@@ -585,3 +585,92 @@ describe('OxiUI.applyStackedScales', () => {
         expect(OxiUI.applyStackedScales(undefined, true)).toBeUndefined();
     });
 });
+
+// ── Hover value guide plugin ────────────────────────────────────────────────
+describe('OxiUI.hoverValueGuidePlugin', () => {
+    function fakeCtx() {
+        return {
+            calls: [],
+            save() { this.calls.push(['save']); },
+            restore() { this.calls.push(['restore']); },
+            beginPath() { this.calls.push(['beginPath']); },
+            moveTo(x, y) { this.calls.push(['moveTo', x, y]); },
+            lineTo(x, y) { this.calls.push(['lineTo', x, y]); },
+            stroke() { this.calls.push(['stroke']); },
+            setLineDash(d) { this.calls.push(['setLineDash', d.join(',')]); },
+            strokeStyle: null,
+            lineWidth: null
+        };
+    }
+
+    function makeChart({ type = 'line', datasets, active } = {}) {
+        return {
+            config: { type },
+            data: { datasets },
+            chartArea: { left: 10, top: 20, right: 210, bottom: 180 },
+            getActiveElements: () => active,
+            ctx: fakeCtx()
+        };
+    }
+
+    it('is a Chart.js plugin with a stable id', () => {
+        expect(OxiUI.hoverValueGuidePlugin.id).toBe('oxiHoverValueGuide');
+        expect(typeof OxiUI.hoverValueGuidePlugin.afterDatasetsDraw).toBe('function');
+    });
+
+    it('draws a dotted horizontal line at the hovered point value', () => {
+        const chart = makeChart({
+            datasets: [{ data: [1, 2, 3] }],
+            active: [{ datasetIndex: 0, index: 1, x: 100, y: 90 }]
+        });
+        OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
+        const c = chart.ctx;
+        expect(c.strokeStyle).toBe('rgba(41, 128, 185, 0.55)'); // light theme
+        expect(c.lineWidth).toBe(1);
+        expect(c.calls).toContainEqual(['setLineDash', '4,4']);
+        expect(c.calls).toContainEqual(['moveTo', 10, 90]);
+        expect(c.calls).toContainEqual(['lineTo', 210, 90]);
+        expect(c.calls).toContainEqual(['stroke']);
+        expect(c.calls).toContainEqual(['restore']);
+    });
+
+    it('uses the dark theme colour in dark mode', () => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        const chart = makeChart({
+            datasets: [{ data: [1] }],
+            active: [{ datasetIndex: 0, index: 0, x: 50, y: 40 }]
+        });
+        OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
+        expect(chart.ctx.strokeStyle).toBe('rgba(124, 131, 247, 0.65)');
+    });
+
+    it('draws nothing when nothing is hovered', () => {
+        const chart = makeChart({ datasets: [{ data: [1] }], active: [] });
+        OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
+        expect(chart.ctx.calls).toHaveLength(0);
+    });
+
+    it('prefers hovered elements from line datasets on mixed bar/line charts', () => {
+        const chart = makeChart({
+            type: 'bar',
+            datasets: [{ type: 'bar', data: [5] }, { type: 'line', data: [9] }],
+            active: [
+                { datasetIndex: 0, index: 0, x: 50, y: 30 },
+                { datasetIndex: 1, index: 0, x: 50, y: 120 }
+            ]
+        });
+        OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
+        expect(chart.ctx.calls).toContainEqual(['moveTo', 10, 120]);
+        expect(chart.ctx.calls).toContainEqual(['lineTo', 210, 120]);
+    });
+
+    it('falls back to the first hovered element when no line dataset matches', () => {
+        const chart = makeChart({
+            type: 'bar',
+            datasets: [{ type: 'bar', data: [5] }],
+            active: [{ datasetIndex: 0, index: 0, x: 50, y: 30 }]
+        });
+        OxiUI.hoverValueGuidePlugin.afterDatasetsDraw(chart);
+        expect(chart.ctx.calls).toContainEqual(['moveTo', 10, 30]);
+    });
+});

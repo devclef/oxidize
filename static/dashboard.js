@@ -1346,6 +1346,7 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
 
     widgetCharts[widget.id] = new Chart(ctx, {
         type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
         data: {
             labels: labels,
             datasets: chartDatasets
@@ -1951,6 +1952,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
         // ── Balance Trend Chart (top) ──
         const balanceTrend = new Chart(ctx, {
             type: 'line',
+            plugins: [OxiUI.hoverValueGuidePlugin],
             data: {
                 labels: months,
                 datasets: [{
@@ -2009,6 +2011,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
         const activityCtx = activityCanvas.getContext('2d');
         const activityChart = new Chart(activityCtx, {
             type: 'bar',
+            plugins: [OxiUI.hoverValueGuidePlugin],
             data: {
                 labels: months,
                 datasets: [
@@ -2393,7 +2396,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: stackedDatasets
                 },
-                plugins: [tooltipSortAndLegendPlugin],
+                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -2536,7 +2539,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: stackedDatasets
                 },
-                plugins: [tooltipSortAndLegendPlugin],
+                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -2682,7 +2685,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: allDates,
                     datasets: stackedDatasets
                 },
-                plugins: [tooltipSortAndLegendPlugin],
+                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -2861,6 +2864,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
             widgetCharts[widget.id] = new Chart(ctx, {
                 type: 'line',
+                plugins: [OxiUI.hoverValueGuidePlugin],
                 data: {
                     labels: chartLabels,
                     datasets: stackedDatasets
@@ -3105,7 +3109,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     labels: splitLabels,
                     datasets: stackedDatasets
                 },
-                plugins: [tooltipSortAndLegendPlugin],
+                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,

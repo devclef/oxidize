@@ -330,6 +330,7 @@
 
             monthlyChart = new Chart(chartCtx, {
                 type: 'bar',
+                plugins: [OxiUI.hoverValueGuidePlugin],
                 data: {
                     labels: data[0].months,
                     datasets: datasets,
@@ -407,6 +408,7 @@
 
             cumulativeChart = new Chart(chartCtx, {
                 type: 'line',
+                plugins: [OxiUI.hoverValueGuidePlugin],
                 data: {
                     labels: data[0].months,
                     datasets: data.flatMap((b, i) => {
