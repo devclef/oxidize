@@ -94,6 +94,15 @@ pub struct ChartOptions {
     pub trendline_window: i32,
     #[serde(default = "default_stacked")]
     pub stacked: bool,
+    /// Overlay a previous date range (balance widgets) for comparison.
+    #[serde(default = "default_enable_comparison")]
+    pub enable_comparison: bool,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison_start_date: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison_end_date: Option<String>,
 }
 
 fn default_pct_mode() -> String {
@@ -146,6 +155,10 @@ fn default_trendline_window() -> i32 {
     7
 }
 fn default_stacked() -> bool {
+    false
+}
+
+fn default_enable_comparison() -> bool {
     false
 }
 
@@ -230,6 +243,26 @@ mod tests {
         // Legacy widgets without the field default to unstacked
         let legacy: ChartOptions = serde_json::from_str(r#"{"show_pct": false}"#).unwrap();
         assert!(!legacy.stacked);
+    }
+
+    #[test]
+    fn chart_options_round_trips_comparison_fields() {
+        let json = r#"{"enable_comparison": true, "comparison_start_date": "2025-01-01", "comparison_end_date": "2025-06-30"}"#;
+        let opts: ChartOptions = serde_json::from_str(json).unwrap();
+        assert!(opts.enable_comparison);
+        assert_eq!(opts.comparison_start_date.as_deref(), Some("2025-01-01"));
+        assert_eq!(opts.comparison_end_date.as_deref(), Some("2025-06-30"));
+
+        let out = serde_json::to_value(&opts).unwrap();
+        assert_eq!(out["enable_comparison"], true);
+        assert_eq!(out["comparison_start_date"], "2025-01-01");
+        assert_eq!(out["comparison_end_date"], "2025-06-30");
+
+        // Legacy widgets without the fields default to disabled / no dates
+        let legacy: ChartOptions = serde_json::from_str(r#"{"show_pct": false}"#).unwrap();
+        assert!(!legacy.enable_comparison);
+        assert!(legacy.comparison_start_date.is_none());
+        assert!(legacy.comparison_end_date.is_none());
     }
 
     #[test]

@@ -231,14 +231,26 @@ function escapeHtmlAttr(str) {
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Widget types whose data supports category/budget exclusions — the same set
+// the dashboard widget settings offers them for (sankey only exists as a
+// dashboard widget type).
+const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat'];
+
+function currentWidgetType() {
+    const sel = document.getElementById('widget-type-select');
+    return sel ? sel.value : 'balance';
+}
+
 function getExcludedCategories() {
     const sel = document.getElementById('exclude-categories-select');
-    return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+    if (!sel || !EXCLUDABLE_WIDGET_TYPES.includes(currentWidgetType())) return [];
+    return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
 function getExcludedBudgets() {
     const sel = document.getElementById('exclude-budgets-select');
-    return sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+    if (!sel || !EXCLUDABLE_WIDGET_TYPES.includes(currentWidgetType())) return [];
+    return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
 function appendExclusionParams(params) {
@@ -250,6 +262,7 @@ async function fetchChartData() {
     const chartContainer = document.querySelector('.chart-wrapper');
     chartErrorEl = document.getElementById('chart-error');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+    const displayOpts = getDisplayOptions();
 
     // Clear previous errors and show loading feedback
     const loadingHtml = '<div class="loading">' + OxiUI.spinnerHtml('Loading chart data...') + '</div>';
@@ -551,10 +564,11 @@ async function fetchChartData() {
                         },
                         scales: OxiUI.applyStackedScales({
                             y: {
-                                beginAtZero: true,
+                                beginAtZero: displayOpts.beginAtZero,
                                 grid: { color: chartGridColor },
                                 ticks: {
                                     color: chartTextColor,
+                                    maxTicksLimit: displayOpts.yAxisLimit,
                                     callback: function(value) {
                                         return value.toLocaleString();
                                     }
@@ -564,6 +578,7 @@ async function fetchChartData() {
                                 grid: { color: chartGridColor },
                                 ticks: {
                                     color: chartTextColor,
+                                    maxTicksLimit: displayOpts.xAxisLimit,
                                     maxRotation: 45
                                 }
                             }
@@ -726,10 +741,11 @@ async function fetchChartData() {
                         },
                         scales: OxiUI.applyStackedScales({
                             y: {
-                                beginAtZero: true,
+                                beginAtZero: displayOpts.beginAtZero,
                                 grid: { color: chartGridColor },
                                 ticks: {
                                     color: chartTextColor,
+                                    maxTicksLimit: displayOpts.yAxisLimit,
                                     callback: function(value) {
                                         return value.toLocaleString();
                                     }
@@ -739,6 +755,7 @@ async function fetchChartData() {
                                 grid: { color: chartGridColor },
                                 ticks: {
                                     color: chartTextColor,
+                                    maxTicksLimit: displayOpts.xAxisLimit,
                                     maxRotation: 45
                                 }
                             }
@@ -1058,6 +1075,48 @@ function updateStackedToggleVisibility() {
     wrap.style.display = visible ? '' : 'none';
 }
 
+// Display options shared with the dashboard widget settings (points, fill,
+// axis baseline, tick counts, smoothness). Defaults mirror the backend
+// ChartOptions defaults so preview and saved widgets render identically.
+const DISPLAY_DEFAULTS = {
+    showPoints: false,
+    fillArea: true,
+    beginAtZero: false,
+    xAxisLimit: 6,
+    yAxisLimit: 4,
+    tension: 0.1
+};
+
+function getDisplayOptions() {
+    const showPointsEl = document.getElementById('show-points-toggle');
+    const fillAreaEl = document.getElementById('fill-area-toggle');
+    const beginZeroEl = document.getElementById('begin-zero-toggle');
+    const xLimitEl = document.getElementById('x-axis-limit');
+    const yLimitEl = document.getElementById('y-axis-limit');
+    const tensionEl = document.getElementById('tension-range');
+    let xLimit = xLimitEl ? parseInt(xLimitEl.value, 10) : DISPLAY_DEFAULTS.xAxisLimit;
+    let yLimit = yLimitEl ? parseInt(yLimitEl.value, 10) : DISPLAY_DEFAULTS.yAxisLimit;
+    let tension = tensionEl ? parseFloat(tensionEl.value) : DISPLAY_DEFAULTS.tension;
+    if (!isFinite(xLimit) || xLimit < 1) xLimit = DISPLAY_DEFAULTS.xAxisLimit;
+    if (!isFinite(yLimit) || yLimit < 1) yLimit = DISPLAY_DEFAULTS.yAxisLimit;
+    if (!isFinite(tension) || tension < 0 || tension > 1) tension = DISPLAY_DEFAULTS.tension;
+    return {
+        showPoints: !!(showPointsEl && showPointsEl.checked),
+        fillArea: fillAreaEl ? fillAreaEl.checked : DISPLAY_DEFAULTS.fillArea,
+        beginAtZero: !!(beginZeroEl && beginZeroEl.checked),
+        xAxisLimit: xLimit,
+        yAxisLimit: yLimit,
+        tension: tension
+    };
+}
+
+// Re-render the last chart so display-only options take effect immediately.
+function rerenderCurrentChart() {
+    if (lastChartRenderAction) {
+        lastChartRenderAction();
+    }
+}
+
 // Push a dotted moving-average "trend line" dataset for every series in
 // `datasets` (mutates the array). No-op when the option is disabled.
 function appendTrendlines(datasets) {
@@ -1118,6 +1177,7 @@ function renderEarnedSpentChart(ctx, history, chartType = 'bars') {
 }
 
 function renderEarnedSpentBarsChart(ctx, history) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -1190,7 +1250,7 @@ function renderEarnedSpentBarsChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 4,
+                        maxTicksLimit: displayOpts.yAxisLimit,
                         callback: function(value) {
                             return Math.abs(value).toLocaleString();
                         }
@@ -1200,7 +1260,7 @@ function renderEarnedSpentBarsChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: displayOpts.xAxisLimit,
                         autoSkip: true,
                         callback: function(value) {
                             const label = this.getLabelForValue(value);
@@ -1232,6 +1292,7 @@ function renderEarnedSpentBarsChart(ctx, history) {
 }
 
 function renderDeltaLineChart(ctx, history) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -1299,7 +1360,7 @@ function renderDeltaLineChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: displayOpts.yAxisLimit,
                         callback: function(value) {
                             return value.toLocaleString();
                         }
@@ -1309,7 +1370,7 @@ function renderDeltaLineChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: displayOpts.xAxisLimit,
                         autoSkip: true,
                         callback: function(value) {
                             const label = this.getLabelForValue(value);
@@ -1343,6 +1404,7 @@ function renderDeltaLineChart(ctx, history) {
 }
 
 function renderDeltaBarChart(ctx, history) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -1402,10 +1464,11 @@ function renderDeltaBarChart(ctx, history) {
             maintainAspectRatio: false,
             scales: {
                 y: {
+                    beginAtZero: true,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: displayOpts.yAxisLimit,
                         callback: function(value) {
                             return value.toLocaleString();
                         }
@@ -1415,7 +1478,7 @@ function renderDeltaBarChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: displayOpts.xAxisLimit,
                         autoSkip: true,
                         callback: function(value) {
                             const label = this.getLabelForValue(value);
@@ -1450,6 +1513,7 @@ function renderDeltaBarChart(ctx, history) {
 
 // Render expenses by category chart (line chart with time on X axis, one line per category)
 function renderExpensesByCategoryChart(ctx, datasets) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -1531,10 +1595,11 @@ function renderExpensesByCategoryChart(ctx, datasets) {
             },
             scales: OxiUI.applyStackedScales({
                 y: {
-                    beginAtZero: true,
+                    beginAtZero: displayOpts.beginAtZero,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
+                        maxTicksLimit: displayOpts.yAxisLimit,
                         callback: function(value) {
                             return value.toLocaleString();
                         }
@@ -1544,6 +1609,7 @@ function renderExpensesByCategoryChart(ctx, datasets) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
+                        maxTicksLimit: displayOpts.xAxisLimit,
                         maxRotation: 45
                     }
                 }
@@ -1554,6 +1620,7 @@ function renderExpensesByCategoryChart(ctx, datasets) {
 
 // Render net worth chart (line chart)
 function renderNetWorthChart(ctx, history) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -1607,8 +1674,9 @@ function renderNetWorthChart(ctx, history) {
         borderColor: netWorthColor,
         backgroundColor: netWorthColor + '20',
         borderWidth: 2,
-        tension: 0.1,
-        fill: true
+        tension: displayOpts.tension,
+        fill: displayOpts.fillArea,
+        pointRadius: displayOpts.showPoints ? 4 : 0
     }];
 
     // Trend line: dotted moving average
@@ -1626,10 +1694,11 @@ function renderNetWorthChart(ctx, history) {
             maintainAspectRatio: false,
             scales: {
                 y: {
-                    beginAtZero: false,
+                    beginAtZero: displayOpts.beginAtZero,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
+                        maxTicksLimit: displayOpts.yAxisLimit,
                         callback: function(value) {
                             return value.toLocaleString();
                         }
@@ -1639,6 +1708,7 @@ function renderNetWorthChart(ctx, history) {
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
+                        maxTicksLimit: displayOpts.xAxisLimit,
                         maxRotation: 45,
                         minRotation: 45,
                         callback: function(value) {
@@ -1997,6 +2067,7 @@ function renderCardPaydownPreview(ctx, data) {
 
 function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
     lastChartRenderAction = () => renderChart(history, widgetType, cardPaydownData);
+    const displayOpts = getDisplayOptions();
     const ctx = document.getElementById('balanceChart').getContext('2d');
     const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
     const chartType = getChartType();
@@ -2360,8 +2431,9 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                     borderColor: accountColors[idx].border,
                     backgroundColor: accountColors[idx].background,
                     borderWidth: 2,
-                    tension: 0.1,
-                    fill: false
+                    tension: displayOpts.tension,
+                    fill: displayOpts.fillArea,
+                    pointRadius: displayOpts.showPoints ? 4 : 0
                 };
             };
 
@@ -2442,8 +2514,9 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                     borderColor: accountColors[colorIndex].border,
                     backgroundColor: accountColors[colorIndex].background,
                     borderWidth: 2,
-                    tension: 0.1,
-                    fill: false
+                    tension: displayOpts.tension,
+                    fill: displayOpts.fillArea,
+                    pointRadius: displayOpts.showPoints ? 4 : 0
                 });
                 colorIndex++;
             });
@@ -2460,8 +2533,9 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                         borderColor: accountColors[colorIndex].border,
                         backgroundColor: accountColors[colorIndex].background,
                         borderWidth: 2,
-                        tension: 0.1,
-                        fill: false
+                        tension: displayOpts.tension,
+                        fill: displayOpts.fillArea,
+                        pointRadius: displayOpts.showPoints ? 4 : 0
                     });
                     colorIndex++;
                     return;
@@ -2572,10 +2646,11 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                 },
                 scales: OxiUI.applyStackedScales({
                     y: {
-                        beginAtZero: false,
+                        beginAtZero: displayOpts.beginAtZero,
                         grid: { color: chartGridColor },
                         ticks: {
                             color: chartTextColor,
+                            maxTicksLimit: displayOpts.yAxisLimit,
                             callback: function(value) {
                                 return value.toLocaleString();
                             }
@@ -2585,6 +2660,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                         grid: { color: chartGridColor },
                         ticks: {
                             color: chartTextColor,
+                            maxTicksLimit: displayOpts.xAxisLimit,
                             maxRotation: 45,
                             minRotation: 45
                         }
@@ -2683,8 +2759,9 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 2,
-            tension: 0.1,
-            fill: true
+            tension: displayOpts.tension,
+            fill: displayOpts.fillArea,
+            pointRadius: displayOpts.showPoints ? 4 : 0
         }];
 
         if (showForecast && forecastData.length > 0) {
@@ -2696,7 +2773,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                 backgroundColor: forecastColor + '10',
                 borderWidth: 2,
                 borderDash: [6, 4],
-                tension: 0.1,
+                tension: displayOpts.tension,
                 fill: false,
                 pointRadius: 0,
                 order: 1
@@ -2738,10 +2815,11 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                 },
                 scales: OxiUI.applyStackedScales({
                     y: {
-                        beginAtZero: false,
+                        beginAtZero: displayOpts.beginAtZero,
                         grid: { color: chartGridColor },
                         ticks: {
                             color: chartTextColor,
+                            maxTicksLimit: displayOpts.yAxisLimit,
                             callback: function(value) {
                                 return value.toLocaleString();
                             }
@@ -2751,6 +2829,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
                         grid: { color: chartGridColor },
                         ticks: {
                             color: chartTextColor,
+                            maxTicksLimit: displayOpts.xAxisLimit,
                             maxRotation: 45,
                             minRotation: 45
                         }
@@ -3156,12 +3235,25 @@ async function saveGraphAsWidget() {
     const showPctToggle = document.getElementById('show-pct-toggle');
     const pctModeSelect = document.getElementById('pct-mode-select');
 
+    // Full chart options — same field set the dashboard widget settings expose,
+    // so a graph saved here renders identically to one edited there.
+    const displayOpts = getDisplayOptions();
+    const comparisonSupported = widgetType === 'balance';
     const chartOptions = {
         enable_forecast: enableForecastEl ? enableForecastEl.checked : false,
         forecast_days: forecastDaysEl ? (parseInt(forecastDaysEl.value, 10) || 30) : 30,
         show_pct: showPctToggle ? showPctToggle.checked : false,
         pct_mode: pctModeSelect ? pctModeSelect.value : 'from_previous',
-        stacked: getStackingEnabled()
+        stacked: getStackingEnabled(),
+        show_points: displayOpts.showPoints,
+        fill_area: displayOpts.fillArea,
+        begin_at_zero: displayOpts.beginAtZero,
+        x_axis_limit: displayOpts.xAxisLimit,
+        y_axis_limit: displayOpts.yAxisLimit,
+        tension: displayOpts.tension,
+        enable_comparison: !!(comparisonSupported && enableComparison),
+        comparison_start_date: comparisonSupported && enableComparison ? comparisonStartDate : null,
+        comparison_end_date: comparisonSupported && enableComparison ? comparisonEndDate : null
     };
 
     const widget = {
@@ -3297,6 +3389,7 @@ function toggleComparisonControls() {
 
 // Render comparison chart with primary and comparison data
 function renderComparisonChart(ctx, primaryData, comparisonData) {
+    const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
     const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
@@ -3329,7 +3422,7 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
             backgroundColor: color + '20',
             borderWidth: 2,
             fill: false,
-            tension: 0.1
+            tension: displayOpts.tension
         });
     });
     
@@ -3344,7 +3437,7 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
             borderWidth: 2,
             borderDash: [5, 5],
             fill: false,
-            tension: 0.1
+            tension: displayOpts.tension
         });
     });
     
@@ -3363,8 +3456,15 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: false, grid: { color: chartGridColor }, ticks: { color: chartTextColor } },
-                x: { grid: { color: chartGridColor }, ticks: { color: chartTextColor, maxRotation: 45, minRotation: 45 } }
+                y: {
+                    beginAtZero: displayOpts.beginAtZero,
+                    grid: { color: chartGridColor },
+                    ticks: { color: chartTextColor, maxTicksLimit: displayOpts.yAxisLimit }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: { color: chartTextColor, maxTicksLimit: displayOpts.xAxisLimit, maxRotation: 45, minRotation: 45 }
+                }
             },
             plugins: { legend: { display: true, position: 'bottom', labels: { color: chartTextColor } } }
         }
@@ -4141,6 +4241,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartTypeGroup.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
             }
             updateStackedToggleVisibility();
+            // Options that only affect balance charts: scope them like the
+            // dashboard widget settings do (Chart Mode / Forecast / Compare).
+            const layoutGroup = document.getElementById('layout-toggle-group');
+            if (layoutGroup) {
+                layoutGroup.style.display = widgetType === 'balance' ? '' : 'none';
+            }
+            const forecastRow = document.getElementById('forecast-row');
+            if (forecastRow) {
+                forecastRow.style.display = widgetType === 'balance' ? '' : 'none';
+            }
+            const comparisonGroup = document.getElementById('comparison-group');
+            if (comparisonGroup) {
+                comparisonGroup.style.display = widgetType === 'balance' ? '' : 'none';
+            }
+            const comparisonControls = document.getElementById('comparison-controls-wrapper');
+            if (comparisonControls) {
+                comparisonControls.style.display =
+                    (widgetType === 'balance' && enableComparison) ? 'inline-flex' : 'none';
+            }
+            // Exclusions only apply to the types that support them (same as
+            // the dashboard widget settings)
+            const exclusionsRow = document.getElementById('exclusions-row');
+            if (exclusionsRow) {
+                exclusionsRow.style.display = EXCLUDABLE_WIDGET_TYPES.includes(widgetType) ? '' : 'none';
+            }
             // Toggle advanced options visibility for card_paydown (some don't apply)
             const advancedSection = document.getElementById('advanced-section');
             if (advancedSection) {
@@ -4266,9 +4391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         enableForecastEl.addEventListener('change', () => {
             forecastEnabled = enableForecastEl.checked;
             localStorage.setItem(FORECAST_KEY, forecastEnabled);
-            if (balanceChart) {
-                balanceChart.update();
-            }
+            rerenderCurrentChart();
         });
     }
 
@@ -4277,9 +4400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         forecastDaysEl.addEventListener('change', () => {
             forecastDays = parseInt(forecastDaysEl.value, 10) || 30;
             localStorage.setItem(FORECAST_DAYS_KEY, forecastDays);
-            if (balanceChart) {
-                balanceChart.update();
-            }
+            rerenderCurrentChart();
         });
     }
 
@@ -4311,6 +4432,70 @@ document.addEventListener('DOMContentLoaded', () => {
             if (lastChartRenderAction) {
                 lastChartRenderAction();
             }
+        });
+    }
+
+    // Display options (shared with the dashboard widget settings)
+    const SHOW_POINTS_KEY = 'oxidize_show_points';
+    const FILL_AREA_KEY = 'oxidize_fill_area';
+    const BEGIN_ZERO_KEY = 'oxidize_begin_at_zero';
+    const X_LIMIT_KEY = 'oxidize_x_axis_limit';
+    const Y_LIMIT_KEY = 'oxidize_y_axis_limit';
+    const TENSION_KEY = 'oxidize_tension';
+
+    const showPointsEl = document.getElementById('show-points-toggle');
+    const fillAreaEl = document.getElementById('fill-area-toggle');
+    const beginZeroEl = document.getElementById('begin-zero-toggle');
+    const xAxisLimitEl = document.getElementById('x-axis-limit');
+    const yAxisLimitEl = document.getElementById('y-axis-limit');
+    const tensionRangeEl = document.getElementById('tension-range');
+
+    if (showPointsEl) {
+        showPointsEl.checked = localStorage.getItem(SHOW_POINTS_KEY) === 'true';
+        showPointsEl.addEventListener('change', () => {
+            localStorage.setItem(SHOW_POINTS_KEY, showPointsEl.checked);
+            rerenderCurrentChart();
+        });
+    }
+    if (fillAreaEl) {
+        const savedFill = localStorage.getItem(FILL_AREA_KEY);
+        fillAreaEl.checked = savedFill === null ? true : savedFill === 'true';
+        fillAreaEl.addEventListener('change', () => {
+            localStorage.setItem(FILL_AREA_KEY, fillAreaEl.checked);
+            rerenderCurrentChart();
+        });
+    }
+    if (beginZeroEl) {
+        beginZeroEl.checked = localStorage.getItem(BEGIN_ZERO_KEY) === 'true';
+        beginZeroEl.addEventListener('change', () => {
+            localStorage.setItem(BEGIN_ZERO_KEY, beginZeroEl.checked);
+            rerenderCurrentChart();
+        });
+    }
+    if (xAxisLimitEl) {
+        const savedX = parseInt(localStorage.getItem(X_LIMIT_KEY), 10);
+        if (isFinite(savedX) && savedX >= 1) xAxisLimitEl.value = savedX;
+        xAxisLimitEl.addEventListener('change', () => {
+            localStorage.setItem(X_LIMIT_KEY, xAxisLimitEl.value);
+            rerenderCurrentChart();
+        });
+    }
+    if (yAxisLimitEl) {
+        const savedY = parseInt(localStorage.getItem(Y_LIMIT_KEY), 10);
+        if (isFinite(savedY) && savedY >= 1) yAxisLimitEl.value = savedY;
+        yAxisLimitEl.addEventListener('change', () => {
+            localStorage.setItem(Y_LIMIT_KEY, yAxisLimitEl.value);
+            rerenderCurrentChart();
+        });
+    }
+    if (tensionRangeEl) {
+        const savedTension = parseFloat(localStorage.getItem(TENSION_KEY));
+        if (isFinite(savedTension) && savedTension >= 0 && savedTension <= 1) {
+            tensionRangeEl.value = savedTension;
+        }
+        tensionRangeEl.addEventListener('change', () => {
+            localStorage.setItem(TENSION_KEY, tensionRangeEl.value);
+            rerenderCurrentChart();
         });
     }
 

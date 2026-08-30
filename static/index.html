@@ -191,7 +191,7 @@
                     </select>
                 </div>
                 <div class="control-row control-row-toggles">
-                    <div class="toggle-group">
+                    <div class="toggle-group" id="layout-toggle-group">
                         <span class="control-caption">Layout</span>
                         <div class="chart-mode-toggle">
                             <label class="mode-label">
@@ -278,7 +278,7 @@
                         <option value="from_first">From First Point</option>
                     </select>
                 </div>
-                <div class="advanced-group">
+                <div class="advanced-group" id="comparison-group">
                     <label>
                         <input type="checkbox" id="enable-comparison">
                         Compare with previous period
@@ -291,7 +291,32 @@
                 <label for="comparison-end-date">Comparison End:</label>
                 <input type="date" id="comparison-end-date">
             </div>
-            <div class="advanced-row forecast-row">
+            <div class="advanced-row display-row" id="display-options-row">
+                <div class="display-options-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show-points-toggle">
+                        Show Points
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="fill-area-toggle" checked>
+                        Fill Area
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="begin-zero-toggle">
+                        Y-Axis from Zero
+                    </label>
+                    <label for="x-axis-limit">X-Axis Ticks:
+                        <input type="number" id="x-axis-limit" value="6" min="1" max="20" style="width:60px">
+                    </label>
+                    <label for="y-axis-limit">Y-Axis Ticks:
+                        <input type="number" id="y-axis-limit" value="4" min="1" max="10" style="width:60px">
+                    </label>
+                    <label for="tension-range">Line Smoothness:
+                        <input type="range" id="tension-range" value="0.1" min="0" max="1" step="0.1" style="width:100px">
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-row forecast-row" id="forecast-row">
                 <div class="forecast-group">
                     <label>
                         <input type="checkbox" id="enable-forecast">
@@ -313,7 +338,7 @@
                     </label>
                 </div>
             </div>
-            <div class="advanced-row exclusions-row">
+            <div class="advanced-row exclusions-row" id="exclusions-row">
                 <div class="exclusions-group">
                     <label>Exclude categories
                         <select multiple size="4" id="exclude-categories-select" class="exclusion-select"

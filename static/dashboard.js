@@ -699,6 +699,9 @@ function normalizeChartOptions(opts) {
         begin_at_zero: opts.begin_at_zero ?? false,
         show_pct: opts.show_pct ?? false,
         pct_mode: opts.pct_mode || 'from_previous',
+        enable_comparison: opts.enable_comparison ?? false,
+        comparison_start_date: opts.comparison_start_date ?? null,
+        comparison_end_date: opts.comparison_end_date ?? null,
         enable_forecast: opts.enable_forecast ?? false,
         forecast_days: opts.forecast_days ?? 30,
         show_trendline: opts.show_trendline ?? false,
@@ -927,6 +930,18 @@ async function updateWidgetDateRange(widgetId) {
     if (trendlineWindowEl) widget.chart_options.trendline_window = parseInt(trendlineWindowEl.value, 10) || 7;
     const stackedEl = el(`${widgetId}-stacked`);
     if (stackedEl) widget.chart_options.stacked = stackedEl.checked;
+
+    const graphModeEl = document.getElementById(`${widgetId}-graph-mode`);
+    if (graphModeEl) widget.category_graph_mode = graphModeEl.value;
+
+    const enableComparisonEl = el(`${widgetId}-enable-comparison`);
+    if (enableComparisonEl) {
+        widget.chart_options.enable_comparison = enableComparisonEl.checked;
+        const compStartEl = el(`${widgetId}-comparison-start`);
+        const compEndEl = el(`${widgetId}-comparison-end`);
+        widget.chart_options.comparison_start_date = enableComparisonEl.checked ? (compStartEl ? (compStartEl.value || null) : null) : null;
+        widget.chart_options.comparison_end_date = enableComparisonEl.checked ? (compEndEl ? (compEndEl.value || null) : null) : null;
+    }
 
     const earnedChartTypeEl = document.getElementById(`${widgetId}-earned-chart-type`);
     if (earnedChartTypeEl) widget.earned_chart_type = earnedChartTypeEl.value;
@@ -1188,7 +1203,10 @@ function getChartOptions(widget) {
         forecastDays: raw.forecast_days,
         showTrendline: raw.show_trendline,
         trendlineWindow: raw.trendline_window,
-        stacked: raw.stacked
+        stacked: raw.stacked,
+        enableComparison: raw.enable_comparison,
+        comparisonStartDate: raw.comparison_start_date,
+        comparisonEndDate: raw.comparison_end_date
     };
 }
 
@@ -2130,6 +2148,236 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
     });
 }
 
+// Compare-with-previous-period view for balance widgets: primary line plus a
+// dashed line for the comparison range (same behavior as the Graph Builder's
+// "Compare with previous period" option).
+function renderBalanceComparisonChart(ctx, widget, history, comparisonHistory) {
+    const opts = getChartOptions(widget);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartColor = isDark ? '#7c83f7' : '#3498db';
+    const comparisonColor = isDark ? '#8a8a98' : '#888';
+
+    const labels = extractChartLabels(history);
+    if (labels.length === 0) return;
+
+    const aggregate = (chartLine) => {
+        const total = new Array(labels.length).fill(0);
+        (chartLine || []).forEach(ds => {
+            const flowData = Array.isArray(ds.entries)
+                ? ds.entries.map(e => parseFloat(e.value || 0))
+                : labels.map(label => {
+                    const v = ds.entries ? ds.entries[label] : undefined;
+                    return parseFloat(typeof v === 'object' && v !== null ? (v.value || 0) : (v || 0)) || 0;
+                });
+            flowData.forEach((val, i) => {
+                if (i < total.length) total[i] += val;
+            });
+        });
+        return total;
+    };
+
+    const datasets = [
+        {
+            label: 'Total Balance',
+            data: aggregate(history),
+            borderColor: chartColor,
+            backgroundColor: chartColor + '20',
+            borderWidth: 2,
+            fill: opts.fillArea,
+            tension: opts.tension,
+            pointRadius: 0
+        },
+        {
+            label: 'Total Balance (prev period)',
+            data: aggregate(comparisonHistory),
+            borderColor: comparisonColor,
+            backgroundColor: comparisonColor + '10',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            fill: false,
+            tension: opts.tension,
+            pointRadius: 0
+        }
+    ];
+
+    // Trend line: dotted moving average over the real (non-comparison) data
+    if (opts.showTrendline) {
+        const trendDs = OxiUI.trendlineDataset('Total Balance', aggregate(history), {
+            window: opts.trendlineWindow,
+            sourceColor: chartColor
+        });
+        trendDs.trendOf = 0;
+        datasets.push(trendDs);
+    }
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: OxiUI.applyStackedScales({
+                y: {
+                    beginAtZero: opts.beginAtZero,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.yAxisLimit,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.xAxisLimit,
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
+                }
+            }, false)
+        }
+    });
+}
+
+// Net worth widget (line chart) — mirrors the Graph Builder's net worth view.
+function renderNetWorthChartDashboard(ctx, widget, history) {
+    const opts = getChartOptions(widget);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const netWorthColor = isDark ? '#34d399' : '#27ae60';
+
+    let labels = [];
+    let data = [];
+
+    if (history && history.length > 0) {
+        const dataset = history[0];
+
+        if (Array.isArray(dataset.entries)) {
+            labels = dataset.entries.map(e => e.date || e.key);
+            data = dataset.entries.map(e => parseFloat(e.ba || e.value || 0));
+        } else if (typeof dataset.entries === 'object') {
+            labels = Object.keys(dataset.entries);
+            data = Object.values(dataset.entries).map(v => {
+                if (typeof v === 'object' && v !== null) {
+                    return parseFloat(v.ba || v.value || 0);
+                }
+                return parseFloat(v);
+            });
+        }
+    }
+
+    if (labels.length === 0) {
+        const errorEl = document.getElementById(`${widget.id}-error`);
+        if (errorEl) errorEl.textContent = 'No net worth data available';
+        return;
+    }
+
+    const chartDatasets = [{
+        label: 'Net Worth',
+        data: data,
+        absoluteData: data,
+        borderColor: netWorthColor,
+        backgroundColor: netWorthColor + '20',
+        borderWidth: 2,
+        tension: opts.tension,
+        fill: opts.fillArea,
+        pointRadius: opts.showPoints ? 4 : 0
+    }];
+
+    // Trend line: dotted moving average
+    appendWidgetTrendlines(chartDatasets, opts);
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'line',
+        plugins: [OxiUI.hoverValueGuidePlugin],
+        data: {
+            labels: labels,
+            datasets: chartDatasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: opts.beginAtZero,
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.yAxisLimit,
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    grid: { color: chartGridColor },
+                    ticks: {
+                        color: chartTextColor,
+                        maxTicksLimit: opts.xAxisLimit,
+                        maxRotation: 45,
+                        minRotation: 45,
+                        callback: function(value) {
+                            const date = parseChartLabel(value);
+                            return date.toLocaleDateString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: chartTextColor }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.parsed.y !== null) {
+                                return 'Net Worth: ' + context.parsed.y.toLocaleString();
+                            }
+                            return '';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
@@ -2247,6 +2495,19 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             appendExclusionParams(params, mergeExclusions(dashboardExclusions, widget));
 
             const url = `/api/expenses-by-category?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            history = await response.json();
+        } else if (widgetType === 'net_worth') {
+            // For net worth, use the dedicated net-worth endpoint
+            const params = new URLSearchParams();
+            if (effectiveStart) params.append('start', effectiveStart);
+            if (effectiveEnd) params.append('end', effectiveEnd);
+            if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+
+            const url = `/api/net-worth?${params.toString()}`;
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
@@ -2591,6 +2852,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             renderSplitLegend(widget.id, legendInfo, stackedDatasets);
             return;
         }
+        // Handle net_worth widget type
+        if (widgetType === 'net_worth') {
+            renderNetWorthChartDashboard(ctx, widget, history);
+            return;
+        }
+
         // Handle category_subcat widget type
         if (widgetType === 'category_subcat') {
             const parentCategories = widget.parent_categories || [];
@@ -2740,6 +3007,34 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
 
         // Pie chart for balance widgets: show balance distribution by account
         const chartType = widget.chart_type || 'line';
+        // Compare with previous period (balance only): replace the regular
+        // view with primary + dashed comparison lines, like the Graph Builder.
+        {
+            const compOpts = getChartOptions(widget);
+            if (compOpts.enableComparison && compOpts.comparisonStartDate && compOpts.comparisonEndDate) {
+                let comparisonHistory = null;
+                try {
+                    const groupIds = widget.group_ids || [];
+                    const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+                    const groupAccountIds = new Set();
+                    widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+                    const allWidgetAccountIds = [...new Set([...widget.accounts, ...groupAccountIds])];
+                    comparisonHistory = await fetchChartData(
+                        allWidgetAccountIds,
+                        compOpts.comparisonStartDate,
+                        compOpts.comparisonEndDate,
+                        widget.interval
+                    );
+                } catch (e) {
+                    console.warn('Failed to fetch comparison data:', e);
+                }
+                if (comparisonHistory && comparisonHistory.length > 0) {
+                    renderBalanceComparisonChart(ctx, widget, history, comparisonHistory);
+                    return;
+                }
+            }
+        }
+
         if (chartType === 'pie' && widgetType === 'balance') {
             const groupIds = widget.group_ids || [];
             const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
@@ -3267,6 +3562,8 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge sankey">Sankey Flow</span>';
         } else if (widgetType === 'card_paydown') {
             widgetTypeBadge = '<span class="widget-type-badge card-paydown">Card Paydown</span>';
+        } else if (widgetType === 'net_worth') {
+            widgetTypeBadge = '<span class="widget-type-badge net-worth">Net Worth</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
@@ -3348,6 +3645,15 @@ async function renderDashboard() {
                         </label>
                         ` : ''}
 
+                        ${['expenses_by_category', 'category_subcat'].includes(widgetType) ? `
+                        <label>Group By:
+                            <select id="${widget.id}-graph-mode">
+                                <option value="subcategory" ${widget.category_graph_mode !== 'parent' ? 'selected' : ''}>Subcategories</option>
+                                <option value="parent" ${widget.category_graph_mode === 'parent' ? 'selected' : ''}>Main Categories</option>
+                            </select>
+                        </label>
+                        ` : ''}
+
                         ${widgetType !== 'sankey' ? `
                         <label>Chart Type:
                             <select id="${widget.id}-chart-type">
@@ -3378,9 +3684,6 @@ async function renderDashboard() {
                     </div>
                     <div class="widget-settings-section">
                         <strong>Display Options</strong>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-pct" ${chartOpts.showPct ? 'checked' : ''}> Show % Change</label>
                         <label>Percentage Mode:
                             <select id="${widget.id}-pct-mode">
@@ -3388,6 +3691,16 @@ async function renderDashboard() {
                                 <option value="from_first" ${chartOpts.pctMode === 'from_first' ? 'selected' : ''}>From First Point</option>
                             </select>
                         </label>
+                        ${widgetType === 'balance' ? `
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-comparison" ${chartOpts.enableComparison ? 'checked' : ''}> Compare with previous period</label>
+                        <div id="${widget.id}-comparison-dates" style="${chartOpts.enableComparison ? '' : 'display: none;'}">
+                            <label>Comparison Start: <input type="date" id="${widget.id}-comparison-start" value="${chartOpts.comparisonStartDate || ''}"></label>
+                            <label>Comparison End: <input type="date" id="${widget.id}-comparison-end" value="${chartOpts.comparisonEndDate || ''}"></label>
+                        </div>
+                        ` : ''}
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
                         <label>X-Axis Ticks: <input type="number" id="${widget.id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
                         <label>Y-Axis Ticks: <input type="number" id="${widget.id}-y-limit" value="${chartOpts.yAxisLimit}" min="1" max="10" style="width: 60px;"></label>
                         <label>Line Smoothness: <input type="range" id="${widget.id}-tension" value="${chartOpts.tension}" min="0" max="1" step="0.1" style="width: 100px;"></label>
@@ -3474,6 +3787,17 @@ async function renderDashboard() {
     widgets.forEach(widget => {
         const showPctCheckbox = document.getElementById(`${widget.id}-show-pct`);
         const pctModeSelect = document.getElementById(`${widget.id}-pct-mode`);
+
+        // Compare-with-previous-period date inputs follow the checkbox
+        const enableComparisonCheckbox = document.getElementById(`${widget.id}-enable-comparison`);
+        if (enableComparisonCheckbox) {
+            const comparisonDates = document.getElementById(`${widget.id}-comparison-dates`);
+            enableComparisonCheckbox.addEventListener('change', () => {
+                if (comparisonDates) {
+                    comparisonDates.style.display = enableComparisonCheckbox.checked ? '' : 'none';
+                }
+            });
+        }
 
         if (showPctCheckbox) {
             showPctCheckbox.addEventListener('change', async () => {
