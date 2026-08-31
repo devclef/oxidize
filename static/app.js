@@ -10,6 +10,8 @@ let chartErrorEl = null;
 let groups = [];
 let editingGroupId = null;
 const GROUPS_STORAGE_KEY = 'oxidize_groups';
+// Remembers whether the user collapsed the accounts list on the Graph Builder
+const ACCOUNTS_COLLAPSED_KEY = 'oxidize_accounts_collapsed';
 let groupsLoadedPromise = null;
 
 // Category state
@@ -3304,10 +3306,12 @@ function toggleAccountsSection() {
         content.style.display = 'block';
         btn.textContent = 'Collapse';
         btn.setAttribute('aria-expanded', 'true');
+        localStorage.setItem(ACCOUNTS_COLLAPSED_KEY, 'false');
     } else {
         content.style.display = 'none';
         btn.textContent = 'Expand';
         btn.setAttribute('aria-expanded', 'false');
+        localStorage.setItem(ACCOUNTS_COLLAPSED_KEY, 'true');
     }
 }
 
@@ -3756,6 +3760,18 @@ document.addEventListener('DOMContentLoaded', () => {
     selectAllBtn.addEventListener('click', selectAllAccounts);
     deselectAllBtn.addEventListener('click', deselectAllAccounts);
     toggleAccountsBtn.addEventListener('click', toggleAccountsSection);
+
+    // Restore the accounts section collapse state from the previous visit,
+    // so the list starts collapsed when the user left it collapsed
+    if (localStorage.getItem(ACCOUNTS_COLLAPSED_KEY) === 'true') {
+        const accountsContent = document.getElementById('accounts-content');
+        if (accountsContent) {
+            accountsContent.style.display = 'none';
+            toggleAccountsBtn.textContent = 'Expand';
+            toggleAccountsBtn.setAttribute('aria-expanded', 'false');
+            toggleAccountsBtn.style.display = 'inline-block';
+        }
+    }
 
     // Budget select/deselect buttons
     const selectAllBudgetsBtn = document.getElementById('select-all-budgets-btn');
