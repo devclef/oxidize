@@ -3,7 +3,9 @@ use crate::config::Config;
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, ParentCategory, SankeyFlowData,
+    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, MonthlyAccountSummary,
+    MonthlyBudgetSummary, MonthlyCategorySummary, MonthlyDailyPoint, MonthlyIncomeSourceSummary,
+    MonthlySummaryResponse, MonthlyTransactionItem, ParentCategory, SankeyFlowData,
     SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, Utc};
@@ -3236,6 +3238,342 @@ fn aggregate_monthly_to_quarterly(mut chart_line: ChartLine) -> ChartLine {
         }
     }
     chart_line
+}
+
+impl FireflyClient {
+    pub async fn get_monthly_summary(
+        &self,
+        month_str: &str,
+        exclusions: &crate::models::Exclusions,
+    ) -> Result<MonthlySummaryResponse, Box<dyn std::error::Error + Send + Sync>> {
+        // Check cache first
+        if let Some(cached) = self.cache.get_monthly_summary(month_str, exclusions) {
+            if let Ok(data) = serde_json::from_str::<MonthlySummaryResponse>(&cached) {
+                return Ok(data);
+            }
+        }
+
+        // Parse month_str YYYY-MM
+        let parts: Vec<&str> = month_str.split('-').collect();
+        if parts.len() != 2 {
+            return Err("Invalid month format, expected YYYY-MM".into());
+        }
+        let year: i32 = parts[0].parse()?;
+        let month: u32 = parts[1].parse()?;
+        if !(1..=12).contains(&month) {
+            return Err("Invalid month".into());
+        }
+
+        let start_date = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+            .ok_or("Invalid start date")?;
+        let days_in_month = if month == 12 {
+            chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+        } else {
+            chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+        }
+        .unwrap()
+        .signed_duration_since(start_date)
+        .num_days() as u32;
+
+        let end_date = chrono::NaiveDate::from_ymd_opt(year, month, days_in_month)
+            .ok_or("Invalid end date")?;
+
+        let start_str = start_date.format("%Y-%m-%d").to_string();
+        let end_str = end_date.format("%Y-%m-%d").to_string();
+
+        let (prev_year, prev_month) = if month == 1 { (year - 1, 12) } else { (year, month - 1) };
+        let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+        let prev_month_str = format!("{:04}-{:02}", prev_year, prev_month);
+        let next_month_str = format!("{:04}-{:02}", next_year, next_month);
+
+        // Fetch concurrently:
+        // 1. Transactions for the month (fetch all pages)
+        // 2. Budget limits for the month
+        // 3. Accounts (asset accounts)
+        let txs_fut = self.fetch_all_transactions(&start_str, &end_str, None, None);
+        let budgets_fut = self.get_budgets(Some(start_str.clone()), Some(end_str.clone()));
+        let accounts_fut = self.get_accounts(Some("asset".to_string()));
+
+        let (txs_res, budgets_res, accounts_res) = tokio::join!(txs_fut, budgets_fut, accounts_fut);
+
+        let transactions = txs_res.map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+        let budget_list = budgets_res.unwrap_or_default();
+        let accounts = accounts_res.unwrap_or_default();
+
+        let mut total_income = 0.0;
+        let mut total_expenses = 0.0;
+        let mut total_transfers = 0.0;
+        let mut currency_symbol = "$".to_string();
+        let mut currency_code = "USD".to_string();
+
+        let mut daily_map: std::collections::BTreeMap<String, (f64, f64)> = std::collections::BTreeMap::new();
+        // Initialize all days in month
+        for d in 1..=days_in_month {
+            let day_date = chrono::NaiveDate::from_ymd_opt(year, month, d).unwrap();
+            daily_map.insert(day_date.format("%Y-%m-%d").to_string(), (0.0, 0.0));
+        }
+
+        let mut category_map: std::collections::HashMap<String, (String, f64, u32)> = std::collections::HashMap::new();
+        let mut income_source_map: std::collections::HashMap<String, (f64, u32)> = std::collections::HashMap::new();
+        let mut account_spend_map: std::collections::HashMap<String, (String, f64, f64)> = std::collections::HashMap::new();
+        let mut recent_transactions = Vec::new();
+
+        // Process transactions
+        for tx in &transactions {
+            let tx_id = tx.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let splits = match tx.get("attributes").and_then(|a| a.get("transactions")).and_then(|t| t.as_array()) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            for split in splits {
+                let cat_id = split.get("category_id").and_then(|v| v.as_str());
+                let cat_name = split.get("category_name").and_then(|v| v.as_str());
+                let budget_name = split.get("budget_name").and_then(|v| v.as_str());
+                let source_id = split.get("source_id").and_then(|v| v.as_str());
+                let destination_id = split.get("destination_id").and_then(|v| v.as_str());
+
+                let is_cat_excluded = cat_id.is_some_and(|id| exclusions.is_category_excluded(id))
+                    || cat_name.is_some_and(|name| exclusions.is_category_excluded(name));
+                let is_bud_excluded = budget_name.is_some_and(|b| exclusions.is_budget_excluded(b));
+
+                if is_cat_excluded || is_bud_excluded {
+                    continue;
+                }
+
+                if let Some(sym) = split.get("currency_symbol").and_then(|v| v.as_str()) {
+                    currency_symbol = sym.to_string();
+                }
+                if let Some(code) = split.get("currency_code").and_then(|v| v.as_str()) {
+                    currency_code = code.to_string();
+                }
+
+                let amount: f64 = split
+                    .get("amount")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+                    .abs();
+
+                let date_raw = split.get("date").and_then(|v| v.as_str()).unwrap_or("");
+                let date_str = date_raw.split('T').next().unwrap_or(date_raw).to_string();
+                let tx_type = split.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let description = split.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let category_str = cat_name.map(|s| s.to_string());
+                let source_name = split.get("source_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let destination_name = split.get("destination_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let curr_sym = split.get("currency_symbol").and_then(|v| v.as_str()).unwrap_or("$").to_string();
+
+                match tx_type {
+                    "deposit" => {
+                        total_income += amount;
+                        if let Some(entry) = daily_map.get_mut(&date_str) {
+                            entry.0 += amount;
+                        }
+                        let src = if source_name.is_empty() { "Unknown".to_string() } else { source_name.clone() };
+                        let entry = income_source_map.entry(src).or_insert((0.0, 0));
+                        entry.0 += amount;
+                        entry.1 += 1;
+
+                        if let Some(dest_id) = destination_id {
+                            let dest = if destination_name.is_empty() { "Asset Account".to_string() } else { destination_name.clone() };
+                            let entry = account_spend_map.entry(dest_id.to_string()).or_insert((dest, 0.0, 0.0));
+                            entry.1 += amount; // income
+                        }
+                    }
+                    "withdrawal" => {
+                        total_expenses += amount;
+                        if let Some(entry) = daily_map.get_mut(&date_str) {
+                            entry.1 += amount;
+                        }
+                        let c_name = category_str.clone().unwrap_or_else(|| "Uncategorized".to_string());
+                        let c_id = cat_id.unwrap_or("0").to_string();
+                        let entry = category_map.entry(c_name).or_insert((c_id, 0.0, 0));
+                        entry.1 += amount;
+                        entry.2 += 1;
+
+                        if let Some(src_id) = source_id {
+                            let src = if source_name.is_empty() { "Asset Account".to_string() } else { source_name.clone() };
+                            let entry = account_spend_map.entry(src_id.to_string()).or_insert((src, 0.0, 0.0));
+                            entry.2 += amount; // spent
+                        }
+                    }
+                    "transfer" => {
+                        total_transfers += amount;
+                    }
+                    _ => {}
+                }
+
+                recent_transactions.push(MonthlyTransactionItem {
+                    id: tx_id.clone(),
+                    date: date_str,
+                    description,
+                    category_name: category_str,
+                    source_name,
+                    destination_name,
+                    amount,
+                    transaction_type: tx_type.to_string(),
+                    currency_symbol: curr_sym,
+                });
+            }
+        }
+
+        // Sort recent transactions by date descending and take 15
+        recent_transactions.sort_by(|a, b| b.date.cmp(&a.date));
+        if recent_transactions.len() > 15 {
+            recent_transactions.truncate(15);
+        }
+
+        let net_savings = total_income - total_expenses;
+        let savings_rate = if total_income > 0.0 {
+            (net_savings / total_income) * 100.0
+        } else {
+            0.0
+        };
+
+        // Build daily chart
+        let mut running_net = 0.0;
+        let daily_chart: Vec<MonthlyDailyPoint> = daily_map
+            .into_iter()
+            .map(|(date, (income, expenses))| {
+                running_net += income - expenses;
+                MonthlyDailyPoint {
+                    date,
+                    income,
+                    expenses,
+                    cumulative_net: running_net,
+                }
+            })
+            .collect();
+
+        // Build top categories
+        let mut top_categories: Vec<MonthlyCategorySummary> = category_map
+            .into_iter()
+            .map(|(name, (id, spent, count))| {
+                let percentage = if total_expenses > 0.0 {
+                    (spent / total_expenses) * 100.0
+                } else {
+                    0.0
+                };
+                MonthlyCategorySummary {
+                    category_id: id,
+                    category_name: name,
+                    spent,
+                    percentage,
+                    transaction_count: count,
+                }
+            })
+            .collect();
+        top_categories.sort_by(|a, b| b.spent.partial_cmp(&a.spent).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Build income sources
+        let mut income_sources: Vec<MonthlyIncomeSourceSummary> = income_source_map
+            .into_iter()
+            .map(|(name, (amount, count))| {
+                let percentage = if total_income > 0.0 {
+                    (amount / total_income) * 100.0
+                } else {
+                    0.0
+                };
+                MonthlyIncomeSourceSummary {
+                    source_name: name,
+                    amount,
+                    percentage,
+                    transaction_count: count,
+                }
+            })
+            .collect();
+        income_sources.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Build budget summary
+        let mut total_budgeted = 0.0;
+        let mut total_budget_spent = 0.0;
+        let mut budget_summaries = Vec::new();
+
+        // Fetch budget limits for each budget if any
+        for b in budget_list {
+            let budget_id = b.id.clone();
+            let name = b.name.clone();
+            if exclusions.is_budget_excluded(&name) {
+                continue;
+            }
+            let mut budgeted = 0.0;
+            let mut spent = 0.0;
+
+            if let Ok(limits) = self.get_budget_limit(&budget_id, Some(start_str.clone()), Some(end_str.clone())).await {
+                for limit in limits {
+                    budgeted += limit.period_limit;
+                    spent += limit.period_spent;
+                }
+            }
+
+            total_budgeted += budgeted;
+            total_budget_spent += spent;
+            let remaining = budgeted - spent;
+            let percentage = if budgeted > 0.0 {
+                (spent / budgeted) * 100.0
+            } else {
+                0.0
+            };
+
+            budget_summaries.push(MonthlyBudgetSummary {
+                budget_id,
+                budget_name: name,
+                budgeted,
+                spent,
+                remaining,
+                percentage,
+            });
+        }
+        budget_summaries.sort_by(|a, b| b.spent.partial_cmp(&a.spent).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Build accounts summary
+        let mut account_summaries = Vec::new();
+        for acc in accounts {
+            let acc_id = acc.id.clone();
+            let name = acc.name.clone();
+            let current_balance: f64 = acc.balance.parse().unwrap_or(0.0);
+            let (income, spent) = account_spend_map.get(&acc_id).map(|(_, i, s)| (*i, *s)).unwrap_or((0.0, 0.0));
+
+            account_summaries.push(MonthlyAccountSummary {
+                account_id: acc_id,
+                account_name: name,
+                current_balance,
+                monthly_income: income,
+                monthly_expenses: spent,
+            });
+        }
+
+        let response = MonthlySummaryResponse {
+            month: month_str.to_string(),
+            start_date: start_str,
+            end_date: end_str,
+            prev_month: prev_month_str,
+            next_month: next_month_str,
+            days_in_month,
+            total_income,
+            total_expenses,
+            net_savings,
+            savings_rate,
+            total_transfers,
+            currency_symbol,
+            currency_code,
+            daily_chart,
+            top_categories,
+            income_sources,
+            budgets: budget_summaries,
+            accounts: account_summaries,
+            recent_transactions,
+            total_budgeted,
+            total_budget_spent,
+        };
+
+        if let Ok(json) = serde_json::to_string(&response) {
+            self.cache.set_monthly_summary(month_str, exclusions, json);
+        }
+
+        Ok(response)
+    }
 }
 
 #[cfg(test)]

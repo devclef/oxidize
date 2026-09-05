@@ -5,6 +5,8 @@ pub mod chart;
 pub mod dashboard;
 pub mod exclusions;
 pub mod group;
+pub mod monthly_summary;
+pub mod sankey;
 pub mod widget;
 
 pub use account::{AccountArray, SimpleAccount};
@@ -17,7 +19,9 @@ pub use chart::{ChartDataSet, ChartLine};
 pub use dashboard::Dashboard;
 pub use exclusions::Exclusions;
 pub use group::Group;
-pub use widget::Widget;
-
-pub mod sankey;
+pub use monthly_summary::{
+    MonthlyAccountSummary, MonthlyBudgetSummary, MonthlyCategorySummary, MonthlyDailyPoint,
+    MonthlyIncomeSourceSummary, MonthlySummaryResponse, MonthlyTransactionItem,
+};
 pub use sankey::{SankeyFlowData, SankeyFlowType, SankeyLink, SankeyNode};
+pub use widget::Widget;

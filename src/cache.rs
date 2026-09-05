@@ -33,6 +33,7 @@ pub struct DataCache {
     categories: RwLock<HashMap<String, CacheEntry<String>>>,
     budget_limit: RwLock<HashMap<String, CacheEntry<String>>>,
     card_paydown: RwLock<HashMap<String, CacheEntry<String>>>,
+    monthly_summary: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -56,6 +57,7 @@ impl DataCache {
             categories: RwLock::new(HashMap::new()),
             budget_limit: RwLock::new(HashMap::new()),
             card_paydown: RwLock::new(HashMap::new()),
+            monthly_summary: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -622,6 +624,7 @@ impl DataCache {
         self.clear_categories();
         self.clear_budget_limit();
         self.clear_card_paydown();
+        self.clear_monthly_summary();
     }
 
     pub fn clear_accounts(&self) {
@@ -688,6 +691,28 @@ impl DataCache {
         Self::clear_tiered(
             &self.categories,
             Some(&format!("v{}:categories", CACHE_VERSION)),
+        );
+    }
+
+    // ── Monthly summary ────────────────────────────────────────────────
+    fn monthly_summary_key(month: &str, exclusions: &Exclusions) -> String {
+        format!("v{}:monthly_summary:{}:{}", CACHE_VERSION, month, exclusions.cache_key())
+    }
+
+    pub fn get_monthly_summary(&self, month: &str, exclusions: &Exclusions) -> Option<String> {
+        let key = Self::monthly_summary_key(month, exclusions);
+        Self::get_tiered(&self.monthly_summary, &key)
+    }
+
+    pub fn set_monthly_summary(&self, month: &str, exclusions: &Exclusions, data: String) {
+        let key = Self::monthly_summary_key(month, exclusions);
+        Self::set_tiered(&self.monthly_summary, &key, &data, self.ttl_seconds);
+    }
+
+    pub fn clear_monthly_summary(&self) {
+        Self::clear_tiered(
+            &self.monthly_summary,
+            Some(&format!("v{}:monthly_summary:", CACHE_VERSION)),
         );
     }
 

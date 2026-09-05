@@ -25,4 +25,5 @@ pub mod group;
 pub mod index;
 pub mod widget;
 
+pub mod monthly_summary;
 pub mod sankey;

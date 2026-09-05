@@ -70,21 +70,21 @@ function calculateRelativeDatesFromCustom(count, unit) {
 }
 
 function roundEndDate(dateStr, mode) {
-    const date = new Date(dateStr);
-    const now = new Date();
+    const parts = dateStr.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const date = new Date(Date.UTC(year, month, day));
 
     switch (mode) {
         case 'start_of_current_month':
-            date.setDate(1);
-            date.setHours(0, 0, 0, 0);
+            date.setUTCDate(1);
             break;
         case 'end_of_current_month':
-            date.setMonth(date.getMonth() + 1, 0);
-            date.setHours(23, 59, 59, 999);
+            date.setUTCMonth(date.getUTCMonth() + 1, 0);
             break;
         case 'start_of_next_month':
-            date.setMonth(date.getMonth() + 1, 1);
-            date.setHours(0, 0, 0, 0);
+            date.setUTCMonth(date.getUTCMonth() + 1, 1);
             break;
         default:
             return dateStr;
