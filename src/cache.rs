@@ -40,7 +40,10 @@ pub struct DataCache {
 /// Cache version: increment to invalidate all existing cached entries.
 /// Bumped to 2 to clear entries created with the broken date parser that
 /// only accepted +00:00 timezone offsets.
-const CACHE_VERSION: &str = "4";
+/// Bumped to 5 to clear entries cached while liability accounts were
+/// incorrectly filtered out of type=liability requests (Firefly III v6
+/// reports them as "liabilities").
+const CACHE_VERSION: &str = "5";
 
 impl DataCache {
     pub fn new(ttl_seconds: u64) -> Self {

@@ -150,6 +150,21 @@ fn journal_counts_spent(
     }
 }
 
+/// Whether an account type string belongs to the liability family.
+///
+/// Firefly III v5 and earlier report liability accounts (credit cards,
+/// loans, debts, mortgages) with type "liability". Firefly III v6 renamed
+/// the family: the same accounts are reported as "liabilities" (plural)
+/// while `?type=liability` / `?type=liabilities` remain valid filters that
+/// select them. The two spellings must be treated as the same family so
+/// account lists and type-based classification work against both versions.
+fn is_liability_family(account_type: &str) -> bool {
+    matches!(
+        account_type.to_ascii_lowercase().as_str(),
+        "liability" | "liabilities"
+    )
+}
+
 pub struct FireflyClient {
     client: reqwest::Client,
     config: Config,
@@ -367,7 +382,7 @@ impl FireflyClient {
             for id in &account_ids {
                 let is_liability = account_types
                     .get(id)
-                    .map(|t| t == "liability")
+                    .map(|t| is_liability_family(t))
                     .unwrap_or(false);
                 let current_negative = account_current_balances
                     .get(id)
@@ -783,11 +798,14 @@ impl FireflyClient {
             })
             // Filter client-side to ensure correct results even when the API
             // doesn't honor the type filter (e.g., mock servers, some Firefly III versions).
-            .filter(|a| {
-                type_filter
-                    .as_deref()
-                    .map(|t| a.account_type == t)
-                    .unwrap_or(true)
+            // The liability family is matched across Firefly III versions, where
+            // the type string changed from "liability" to "liabilities".
+            .filter(|a| match type_filter.as_deref() {
+                Some(t) => {
+                    a.account_type == t
+                        || (is_liability_family(&a.account_type) && is_liability_family(t))
+                }
+                None => true,
             })
             .collect();
 
