@@ -26,3 +26,4 @@ pub mod index;
 pub mod widget;
 
 pub mod sankey;
+pub mod summary;

@@ -4,6 +4,7 @@ pub mod category;
 pub mod chart;
 pub mod dashboard;
 pub mod exclusions;
+pub mod summary;
 pub mod group;
 pub mod widget;
 
@@ -16,6 +17,11 @@ pub use category::{CategoryListResponse, CategoryRead, ParentCategory};
 pub use chart::{ChartDataSet, ChartLine};
 pub use dashboard::Dashboard;
 pub use exclusions::Exclusions;
+pub use summary::{
+    BulkBudgetLimit, BulkBudgetLimitResponse, MonthBudget, MonthBudgetTotals,
+    MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense, MonthTotals,
+    MonthTrend,
+};
 pub use group::Group;
 pub use widget::Widget;
 

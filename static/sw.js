@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v10';
+const CACHE_NAME = 'oxidize-cache-v11';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/theme.js',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
   '/static/date-utils.js',
   '/static/app.js',
   '/static/dashboard.js',
+  '/static/summary-utils.js',
   '/api/manifest'
 ];
 

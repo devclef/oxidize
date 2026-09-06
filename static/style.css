@@ -3104,3 +3104,324 @@ button:focus-visible,
 .widget-error:empty {
     display: none;
 }
+
+/* ── Monthly Summary page ────────────────────────────────────────────── */
+
+.warning-banner {
+    color: var(--warning-text, #92400e);
+    background: var(--warning-light);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-size: var(--text-sm);
+}
+
+.muted {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.text-error {
+    color: var(--error-color);
+    font-weight: 600;
+}
+.text-warning {
+    color: var(--warning-text, #b45309);
+    font-weight: 600;
+}
+
+/* Month navigation */
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+.month-nav-btn {
+    font-size: var(--text-xl);
+    line-height: 1;
+    padding: var(--space-1) var(--space-3);
+    min-width: 38px;
+}
+.month-nav input[type="month"] {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    font-family: inherit;
+}
+.month-nav input[type="month"]:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* KPI cards */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
+}
+.kpi-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.kpi-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.kpi-value {
+    font-size: var(--text-2xl);
+    font-weight: 650;
+    color: var(--heading-color);
+    font-variant-numeric: tabular-nums;
+}
+.kpi-positive { color: var(--success-color); }
+.kpi-negative { color: var(--error-color); }
+.kpi-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+}
+.kpi-sub {
+    color: var(--text-muted);
+}
+
+/* Delta chips */
+.delta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+}
+.delta-good {
+    color: var(--success-color);
+    background: var(--success-light);
+}
+.delta-bad {
+    color: var(--error-color);
+    background: var(--error-bg);
+}
+.delta-neutral {
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+}
+
+/* Meta line under KPIs */
+.summary-meta {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-5);
+}
+
+/* Panels (summary page uses .panel with a header row) */
+.summary-panel {
+    margin-bottom: var(--space-4);
+}
+.panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+}
+.panel-head h3 {
+    margin: 0;
+}
+
+/* Two-column row (categories + top expenses) */
+.summary-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+}
+@media (max-width: 900px) {
+    .summary-two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Budget rows */
+.budget-summary {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+.budget-row {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border-light);
+}
+.budget-row:last-child {
+    border-bottom: none;
+}
+.budget-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+.budget-name {
+    font-weight: 600;
+    color: var(--heading-color);
+}
+.budget-amounts {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.budget-bar {
+    position: relative;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-full);
+    overflow: visible;
+}
+.budget-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width var(--transition-normal);
+}
+.budget-bar-fill.ok { background: var(--success-color); }
+.budget-bar-fill.warning { background: var(--warning-color); }
+.budget-bar-fill.over { background: var(--error-color); }
+.budget-bar-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 14px;
+    background: var(--warning-color);
+    border-radius: 1px;
+}
+.budget-row-foot {
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+/* Category breakdown */
+.cat-row {
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-light);
+}
+.cat-row:last-child {
+    border-bottom: none;
+}
+.cat-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-1);
+}
+.cat-name {
+    font-weight: 500;
+    color: var(--text-color);
+}
+.cat-amount {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.cat-pct {
+    font-size: var(--text-xs);
+}
+.cat-bar {
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-full);
+}
+.cat-bar-fill {
+    height: 100%;
+    background: var(--accent-color);
+    border-radius: var(--radius-full);
+    opacity: 0.75;
+}
+.show-all-btn {
+    margin-top: var(--space-3);
+}
+
+/* Top expenses table */
+.exp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+.exp-table th {
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: var(--space-2) var(--space-2);
+    border-bottom: 1px solid var(--border-color);
+}
+.exp-table td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+}
+.exp-table tr:last-child td {
+    border-bottom: none;
+}
+.exp-table th.num,
+.exp-table td.num {
+    text-align: right;
+}
+.exp-date {
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.exp-desc {
+    color: var(--text-color);
+    word-break: break-word;
+}
+.exp-acct {
+    font-size: var(--text-xs);
+}
+.exp-cat {
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+.exp-amount {
+    text-align: right;
+    font-weight: 600;
+    color: var(--heading-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Small empty state inside panels */
+.empty-state.small {
+    padding: var(--space-4);
+}
+
+/* Chart hint text under chart titles */
+.chart-hint {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+}

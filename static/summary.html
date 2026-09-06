@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oxidize - Monthly Summary</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="manifest" href="/api/manifest">
+    <script src="/static/theme.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <span class="nav-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+            Oxidize
+        </span>
+        <a href="/">Graph Builder</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/summary" class="active">Monthly Summary</a>
+        <a href="/budget-comparison">Budget Comparison</a>
+        <a href="/avg-cost">Avg Cost</a>
+        <a href="/sankey">Sankey Flow</a>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+            <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="display: none;">
+                <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c-.39.39-1.03.39-1.41 0-.39-.39-.39-1.03 0-1.41.39-.39 1.03-.39 1.41 0l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L19.42 5.98zM7.05 18.36c-.39.39-1.03.39-1.41 0-.39-.39-.39-1.03 0-1.41l1.06-1.06c.39-.39 1.03-.39 1.41 0s.39 1.03 0 1.41l-1.06 1.06z"/>
+            </svg>
+            <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+            </svg>
+        </button>
+    </nav>
+
+    <header class="page-header">
+        <div>
+            <h1>Monthly Summary</h1>
+            <p class="page-subtitle">Your money at a glance: cash flow, budgets, categories and the biggest expenses for the month.</p>
+        </div>
+        <div class="month-nav" role="group" aria-label="Select month">
+            <button id="prev-month" class="ghost-btn month-nav-btn" title="Previous month" aria-label="Previous month">&#8249;</button>
+            <input type="month" id="month-picker" aria-label="Select month">
+            <button id="next-month" class="ghost-btn month-nav-btn" title="Next month" aria-label="Next month">&#8250;</button>
+            <button id="this-month" class="ghost-btn">This month</button>
+        </div>
+    </header>
+
+    <div id="summary-error" class="error" style="display: none;" role="alert"></div>
+    <div id="summary-warnings" class="warning-banner" style="display: none;"></div>
+    <div id="summary-loading" class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading summary...</span></div>
+
+    <div id="summary-content" style="display: none;">
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="summary-meta" id="summary-meta"></div>
+
+        <section class="panel summary-panel">
+            <div class="panel-head">
+                <h3>Budgets</h3>
+                <div class="budget-summary" id="budget-summary"></div>
+            </div>
+            <div id="budget-list"></div>
+        </section>
+
+        <div class="summary-two-col">
+            <section class="panel summary-panel">
+                <div class="panel-head">
+                    <h3>Spending by Category</h3>
+                </div>
+                <div id="category-list"></div>
+            </section>
+            <section class="panel summary-panel">
+                <div class="panel-head">
+                    <h3>Top Expenses</h3>
+                </div>
+                <div id="top-expenses"></div>
+            </section>
+        </div>
+
+        <section class="chart-card">
+            <h2>Daily Cash Flow</h2>
+            <div class="chart-area">
+                <canvas id="dailyChart"></canvas>
+            </div>
+        </section>
+
+        <section class="chart-card">
+            <h2>12-Month Trend</h2>
+            <p class="chart-hint">Monthly income vs spending, trailing 12 months (selected month highlighted).</p>
+            <div class="chart-area">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/ui.js"></script>
+    <script src="/static/summary-utils.js"></script>
+    <script>
+    (function () {
+        'use strict';
+
+        var summaryData = null;
+        var dailyChart = null;
+        var trendChart = null;
+        var allCategoriesShown = false;
+
+        function state() {
+            return { year: null, month: null };
+        }
+        var view = state();
+
+        function fmt(v) {
+            return OxiUI.formatCurrency(v);
+        }
+
+        function colors() {
+            return OxiUI.getChartColors();
+        }
+
+        function isDark() {
+            return document.documentElement &&
+                document.documentElement.getAttribute('data-theme') === 'dark';
+        }
+
+        function chartColors() {
+            return isDark()
+                ? {
+                    earned: '#34d399', earnedBg: 'rgba(52, 211, 153, 0.55)',
+                    spent: '#f87171', spentBg: 'rgba(248, 113, 113, 0.55)',
+                    cumulative: '#fbbf24',
+                    earnedHi: 'rgba(52, 211, 153, 0.95)', spentHi: 'rgba(248, 113, 113, 0.95)'
+                }
+                : {
+                    earned: '#059669', earnedBg: 'rgba(16, 185, 129, 0.45)',
+                    spent: '#dc2626', spentBg: 'rgba(239, 68, 68, 0.45)',
+                    cumulative: '#d97706',
+                    earnedHi: 'rgba(5, 150, 105, 0.9)', spentHi: 'rgba(220, 38, 38, 0.9)'
+                };
+        }
+
+        function selectedMonthKey() {
+            return MonthSummary.monthKey(view.year, view.month);
+        }
+
+        function updateMonthNav() {
+            var cur = MonthSummary.currentYearMonth();
+            var picker = document.getElementById('month-picker');
+            picker.value = MonthSummary.monthKey(view.year, view.month);
+            picker.max = MonthSummary.monthKey(cur.year, cur.month);
+            document.getElementById('next-month').disabled =
+                view.year > cur.year || (view.year === cur.year && view.month >= cur.month);
+        }
+
+        function deltaChip(pct, invertGood) {
+            // invertGood: for spending, "up" is bad
+            if (pct == null) return '<span class="delta-chip delta-neutral">\u2014</span>';
+            var up = pct > 0;
+            var flat = Math.abs(pct) < 0.05;
+            var cls = flat ? 'delta-neutral' : ((up !== invertGood) ? 'delta-good' : 'delta-bad');
+            var arrow = flat ? '\u25AC' : (up ? '\u25B2' : '\u25BC');
+            return '<span class="delta-chip ' + cls + '">' + arrow + ' ' +
+                Math.abs(pct).toFixed(1) + '%</span>';
+        }
+
+        function renderKpis(d) {
+            var t = d.totals;
+            var grid = document.getElementById('kpi-grid');
+            var cards = [];
+
+            // Income
+            cards.push({
+                label: 'Income',
+                value: fmt(t.earned),
+                chip: deltaChip(t.earned_delta_pct, false),
+                sub: t.prev_month_earned != null
+                    ? 'vs ' + fmt(t.prev_month_earned) + ' last month'
+                    : 'no data for last month'
+            });
+
+            // Spending
+            var elapsed = t.days_elapsed < t.days_in_month
+                ? t.days_elapsed + ' of ' + t.days_in_month + ' days'
+                : null;
+            cards.push({
+                label: 'Spending',
+                value: fmt(t.spent),
+                chip: deltaChip(t.spent_delta_pct, true),
+                sub: 'avg ' + fmt(t.daily_average_spent) + '/day' + (elapsed ? ' \u00b7 ' + elapsed : '')
+            });
+
+            // Saved
+            cards.push({
+                label: 'Saved this month',
+                value: fmt(t.net),
+                valueClass: t.net >= 0 ? 'kpi-positive' : 'kpi-negative',
+                chip: t.savings_rate != null
+                    ? '<span class="delta-chip delta-neutral">' + t.savings_rate.toFixed(1) + '% saved</span>'
+                    : '<span class="delta-chip delta-neutral">no income</span>',
+                sub: t.prev_month_net != null
+                    ? 'vs ' + fmt(t.prev_month_net) + ' last month'
+                    : 'income \u2212 spending'
+            });
+
+            // Net worth
+            var nwSub = '\u2014';
+            if (t.net_worth != null && t.net_worth_delta != null) {
+                var delta = t.net_worth_delta;
+                nwSub = (delta >= 0 ? '\u25B2 ' : '\u25BC ') + fmt(Math.abs(delta)) + ' this month';
+            }
+            cards.push({
+                label: 'Net worth',
+                value: t.net_worth != null ? fmt(t.net_worth) : '\u2014',
+                chipHtml: t.net_worth_delta != null
+                    ? '<span class="delta-chip ' + (t.net_worth_delta >= 0 ? 'delta-good' : 'delta-bad') + '">' +
+                      (t.net_worth_delta >= 0 ? '\u25B2 ' : '\u25BC ') + fmt(Math.abs(t.net_worth_delta)) + '</span>'
+                    : '<span class="delta-chip delta-neutral">\u2014</span>',
+                sub: nwSub
+            });
+
+            grid.innerHTML = cards.map(function (c) {
+                return '<div class="kpi-card">' +
+                    '<div class="kpi-label">' + c.label + '</div>' +
+                    '<div class="kpi-value ' + (c.valueClass || '') + '">' + c.value + '</div>' +
+                    '<div class="kpi-foot">' + (c.chipHtml != null ? c.chipHtml : c.chip) +
+                    ' <span class="kpi-sub">' + c.sub + '</span></div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function renderMeta(d) {
+            var el = document.getElementById('summary-meta');
+            var parts = [];
+            if (d.is_current_month) {
+                parts.push('Current month \u2014 data through day ' + d.totals.days_elapsed +
+                    ' of ' + d.totals.days_in_month);
+            } else {
+                parts.push('Completed month');
+            }
+            if (d.currency.code) parts.push(d.currency.code);
+            if (d.warnings && d.warnings.length) {
+                var banner = document.getElementById('summary-warnings');
+                banner.innerHTML = '<strong>Some sections could not be loaded:</strong> ' +
+                    d.warnings.map(MonthSummary.escapeHtml).join('; ');
+                banner.style.display = 'block';
+            } else {
+                document.getElementById('summary-warnings').style.display = 'none';
+            }
+            el.innerHTML = parts.map(MonthSummary.escapeHtml).join(' \u00b7 ');
+        }
+
+        function renderBudgets(d) {
+            var list = document.getElementById('budget-list');
+            var sum = document.getElementById('budget-summary');
+            var bt = d.budget_totals;
+
+            if (d.budgets.length === 0) {
+                list.innerHTML = '<div class="empty-state small"><p>No budgets found in Firefly III.</p></div>';
+                sum.innerHTML = '';
+                return;
+            }
+
+            if (bt.with_limit > 0) {
+                var over = bt.over_count > 0
+                    ? ' \u00b7 <span class="text-error">' + bt.over_count + ' over budget</span>'
+                    : ' \u00b7 all within limit';
+                sum.innerHTML = fmt(bt.limited_spent) + ' of ' + fmt(bt.limited) +
+                    ' budgeted across ' + bt.with_limit + ' budgets' + over +
+                    ' \u00b7 ' + fmt(bt.spent) + ' total on all budgets';
+            } else {
+                sum.innerHTML = fmt(bt.spent) + ' spent across ' + bt.count +
+                    ' budgets \u00b7 no limits set for this month';
+            }
+
+            list.innerHTML = d.budgets.map(function (b) {
+                var name = MonthSummary.escapeHtml(b.name);
+                var amounts;
+                var bar = '';
+                var foot;
+
+                if (b.limit == null) {
+                    amounts = fmt(b.spent) + ' <span class="muted">no limit</span>';
+                    foot = '<span class="muted">no limit set</span>';
+                } else {
+                    var pct = b.pct_of_limit != null ? b.pct_of_limit : 0;
+                    var width = Math.min(100, Math.max(0, pct));
+                    amounts = fmt(b.spent) + ' / ' + fmt(b.limit);
+                    var over = b.status === 'over';
+                    var barCls = over ? 'budget-bar-fill over'
+                        : b.status === 'warning' ? 'budget-bar-fill warning'
+                        : 'budget-bar-fill ok';
+                    bar = '<div class="budget-bar"><div class="' + barCls + '" style="width:' + width.toFixed(1) + '%"></div>';
+                    if (b.projected != null && b.projected > b.limit) {
+                        var projLeft = Math.min(100, (b.projected / b.limit) * 100);
+                        bar += '<div class="budget-bar-marker" style="left:' + projLeft.toFixed(1) + '%" title="Projected ' + fmt(b.projected) + '"></div>';
+                    }
+                    bar += '</div>';
+                    if (over) {
+                        foot = '<span class="text-error">Over by ' + fmt(b.spent - b.limit) + '</span>';
+                    } else if (b.status === 'warning' && b.projected != null) {
+                        foot = '<span class="text-warning">On pace for ' + fmt(b.projected) +
+                            ' (limit ' + fmt(b.limit) + ')</span>';
+                    } else {
+                        foot = '<span class="muted">' + pct.toFixed(0) + '% used</span>';
+                    }
+                    if (b.projected != null && b.status !== 'over') {
+                        foot += ' <span class="muted">\u00b7 projected ' + fmt(b.projected) + '</span>';
+                    }
+                }
+
+                return '<div class="budget-row status-' + b.status + '">' +
+                    '<div class="budget-row-head">' +
+                    '<span class="budget-name">' + name + '</span>' +
+                    '<span class="budget-amounts">' + amounts + '</span>' +
+                    '</div>' +
+                    (bar || '') +
+                    '<div class="budget-row-foot">' + foot + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function renderCategories(d) {
+            var el = document.getElementById('category-list');
+            if (!d.categories.length) {
+                el.innerHTML = '<div class="empty-state small"><p>No expenses in this period.</p></div>';
+                return;
+            }
+            var max = d.categories[0].amount || 1;
+            var rows = d.categories;
+            if (rows.length > 8 && !allCategoriesShown) {
+                rows = rows.slice(0, 8);
+            }
+            var html = rows.map(function (c) {
+                var width = Math.max(0.5, (c.amount / max) * 100);
+                return '<div class="cat-row">' +
+                    '<div class="cat-row-head">' +
+                    '<span class="cat-name">' + MonthSummary.escapeHtml(c.name) + '</span>' +
+                    '<span class="cat-amount">' + fmt(c.amount) + ' <span class="muted cat-pct">' +
+                    c.pct.toFixed(1) + '%</span></span>' +
+                    '</div>' +
+                    '<div class="cat-bar"><div class="cat-bar-fill" style="width:' + width.toFixed(1) + '%"></div></div>' +
+                    '</div>';
+            }).join('');
+            if (d.categories.length > 8) {
+                html += '<button class="ghost-btn show-all-btn" id="show-all-categories">' +
+                    (allCategoriesShown ? 'Show fewer' : 'Show all ' + d.categories.length + ' categories') +
+                    '</button>';
+            }
+            el.innerHTML = html;
+            var btn = document.getElementById('show-all-categories');
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    allCategoriesShown = !allCategoriesShown;
+                    if (summaryData) renderCategories(summaryData);
+                });
+            }
+        }
+
+        function renderTopExpenses(d) {
+            var el = document.getElementById('top-expenses');
+            if (!d.top_expenses.length) {
+                el.innerHTML = '<div class="empty-state small"><p>No expenses in this period.</p></div>';
+                return;
+            }
+            var rows = d.top_expenses.map(function (t) {
+                return '<tr>' +
+                    '<td class="exp-date">' + MonthSummary.escapeHtml(t.date) + '</td>' +
+                    '<td class="exp-desc">' + MonthSummary.escapeHtml(t.description || '(no description)') +
+                    (t.account ? ' <span class="muted exp-acct">' + MonthSummary.escapeHtml(t.account) + '</span>' : '') +
+                    '</td>' +
+                    '<td class="exp-cat">' + (t.category ? MonthSummary.escapeHtml(t.category) : '<span class="muted">\u2014</span>') + '</td>' +
+                    '<td class="exp-amount">' + fmt(t.amount) + '</td>' +
+                    '</tr>';
+            }).join('');
+            el.innerHTML = '<table class="exp-table">' +
+                '<thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table>';
+        }
+
+        function tooltipOpts() {
+            var c = colors();
+            return {
+                backgroundColor: c.tooltipBg,
+                titleColor: c.tooltipText,
+                bodyColor: c.tooltipText,
+                borderColor: c.tooltipBorder,
+                borderWidth: 1,
+                callbacks: {
+                    label: function (ctx) {
+                        var v = ctx.parsed.y;
+                        return ctx.dataset.label + ': ' + fmt(v);
+                    }
+                }
+            };
+        }
+
+        function renderDailyChart(d) {
+            var canvas = document.getElementById('dailyChart');
+            if (!canvas || typeof Chart === 'undefined') return;
+            if (dailyChart) dailyChart.destroy();
+            if (!d.daily.dates.length) return;
+
+            var cc = chartColors();
+            var labels = d.daily.dates.map(function (s) { return s.slice(8); });
+            dailyChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Spent',
+                            data: d.daily.spent,
+                            backgroundColor: cc.spentBg,
+                            borderColor: cc.spent,
+                            borderWidth: 1,
+                            borderRadius: 2,
+                            order: 3
+                        },
+                        {
+                            label: 'Earned',
+                            data: d.daily.earned,
+                            type: 'line',
+                            borderColor: cc.earned,
+                            backgroundColor: cc.earned,
+                            pointRadius: 2,
+                            borderWidth: 1.5,
+                            tension: 0.25,
+                            spanGaps: true,
+                            order: 2
+                        },
+                        {
+                            label: 'Cumulative spent',
+                            data: d.daily.cumulative_spent,
+                            type: 'line',
+                            borderColor: cc.cumulative,
+                            backgroundColor: cc.cumulative,
+                            pointRadius: 0,
+                            borderWidth: 1.5,
+                            borderDash: [4, 3],
+                            tension: 0.2,
+                            yAxisID: 'y1',
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: colors().textColor } },
+                        tooltip: tooltipOpts()
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: colors().textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 15 },
+                            grid: { color: colors().gridColor }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: colors().textColor, callback: function (v) { return fmt(v); } },
+                            grid: { color: colors().gridColor }
+                        },
+                        y1: {
+                            position: 'right',
+                            beginAtZero: true,
+                            ticks: { color: colors().textColor, callback: function (v) { return fmt(v); } },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTrendChart(d) {
+            var canvas = document.getElementById('trendChart');
+            if (!canvas || typeof Chart === 'undefined') return;
+            if (trendChart) trendChart.destroy();
+
+            var cc = chartColors();
+            var sel = selectedMonthKey();
+            var labels = d.trend_12m.labels.map(function (l) {
+                // "2026-09" -> "Sep"; mark year change with "Sep '25"
+                var parts = l.split('-');
+                var name = MonthSummary.shortMonthLabel(l);
+                if (parts[1] === '01') name += ' ' + parts[0];
+                return name;
+            });
+            var selectedIdx = d.trend_12m.labels.lastIndexOf(sel);
+
+            trendChart = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Earned',
+                            data: d.trend_12m.earned,
+                            backgroundColor: d.trend_12m.labels.map(function (l) {
+                                return l === sel ? cc.earnedHi : cc.earnedBg;
+                            }),
+                            borderColor: cc.earned,
+                            borderWidth: 1,
+                            borderRadius: 2
+                        },
+                        {
+                            label: 'Spent',
+                            data: d.trend_12m.spent,
+                            backgroundColor: d.trend_12m.labels.map(function (l) {
+                                return l === sel ? cc.spentHi : cc.spentBg;
+                            }),
+                            borderColor: cc.spent,
+                            borderWidth: 1,
+                            borderRadius: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: colors().textColor } },
+                        tooltip: tooltipOpts()
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: colors().textColor, maxRotation: 0 },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: colors().textColor,
+                                callback: function (v) { return OxiUI.formatCurrency(v, { compact: true }); }
+                            },
+                            grid: { color: colors().gridColor }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAll(d) {
+            renderKpis(d);
+            renderMeta(d);
+            renderBudgets(d);
+            renderCategories(d);
+            renderTopExpenses(d);
+            renderDailyChart(d);
+            renderTrendChart(d);
+        }
+
+        async function loadSummary() {
+            var errEl = document.getElementById('summary-error');
+            var loadingEl = document.getElementById('summary-loading');
+            var contentEl = document.getElementById('summary-content');
+            errEl.style.display = 'none';
+            errEl.textContent = '';
+            loadingEl.style.display = 'flex';
+            contentEl.style.display = 'none';
+            allCategoriesShown = false;
+
+            try {
+                var url = '/api/summary/month?year=' + view.year + '&month=' + view.month;
+                var res = await fetch(url);
+                var body = await res.json().catch(function () { return null; });
+                if (!res.ok) {
+                    var msg = body && body.message ? body.message : 'HTTP ' + res.status;
+                    errEl.textContent = 'Could not load the summary: ' + msg;
+                    errEl.style.display = 'block';
+                    loadingEl.style.display = 'none';
+                    return;
+                }
+                summaryData = body;
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+                renderAll(body);
+            } catch (e) {
+                errEl.textContent = 'Could not load the summary: ' + e.message;
+                errEl.style.display = 'block';
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        function setMonth(year, month) {
+            if (MonthSummary.isFuture(year, month)) return;
+            view.year = year;
+            view.month = month;
+            updateMonthNav();
+            loadSummary();
+        }
+
+        function init() {
+            var cur = MonthSummary.currentYearMonth();
+            view.year = cur.year;
+            view.month = cur.month;
+            updateMonthNav();
+
+            document.getElementById('prev-month').addEventListener('click', function () {
+                var m = MonthSummary.shiftMonth(view.year, view.month, -1);
+                setMonth(m.year, m.month);
+            });
+            document.getElementById('next-month').addEventListener('click', function () {
+                var m = MonthSummary.shiftMonth(view.year, view.month, 1);
+                setMonth(m.year, m.month);
+            });
+            document.getElementById('this-month').addEventListener('click', function () {
+                var c = MonthSummary.currentYearMonth();
+                setMonth(c.year, c.month);
+            });
+            document.getElementById('month-picker').addEventListener('change', function (e) {
+                var parts = (e.target.value || '').split('-');
+                if (parts.length === 2) {
+                    var y = parseInt(parts[0], 10);
+                    var m = parseInt(parts[1], 10);
+                    if (isFinite(y) && isFinite(m) && m >= 1 && m <= 12) {
+                        setMonth(y, m);
+                    }
+                }
+            });
+
+            window.addEventListener('themeChanged', function () {
+                if (summaryData) {
+                    renderDailyChart(summaryData);
+                    renderTrendChart(summaryData);
+                }
+            });
+
+            loadSummary();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/static/sw.js');
+            }
+            init();
+        });
+    })();
+    </script>
+</body>
+</html>
