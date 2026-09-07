@@ -291,7 +291,7 @@ impl FireflyClient {
 
         // Fetch all transactions involving the selected accounts
         let transactions = self
-            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None, None)
             .await?;
 
         // Fetch account types (and current balances) to classify journal direction.
@@ -914,6 +914,7 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         // Check cache first
@@ -922,6 +923,7 @@ impl FireflyClient {
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            excluded_account_ids.clone(),
             exclusions,
         ) {
             debug!("Cache hit for earned/spent");
@@ -935,6 +937,7 @@ impl FireflyClient {
                 end_date.clone(),
                 period.clone(),
                 account_ids.clone(),
+                excluded_account_ids.clone(),
                 None,
                 exclusions,
             )
@@ -947,6 +950,7 @@ impl FireflyClient {
                     end_date,
                     period,
                     account_ids,
+                    excluded_account_ids,
                     exclusions,
                     json,
                 );
@@ -956,12 +960,14 @@ impl FireflyClient {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_earned_spent_with_since(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         since: Option<String>,
         exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
@@ -976,7 +982,13 @@ impl FireflyClient {
         let period_val = period.unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(
+                &start,
+                &end,
+                account_ids.as_ref(),
+                None,
+                excluded_account_ids.as_deref(),
+            )
             .await?;
 
         // Build a set of selected account IDs for transfer filtering
@@ -1146,7 +1158,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -1609,7 +1621,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -2242,6 +2254,7 @@ impl FireflyClient {
         end: &str,
         account_ids: Option<&Vec<String>>,
         type_filter: Option<&str>,
+        excluded_account_ids: Option<&[String]>,
     ) -> Result<Vec<serde_json::Value>, String> {
         let chunks = Self::chunk_date_range(start, end)?;
         let mut all_transactions = std::collections::HashMap::new();
@@ -2307,7 +2320,37 @@ impl FireflyClient {
                 all_transactions.retain(|tx| self.transaction_involves_account(tx, &id_set));
             }
         }
+        if let Some(ids) = excluded_account_ids {
+            if !ids.is_empty() {
+                let excl_set: std::collections::HashSet<&str> =
+                    ids.iter().map(String::as_str).collect();
+                all_transactions.retain(|tx| !Self::transaction_touches_excluded(tx, &excl_set));
+            }
+        }
         Ok(all_transactions)
+    }
+
+    /// True when any journal in the transaction touches an excluded account
+    /// (as source or destination). Such transactions are dropped entirely so
+    /// excluding an account removes everything that flows through it.
+    fn transaction_touches_excluded(
+        tx: &serde_json::Value,
+        excluded: &std::collections::HashSet<&str>,
+    ) -> bool {
+        tx.get("attributes")
+            .and_then(|a| a.get("transactions"))
+            .and_then(|t| t.as_array())
+            .map(|transactions| {
+                transactions.iter().any(|t| {
+                    ["source_id", "destination_id"].iter().any(|f| {
+                        t.get(*f)
+                            .and_then(|v| v.as_str())
+                            .map(|id| excluded.contains(id))
+                            .unwrap_or(false)
+                    })
+                })
+            })
+            .unwrap_or(false)
     }
 
     fn transaction_involves_account(
@@ -2578,7 +2621,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Build a set of parent categories for filtering
@@ -2960,7 +3003,7 @@ impl FireflyClient {
         }
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None, None)
             .await?;
 
         let flow_type_label = match &flow_type {
@@ -3295,11 +3338,20 @@ impl FireflyClient {
     /// to load (budgets, net worth, previous-month comparison) degrade
     /// gracefully: the affected fields are left empty and the problem is
     /// reported in `warnings`, so the page can still show what loaded.
+    ///
+    /// `account_ids` restricts the summary to the given accounts;
+    /// `excluded_account_ids` drops every transaction that touches one of
+    /// the listed accounts (on either side). When both are given, the
+    /// exclusions win. The filter applies to everything derived from
+    /// transactions (totals, categories, daily series, trend, top
+    /// expenses); budgets and net worth are whole-of-household metrics and
+    /// are not affected.
     pub async fn get_month_summary(
         &self,
         year: i32,
         month: u32,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Result<MonthSummary, String> {
         let (month_start, month_end, days_in_month) = month_range(year, month)?;
@@ -3337,6 +3389,7 @@ impl FireflyClient {
                 Some(end.clone()),
                 Some("1D".to_string()),
                 account_ids.clone(),
+                excluded_account_ids.clone(),
                 exclusions,
             ),
             self.get_earned_spent(
@@ -3344,6 +3397,7 @@ impl FireflyClient {
                 Some(prev_end_s),
                 Some("1M".to_string()),
                 account_ids.clone(),
+                excluded_account_ids.clone(),
                 exclusions,
             ),
             self.get_budgets(None, None),
@@ -3354,7 +3408,13 @@ impl FireflyClient {
                 Some(end.clone()),
                 Some("1D".to_string()),
             ),
-            self.fetch_all_transactions(&start, &end, account_ids.as_ref(), None),
+            self.fetch_all_transactions(
+                &start,
+                &end,
+                account_ids.as_ref(),
+                None,
+                excluded_account_ids.as_deref(),
+            ),
             self.get_accounts(None),
             self.get_earned_spent(
                 Some(trend_start_s),
@@ -3367,6 +3427,7 @@ impl FireflyClient {
                 Some(fmt(&month_end)),
                 Some("1M".to_string()),
                 account_ids.clone(),
+                excluded_account_ids.clone(),
                 exclusions,
             ),
         );

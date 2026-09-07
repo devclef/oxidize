@@ -38,13 +38,52 @@
             <h1>Monthly Summary</h1>
             <p class="page-subtitle">Your money at a glance: cash flow, budgets, categories and the biggest expenses for the month.</p>
         </div>
-        <div class="month-nav" role="group" aria-label="Select month">
-            <button id="prev-month" class="ghost-btn month-nav-btn" title="Previous month" aria-label="Previous month">&#8249;</button>
-            <input type="month" id="month-picker" aria-label="Select month">
-            <button id="next-month" class="ghost-btn month-nav-btn" title="Next month" aria-label="Next month">&#8250;</button>
-            <button id="this-month" class="ghost-btn">This month</button>
+        <div class="page-header-actions">
+            <button id="account-filter-toggle" class="ghost-btn"
+                    title="Choose which accounts the summary counts"
+                    aria-expanded="false" aria-controls="account-filter-panel">
+                Accounts <span id="account-filter-badge" class="filter-badge" style="display: none;"></span>
+            </button>
+            <div class="month-nav" role="group" aria-label="Select month">
+                <button id="prev-month" class="ghost-btn month-nav-btn" title="Previous month" aria-label="Previous month">&#8249;</button>
+                <input type="month" id="month-picker" aria-label="Select month">
+                <button id="next-month" class="ghost-btn month-nav-btn" title="Next month" aria-label="Next month">&#8250;</button>
+                <button id="this-month" class="ghost-btn">This month</button>
+            </div>
         </div>
     </header>
+
+    <section class="panel account-filter-panel" id="account-filter-panel" style="display: none;" aria-label="Account filter">
+        <div class="panel-head">
+            <h3>Accounts</h3>
+            <div class="account-filter-actions">
+                <button id="account-filter-select-all" class="ghost-btn">Select all</button>
+                <button id="account-filter-clear" class="ghost-btn">Clear</button>
+            </div>
+        </div>
+        <p class="account-filter-hint">
+            Pick which accounts the summary counts: income, spending, categories,
+            top expenses and the charts all follow this filter. Budgets and net
+            worth always cover every account.
+        </p>
+        <div class="account-filter-grid">
+            <label class="account-filter-field">Show
+                <select id="account-filter-mode">
+                    <option value="all">All accounts</option>
+                    <option value="include">Only selected accounts</option>
+                    <option value="exclude">All except selected</option>
+                </select>
+            </label>
+            <label class="account-filter-field">Accounts
+                <select multiple size="8" id="account-filter-accounts" class="exclusion-select"></select>
+            </label>
+        </div>
+        <div class="account-filter-actions account-filter-actions-bottom">
+            <span id="account-filter-count" class="muted"></span>
+            <button id="account-filter-reset" class="ghost-btn">Reset</button>
+            <button id="account-filter-apply" class="btn btn-primary">Apply</button>
+        </div>
+    </section>
 
     <div id="summary-error" class="error" style="display: none;" role="alert"></div>
     <div id="summary-warnings" class="warning-banner" style="display: none;"></div>
@@ -103,6 +142,8 @@
         var dailyChart = null;
         var trendChart = null;
         var allCategoriesShown = false;
+        var accountFilter = { mode: 'all', ids: [] };
+        var accountList = [];
 
         function state() {
             return { year: null, month: null };
@@ -237,6 +278,9 @@
                 parts.push('Completed month');
             }
             if (d.currency.code) parts.push(d.currency.code);
+            var filterText = MonthSummary.describeAccountFilter(
+                accountFilter.mode, accountFilter.ids.length);
+            if (filterText) parts.push(filterText);
             if (d.warnings && d.warnings.length) {
                 var banner = document.getElementById('summary-warnings');
                 banner.innerHTML = '<strong>Some sections could not be loaded:</strong> ' +
@@ -562,6 +606,10 @@
 
             try {
                 var url = '/api/summary/month?year=' + view.year + '&month=' + view.month;
+                MonthSummary.buildAccountFilterParams(accountFilter.mode, accountFilter.ids)
+                    .forEach(function (pair) {
+                        url += '&' + pair[0] + '=' + encodeURIComponent(pair[1]);
+                    });
                 var res = await fetch(url);
                 var body = await res.json().catch(function () { return null; });
                 if (!res.ok) {
@@ -590,11 +638,135 @@
             loadSummary();
         }
 
+        // ── Account filter ───────────────────────────────────────────────
+
+        function loadStoredAccountFilter() {
+            var raw = null;
+            try {
+                raw = localStorage.getItem(MonthSummary.ACCOUNT_FILTER_KEY);
+            } catch (e) { /* private mode etc. */ }
+            accountFilter = MonthSummary.parseAccountFilter(raw);
+        }
+
+        function saveAccountFilter() {
+            try {
+                localStorage.setItem(MonthSummary.ACCOUNT_FILTER_KEY, JSON.stringify(accountFilter));
+            } catch (e) { /* non-fatal: filter just won't persist */ }
+        }
+
+        function loadAccounts() {
+            return fetch('/api/accounts')
+                .then(function (res) { return res.ok ? res.json() : []; })
+                .catch(function () { return []; })
+                .then(function (accounts) {
+                    accountList = Array.isArray(accounts) ? accounts : [];
+                    return accountList;
+                });
+        }
+
+        function selectedAccountIds() {
+            var sel = document.getElementById('account-filter-accounts');
+            return Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; });
+        }
+
+        function updateAccountFilterBadge() {
+            var text = MonthSummary.describeAccountFilter(accountFilter.mode, accountFilter.ids.length);
+            document.getElementById('account-filter-badge').textContent = text;
+            document.getElementById('account-filter-badge').style.display = text ? 'inline-block' : 'none';
+            document.getElementById('account-filter-toggle').classList.toggle('active', !!text);
+        }
+
+        function updateAccountFilterCount() {
+            var n = selectedAccountIds().length;
+            document.getElementById('account-filter-count').textContent =
+                n ? n + ' selected' : 'none selected';
+        }
+
+        function renderAccountFilter() {
+            var sel = document.getElementById('account-filter-accounts');
+            var groups = {};
+            accountList.forEach(function (a) {
+                var t = String(a.account_type || 'other').toLowerCase();
+                (groups[t] = groups[t] || []).push(a);
+            });
+            var order = ['asset', 'cash', 'liability', 'liabilities', 'expense', 'revenue'];
+            var rest = Object.keys(groups).filter(function (t) { return order.indexOf(t) === -1; });
+            var labels = {
+                asset: 'Assets', cash: 'Cash', liability: 'Liabilities',
+                liabilities: 'Liabilities', expense: 'Expenses', revenue: 'Income'
+            };
+            var selected = {};
+            accountFilter.ids.forEach(function (id) { selected[id] = true; });
+            var html = order.concat(rest).filter(function (t) { return groups[t]; }).map(function (t) {
+                var opts = groups[t]
+                    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); })
+                    .map(function (a) {
+                        return '<option value="' + MonthSummary.escapeHtml(a.id) + '"' +
+                            (selected[a.id] ? ' selected' : '') + '>' +
+                            MonthSummary.escapeHtml(a.name) + '</option>';
+                    }).join('');
+                return '<optgroup label="' + MonthSummary.escapeHtml(labels[t] || t) + '">' + opts + '</optgroup>';
+            }).join('');
+            sel.innerHTML = html || '<option value="" disabled>No accounts found</option>';
+            document.getElementById('account-filter-mode').value = accountFilter.mode;
+            updateAccountFilterBadge();
+            updateAccountFilterCount();
+        }
+
+        function wireAccountFilterEvents() {
+            var btn = document.getElementById('account-filter-toggle');
+            var panel = document.getElementById('account-filter-panel');
+            btn.addEventListener('click', function () {
+                var open = panel.style.display === 'block';
+                panel.style.display = open ? 'none' : 'block';
+                btn.setAttribute('aria-expanded', String(!open));
+            });
+            document.getElementById('account-filter-mode')
+                .addEventListener('change', updateAccountFilterCount);
+            document.getElementById('account-filter-accounts')
+                .addEventListener('change', updateAccountFilterCount);
+            document.getElementById('account-filter-select-all').addEventListener('click', function () {
+                Array.prototype.forEach.call(
+                    document.getElementById('account-filter-accounts').options,
+                    function (o) { o.selected = true; });
+                updateAccountFilterCount();
+            });
+            document.getElementById('account-filter-clear').addEventListener('click', function () {
+                Array.prototype.forEach.call(
+                    document.getElementById('account-filter-accounts').options,
+                    function (o) { o.selected = false; });
+                updateAccountFilterCount();
+            });
+            document.getElementById('account-filter-reset').addEventListener('click', function () {
+                accountFilter = { mode: 'all', ids: [] };
+                saveAccountFilter();
+                renderAccountFilter();
+                loadSummary();
+            });
+            document.getElementById('account-filter-apply').addEventListener('click', function () {
+                var mode = document.getElementById('account-filter-mode').value;
+                var ids = selectedAccountIds();
+                accountFilter = (mode !== 'all' && ids.length > 0)
+                    ? { mode: mode, ids: ids }
+                    : { mode: 'all', ids: [] };
+                saveAccountFilter();
+                renderAccountFilter();
+                loadSummary();
+            });
+        }
+
         function init() {
             var cur = MonthSummary.currentYearMonth();
             view.year = cur.year;
             view.month = cur.month;
             updateMonthNav();
+
+            loadStoredAccountFilter();
+            wireAccountFilterEvents();
+            loadAccounts().then(function () {
+                renderAccountFilter();
+                loadSummary();
+            });
 
             document.getElementById('prev-month').addEventListener('click', function () {
                 var m = MonthSummary.shiftMonth(view.year, view.month, -1);
@@ -625,8 +797,6 @@
                     renderTrendChart(summaryData);
                 }
             });
-
-            loadSummary();
         }
 
         document.addEventListener('DOMContentLoaded', function () {

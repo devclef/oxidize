@@ -12,6 +12,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Pie Charts** - optional pie chart view for widget data
 - **Dashboard** - custom multi-widget dashboards with per-chart settings
 - **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
+- **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Account Groups** - named collections of accounts for reuse across widgets
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load

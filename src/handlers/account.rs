@@ -138,7 +138,7 @@ pub async fn get_earned_spent(
     }
 
     match client
-        .get_earned_spent(start, end, period, Some(account_ids), &exclusions)
+        .get_earned_spent(start, end, period, Some(account_ids), None, &exclusions)
         .await
     {
         Ok(history) => HttpResponse::Ok().json(history),
@@ -187,7 +187,14 @@ pub async fn get_earned_spent_since(
     };
 
     match client
-        .get_earned_spent(Some(since), end, period, Some(account_ids), &exclusions)
+        .get_earned_spent(
+            Some(since),
+            end,
+            period,
+            Some(account_ids),
+            None,
+            &exclusions,
+        )
         .await
     {
         Ok(history) => HttpResponse::Ok().json(history),

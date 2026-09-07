@@ -34,7 +34,9 @@ pub async fn summary_page(config: web::Data<Config>) -> HttpResponse {
 ///
 /// Query params:
 ///   year (optional, defaults to current), month (1-12, optional, defaults to
-///   current), accounts[] (optional account filter), exclude_categories[],
+///   current), accounts[] (optional: only these accounts),
+///   exclude_accounts[] (optional: drop transactions touching these
+///   accounts; wins over accounts[] on overlap), exclude_categories[],
 ///   exclude_budgets[] (same semantics as the chart endpoints).
 ///
 /// Future months are rejected with 400; upstream failures with 500
@@ -53,6 +55,7 @@ pub async fn get_month_summary_api(
     let mut year = now.year();
     let mut month = now.month();
     let mut account_ids: Vec<String> = Vec::new();
+    let mut excluded_account_ids: Vec<String> = Vec::new();
 
     for (k, v) in &params {
         match k.as_str() {
@@ -67,6 +70,7 @@ pub async fn get_month_summary_api(
                 }
             }
             "accounts[]" | "accounts" => account_ids.push(v.clone()),
+            "exclude_accounts[]" | "exclude_accounts" => excluded_account_ids.push(v.clone()),
             _ => {}
         }
     }
@@ -76,9 +80,14 @@ pub async fn get_month_summary_api(
     } else {
         Some(account_ids)
     };
+    let excl_ids = if excluded_account_ids.is_empty() {
+        None
+    } else {
+        Some(excluded_account_ids)
+    };
 
     match client
-        .get_month_summary(year, month, ids, &exclusions)
+        .get_month_summary(year, month, ids, excl_ids, &exclusions)
         .await
     {
         Ok(summary) => HttpResponse::Ok().json(summary),

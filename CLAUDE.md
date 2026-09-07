@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI assista
 
 ## Project Overview
 
-Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across five pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), and Sankey Flow (`/sankey`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
+Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across six pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), and Monthly Summary (`/summary`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
 
 ## Commands
 
@@ -103,6 +103,7 @@ src/
 │   ├── dashboard_api.rs     # CRUD for /api/dashboards
 │   ├── index.rs             # GET / (serves index.html with injected config), /api/manifest, favicon
 │   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
+│   ├── summary.rs           # GET /summary page + GET /api/summary/month
 │   ├── group.rs             # CRUD for account groups
 │   └── widget.rs            # CRUD for dashboard widgets
 ├── models/
@@ -115,6 +116,7 @@ src/
 │   ├── exclusions.rs # Exclusions (categories/budgets dropped from aggregation)
 │   ├── group.rs     # Group (id, name, account_ids)
 │   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
+│   ├── summary.rs   # MonthSummary response types + pure month/budget helpers
 │   └── widget.rs    # Widget, ChartOptions (with custom null-safe deserializer)
 └── storage/
     └── mod.rs        # SQLite CRUD for widgets and groups
@@ -125,6 +127,8 @@ static/               # Frontend assets (served at /static/)
 ├── avg-cost.html          # Average Cost per Budget page (inline page script)
 ├── budget-comparison.html # Budget Comparison page (inline page script)
 ├── sankey.html            # Sankey Flow page (inline page script)
+├── summary.html           # Monthly Summary page (inline page script; account include/exclude filter)
+├── summary-utils.js       # Pure helpers for the Monthly Summary page (month math, account filter)
 ├── app.js                 # Graph Builder page JS logic
 ├── dashboard.js           # Dashboard page JS logic
 ├── date-utils.js          # Shared date utility functions
@@ -133,6 +137,8 @@ static/               # Frontend assets (served at /static/)
 ├── style.css              # Shared styles with CSS variables for theming
 ├── app.test.js            # Vitest tests for app.js
 ├── dashboard.test.js      # Vitest tests for dashboard.js
+├── summary-utils.test.js  # Vitest tests for summary-utils.js
+├── summary-accounts.test.js # Vitest tests for the summary page account filter
 ├── ui.test.js             # Vitest tests for ui.js
 ├── icons/                 # PWA/favicon icons (192 + 512)
 ├── manifest.json          # PWA manifest
@@ -183,7 +189,7 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 |--------|-------------|
 | `get_accounts(type_filter)` | Fetches accounts from Firefly III, maps to `SimpleAccount` |
 | `get_balance_history(account_ids, start, end, period)` | Fetches balance chart data, aggregates multiple datasets into one line, anchors to current balance |
-| `get_earned_spent(start, end, period, account_ids, exclusions)` | Fetches transactions and aggregates into earned/spent chart lines by period (drops journals matching `exclusions`) |
+| `get_earned_spent(start, end, period, account_ids, excluded_account_ids, exclusions)` | Fetches transactions and aggregates into earned/spent chart lines by period (drops journals matching `exclusions` and any transaction touching an account in `excluded_account_ids`) |
 | `get_expenses_by_category(start, end, account_ids, graph_mode, exclusions)` | Fetches transactions and groups expenses by category (drops journals matching `exclusions`) |
 | `get_net_worth(start, end, period)` | Calculates net worth (assets minus liabilities) over time |
 | `get_budgets()` | Lists budgets from Firefly III |
@@ -201,7 +207,7 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 | Method | Description |
 |--------|-------------|
 | `chunk_date_range(start, end)` | Splits date ranges into 90-day chunks for the Firefly III API |
-| `fetch_all_transactions(start, end, account_ids)` | Paginates through all transaction pages with date chunking |
+| `fetch_all_transactions(start, end, account_ids, type_filter, excluded_account_ids)` | Paginates through all transaction pages with date chunking; filters to transactions involving `account_ids` and drops any touching `excluded_account_ids` |
 | `transaction_involves_account(tx, account_ids)` | Checks if a transaction involves any of the specified accounts |
 | `aggregate_transactions_by_period(earned, spent, period, start, end)` | Groups transactions into period buckets (1D, 1W, 1M, 3M) |
 | `generate_period_keys(start, end, period)` | Generates all period labels between two dates |
@@ -366,6 +372,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/avg-cost` | Average Cost per Budget page (with injected config) |
 | `GET` | `/budget-comparison` | Budget Comparison page (with injected config) |
 | `GET` | `/sankey` | Sankey Flow page (with injected config) |
+| `GET` | `/summary` | Monthly Summary page (with injected config) |
 
 ### Account Data (proxied from Firefly III)
 | Method | Path | Query Params | Description |
@@ -386,6 +393,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/api/categories/list` | — | Top-level categories with subcategories |
 | `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spending by subcategory |
 | `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]`, `exclude_categories[]`, `exclude_budgets[]` | Sankey flow data |
+| `GET` | `/api/summary/month` | `year`, `month`, `accounts[]` (only these), `exclude_accounts[]` (drop transactions touching these), `exclude_categories[]`, `exclude_budgets[]` | Monthly Summary data (totals, budgets, categories, daily series, 12-month trend, top expenses); future months -> 400 |
 
 ### Cache Management
 | Method | Path | Description |

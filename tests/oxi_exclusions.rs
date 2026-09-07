@@ -121,6 +121,7 @@ mod tests {
                 Some("2026-01-31".into()),
                 Some("1M".into()),
                 Some(vec!["1".into()]),
+                None,
                 &Exclusions::default(),
             )
             .await
@@ -136,6 +137,7 @@ mod tests {
                 Some("2026-01-31".into()),
                 Some("1M".into()),
                 Some(vec!["1".into()]),
+                None,
                 &excl,
             )
             .await
@@ -163,6 +165,7 @@ mod tests {
                 Some("2026-01-31".into()),
                 Some("1M".into()),
                 Some(vec!["1".into()]),
+                None,
                 &excl,
             )
             .await
@@ -178,6 +181,7 @@ mod tests {
                 Some("2026-01-31".into()),
                 Some("1M".into()),
                 Some(vec!["1".into()]),
+                None,
                 &excl_other,
             )
             .await
@@ -201,6 +205,7 @@ mod tests {
                 Some("2026-01-31".into()),
                 Some("1M".into()),
                 Some(vec!["1".into()]),
+                None,
                 &excl,
             )
             .await
@@ -362,6 +367,7 @@ mod tests {
             None,
             Some("1M"),
             Some(&["1".to_string()]),
+            None,
             &Exclusions::default(),
         );
         let excluded = oxidize::cache::DataCache::earned_spent_key_for_test(
@@ -369,11 +375,62 @@ mod tests {
             None,
             Some("1M"),
             Some(&["1".to_string()]),
+            None,
             &Exclusions::new(vec!["Work Expenses".into()], vec![]),
         );
         assert_ne!(plain, excluded);
         // Default exclusions produce the same key format as before (no suffix)
         assert!(!plain.contains("c="));
         assert!(excluded.contains("c=Work Expenses"));
+    }
+
+    /// Cache keys must also differ when different account sets are
+    /// excluded (same for the include-only vs exclude variants).
+    #[test]
+    fn test_cache_keys_differ_with_excluded_accounts() {
+        let none = oxidize::cache::DataCache::earned_spent_key_for_test(
+            None,
+            None,
+            Some("1M"),
+            None,
+            None,
+            &Exclusions::default(),
+        );
+        let excluded_a = oxidize::cache::DataCache::earned_spent_key_for_test(
+            None,
+            None,
+            Some("1M"),
+            None,
+            Some(&["1".to_string()]),
+            &Exclusions::default(),
+        );
+        let excluded_b = oxidize::cache::DataCache::earned_spent_key_for_test(
+            None,
+            None,
+            Some("1M"),
+            None,
+            Some(&["2".to_string()]),
+            &Exclusions::default(),
+        );
+        assert_ne!(none, excluded_a);
+        assert_ne!(excluded_a, excluded_b);
+        // Order of excluded ids must not matter for the key
+        let excluded_rev = oxidize::cache::DataCache::earned_spent_key_for_test(
+            None,
+            None,
+            Some("1M"),
+            None,
+            Some(&["3".to_string(), "1".to_string()]),
+            &Exclusions::default(),
+        );
+        let excluded_rev2 = oxidize::cache::DataCache::earned_spent_key_for_test(
+            None,
+            None,
+            Some("1M"),
+            None,
+            Some(&["1".to_string(), "3".to_string()]),
+            &Exclusions::default(),
+        );
+        assert_eq!(excluded_rev, excluded_rev2);
     }
 }

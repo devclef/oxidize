@@ -3157,6 +3157,82 @@ button:focus-visible,
     box-shadow: 0 0 0 3px var(--accent-light);
 }
 
+/* Account filter (Monthly Summary page) */
+.page-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+.ghost-btn.active {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: var(--accent-light);
+}
+.filter-badge {
+    display: inline-block;
+    margin-left: var(--space-1);
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    border-radius: 999px;
+    background: var(--accent-light);
+    color: var(--accent-color);
+}
+.account-filter-panel {
+    margin-bottom: var(--space-4);
+}
+.account-filter-hint {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0 0 var(--space-3);
+}
+.account-filter-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 280px) 1fr;
+    gap: var(--space-4);
+    align-items: start;
+}
+@media (max-width: 640px) {
+    .account-filter-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.account-filter-field {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+.account-filter-field select {
+    display: block;
+    margin-top: var(--space-1);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: inherit;
+}
+.account-filter-field select[multiple] {
+    min-width: 0;
+    padding: var(--space-1);
+}
+.account-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+.account-filter-actions-bottom {
+    margin-top: var(--space-3);
+    justify-content: flex-end;
+}
+
 /* KPI cards */
 .kpi-grid {
     display: grid;

@@ -332,11 +332,24 @@ impl DataCache {
 
     // ── Earned / Spent ───────────────────────────────────────────────
 
+    fn excluded_accounts_key(excluded_account_ids: Option<&[String]>) -> String {
+        match excluded_account_ids {
+            Some(ids) if !ids.is_empty() => {
+                let mut sorted: Vec<&str> = ids.iter().map(String::as_str).collect();
+                sorted.sort();
+                sorted.dedup();
+                sorted.join(",")
+            }
+            _ => String::new(),
+        }
+    }
+
     fn earned_spent_key(
         start_date: Option<&str>,
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        excluded_account_ids: Option<&[String]>,
         exclusions: &Exclusions,
     ) -> String {
         let start = start_date.unwrap_or("default");
@@ -347,12 +360,13 @@ impl DataCache {
             None => "all".to_string(),
         };
         format!(
-            "v{}:earned_spent:{}:{}:{}:{}:{}",
+            "v{}:earned_spent:{}:{}:{}:{}:{}:{}",
             CACHE_VERSION,
             start,
             end,
             period,
             accounts,
+            Self::excluded_accounts_key(excluded_account_ids),
             exclusions.cache_key()
         )
     }
@@ -363,6 +377,7 @@ impl DataCache {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Option<String> {
         let key = Self::earned_spent_key(
@@ -370,17 +385,20 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            excluded_account_ids.as_deref(),
             exclusions,
         );
         Self::get_tiered(&self.earned_spent, &key)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_earned_spent(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
         data: String,
     ) {
@@ -389,6 +407,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
             account_ids.as_deref(),
+            excluded_account_ids.as_deref(),
             exclusions,
         );
         Self::set_tiered(&self.earned_spent, &key, &data, self.ttl_seconds);
@@ -893,9 +912,17 @@ impl DataCache {
         end_date: Option<&str>,
         period: Option<&str>,
         account_ids: Option<&[String]>,
+        excluded_account_ids: Option<&[String]>,
         exclusions: &Exclusions,
     ) -> String {
-        Self::earned_spent_key(start_date, end_date, period, account_ids, exclusions)
+        Self::earned_spent_key(
+            start_date,
+            end_date,
+            period,
+            account_ids,
+            excluded_account_ids,
+            exclusions,
+        )
     }
 
     pub fn clear_sankey_flow(&self) {

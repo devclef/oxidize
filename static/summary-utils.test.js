@@ -123,3 +123,85 @@ describe('escapeHtml', () => {
         expect(window.MonthSummary.escapeHtml(42)).toBe('42');
     });
 });
+
+describe('account filter helpers', () => {
+    it('exposes a stable storage key', () => {
+        expect(typeof window.MonthSummary.ACCOUNT_FILTER_KEY).toBe('string');
+        expect(window.MonthSummary.ACCOUNT_FILTER_KEY.length).toBeGreaterThan(0);
+    });
+
+    it('builds include params from account ids', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'include',
+            ['1', '2', '3']
+        );
+        expect(pairs).toEqual([
+            ['accounts[]', '1'],
+            ['accounts[]', '2'],
+            ['accounts[]', '3'],
+        ]);
+    });
+
+    it('builds exclude params from account ids', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'exclude',
+            ['7']
+        );
+        expect(pairs).toEqual([['exclude_accounts[]', '7']]);
+    });
+
+    it('returns no params for all-accounts mode', () => {
+        expect(window.MonthSummary.buildAccountFilterParams('all', ['1', '2'])).toEqual([]);
+    });
+
+    it('returns no params when the selection is empty', () => {
+        expect(window.MonthSummary.buildAccountFilterParams('include', [])).toEqual([]);
+        expect(window.MonthSummary.buildAccountFilterParams('exclude', [])).toEqual([]);
+    });
+
+    it('normalizes ids to trimmed, de-duplicated strings', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'exclude',
+            [' 1 ', '1', 2, '', null, '3']
+        );
+        expect(pairs).toEqual([
+            ['exclude_accounts[]', '1'],
+            ['exclude_accounts[]', '2'],
+            ['exclude_accounts[]', '3'],
+        ]);
+    });
+
+    it('parses a stored filter object', () => {
+        const parsed = window.MonthSummary.parseAccountFilter(
+            { mode: 'exclude', ids: ['1', '2'] }
+        );
+        expect(parsed).toEqual({ mode: 'exclude', ids: ['1', '2'] });
+    });
+
+    it('falls back to all-accounts for missing or invalid stored data', () => {
+        const fallback = { mode: 'all', ids: [] };
+        expect(window.MonthSummary.parseAccountFilter(null)).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter(undefined)).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter('nonsense')).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({})).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'bogus', ids: ['1'] })).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'include', ids: 'nope' })).toEqual(fallback);
+    });
+
+    it('coerces an include/exclude mode with no ids to all-accounts', () => {
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'include', ids: [] })).toEqual(
+            { mode: 'all', ids: [] }
+        );
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'exclude', ids: [] })).toEqual(
+            { mode: 'all', ids: [] }
+        );
+    });
+
+    it('describes the active filter for display', () => {
+        expect(window.MonthSummary.describeAccountFilter('all')).toBe('');
+        expect(window.MonthSummary.describeAccountFilter('include', 3)).toBe('3 accounts included');
+        expect(window.MonthSummary.describeAccountFilter('include', 1)).toBe('1 account included');
+        expect(window.MonthSummary.describeAccountFilter('exclude', 2)).toBe('2 accounts excluded');
+        expect(window.MonthSummary.describeAccountFilter('exclude', 1)).toBe('1 account excluded');
+    });
+});
