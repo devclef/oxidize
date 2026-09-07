@@ -1,15 +1,15 @@
 use crate::cache::DataCache;
 use crate::config::Config;
+use crate::models::summary::{
+    budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
+    MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
+    MonthTotals, MonthTrend,
+};
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
     CategoryListResponse, ChartDataSet, ChartLine, Exclusions, ParentCategory, SankeyFlowData,
     SankeyFlowType, SankeyLink, SimpleAccount,
-};
-use crate::models::summary::{
-    budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
-    MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
-    MonthTotals, MonthTrend,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -1346,10 +1346,16 @@ impl FireflyClient {
             }
         }
 
+        // Firefly III reports liability (debt) account balances as
+        // NEGATIVE values (a $2,000 credit card debt has balance -2000),
+        // so net worth is the plain sum of the asset and liability
+        // balances — the same summation Firefly III itself uses for its
+        // net worth (assets plus negative debt). "Owed to you" liability
+        // accounts have positive balances and are added as assets are.
         for dataset in &liability_data {
             for (date, amount) in parse_chart_entries(&dataset.entries) {
                 let date_part = date.split('T').next().unwrap_or(&date).to_string();
-                *net_worth_entries.entry(date_part).or_insert(0.0) -= amount;
+                *net_worth_entries.entry(date_part).or_insert(0.0) += amount;
             }
         }
 
@@ -1836,12 +1842,14 @@ impl FireflyClient {
             .clone()
             .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
-        if let Some(cached) =
-            self.cache
-                .get_budget_limits(Some(start.clone()), Some(end.clone()))
+        if let Some(cached) = self
+            .cache
+            .get_budget_limits(Some(start.clone()), Some(end.clone()))
         {
             debug!("Cache hit for bulk budget limits");
             return serde_json::from_str(&cached)
@@ -1876,10 +1884,9 @@ impl FireflyClient {
         // Firefly III returns a HAL+JSON envelope {data: [...]} (v6); older
         // versions return a bare array.
         let limits: Vec<BulkBudgetLimit> = match &value {
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .filter_map(BulkBudgetLimit::from_value)
-                .collect(),
+            serde_json::Value::Array(arr) => {
+                arr.iter().filter_map(BulkBudgetLimit::from_value).collect()
+            }
             _ => value
                 .get("data")
                 .and_then(|d| d.as_array())
@@ -1892,7 +1899,12 @@ impl FireflyClient {
                 .set_budget_limits(Some(start.clone()), Some(end.clone()), json);
         }
 
-        debug!("bulk budget limits: {} limits for {} to {}", limits.len(), start, end);
+        debug!(
+            "bulk budget limits: {} limits for {} to {}",
+            limits.len(),
+            start,
+            end
+        );
         Ok(limits)
     }
 
@@ -3277,7 +3289,7 @@ impl FireflyClient {
     /// transaction set with the same account/exclusion filters, so they
     /// always agree with each other. Budget figures come from Firefly III's
     /// own budget endpoints; net worth from the account overview chart
-    /// (assets minus liabilities).
+    /// (asset balances plus liability balances, where debt balances are negative).
     ///
     /// `month` is 1-12; future months are rejected. Sub-sections that fail
     /// to load (budgets, net worth, previous-month comparison) degrade
@@ -3297,7 +3309,11 @@ impl FireflyClient {
         }
         let is_current = today.year() == year && today.month() == month;
         let effective_end = if is_current { today } else { month_end };
-        let days_elapsed: u32 = if is_current { today.day() } else { days_in_month };
+        let days_elapsed: u32 = if is_current {
+            today.day()
+        } else {
+            days_in_month
+        };
 
         let fmt = |d: &NaiveDate| d.format("%Y-%m-%d").to_string();
         let start = fmt(&month_start);
@@ -3315,55 +3331,51 @@ impl FireflyClient {
         let trend_start_s = fmt(&trend_start);
 
         // Fetch all underlying data in parallel.
-        let (daily_r, prev_r, budgets_r, spent_r, limits_r, nw_r, txs_r, accts_r, trend_r) =
-            tokio::join!(
-                self.get_earned_spent(
-                    Some(start.clone()),
-                    Some(end.clone()),
-                    Some("1D".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-                self.get_earned_spent(
-                    Some(prev_start_s),
-                    Some(prev_end_s),
-                    Some("1M".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-                self.get_budgets(None, None),
-                self.get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions),
-                self.get_budget_limits(Some(start.clone()), Some(end.clone())),
-                self.get_net_worth(
-                    Some(start.clone()),
-                    Some(end.clone()),
-                    Some("1D".to_string()),
-                ),
-                self.fetch_all_transactions(&start, &end, account_ids.as_ref(), None),
-                self.get_accounts(None),
-                self.get_earned_spent(
-                    Some(trend_start_s),
-                    // Use the full calendar month end (not `effective_end`):
-                    // with a mid-month end, period-key generation drops the
-                    // final partial bucket and its data would be folded into
-                    // the previous month. The API only ever returns
-                    // transactions up to today, so the partial-month bucket
-                    // stays accurate.
-                    Some(fmt(&month_end)),
-                    Some("1M".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-            );
+        let (daily_r, prev_r, budgets_r, spent_r, limits_r, nw_r, txs_r, accts_r, trend_r) = tokio::join!(
+            self.get_earned_spent(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1D".to_string()),
+                account_ids.clone(),
+                exclusions,
+            ),
+            self.get_earned_spent(
+                Some(prev_start_s),
+                Some(prev_end_s),
+                Some("1M".to_string()),
+                account_ids.clone(),
+                exclusions,
+            ),
+            self.get_budgets(None, None),
+            self.get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions),
+            self.get_budget_limits(Some(start.clone()), Some(end.clone())),
+            self.get_net_worth(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1D".to_string()),
+            ),
+            self.fetch_all_transactions(&start, &end, account_ids.as_ref(), None),
+            self.get_accounts(None),
+            self.get_earned_spent(
+                Some(trend_start_s),
+                // Use the full calendar month end (not `effective_end`):
+                // with a mid-month end, period-key generation drops the
+                // final partial bucket and its data would be folded into
+                // the previous month. The API only ever returns
+                // transactions up to today, so the partial-month bucket
+                // stays accurate.
+                Some(fmt(&month_end)),
+                Some("1M".to_string()),
+                account_ids.clone(),
+                exclusions,
+            ),
+        );
 
         // Core transaction data is required: without it there are no
         // meaningful financials to show at all.
-        let daily = daily_r
-            .map_err(|e| format!("Failed to load monthly cash flow: {}", e))?;
-        let trend = trend_r
-            .map_err(|e| format!("Failed to load 12-month trend: {}", e))?;
-        let txs = txs_r
-            .map_err(|e| format!("Failed to load transactions: {}", e))?;
+        let daily = daily_r.map_err(|e| format!("Failed to load monthly cash flow: {}", e))?;
+        let trend = trend_r.map_err(|e| format!("Failed to load 12-month trend: {}", e))?;
+        let txs = txs_r.map_err(|e| format!("Failed to load transactions: {}", e))?;
 
         let mut warnings: Vec<String> = Vec::new();
 
@@ -3371,11 +3383,9 @@ impl FireflyClient {
         let (earned_series, spent_series) = Self::split_earned_spent_line(&daily);
         let earned_map: std::collections::HashMap<String, f64> =
             earned_series.into_iter().collect();
-        let spent_map: std::collections::HashMap<String, f64> =
-            spent_series.into_iter().collect();
+        let spent_map: std::collections::HashMap<String, f64> = spent_series.into_iter().collect();
 
-        let mut dates: std::collections::BTreeSet<String> =
-            earned_map.keys().cloned().collect();
+        let mut dates: std::collections::BTreeSet<String> = earned_map.keys().cloned().collect();
         dates.extend(spent_map.keys().cloned());
         let mut daily_dates = Vec::new();
         let mut daily_earned = Vec::new();
@@ -3427,8 +3437,7 @@ impl FireflyClient {
                 .and_then(|t| t.as_array())
             {
                 for j in arr {
-                    if !journal_counts_spent(j, &selected_ids)
-                        || journal_is_excluded(exclusions, j)
+                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
                     {
                         continue;
                     }
@@ -3607,8 +3616,7 @@ impl FireflyClient {
                 .and_then(|t| t.as_array())
             {
                 for j in arr {
-                    if !journal_counts_spent(j, &selected_ids)
-                        || journal_is_excluded(exclusions, j)
+                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
                     {
                         continue;
                     }
@@ -3648,7 +3656,11 @@ impl FireflyClient {
                 }
             }
         }
-        tops.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+        tops.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         tops.truncate(8);
 
         // ── 12-month trend ───────────────────────────────────────────────

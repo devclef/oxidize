@@ -1,9 +1,9 @@
 //! Monthly Summary page and API (see src/models/summary.rs).
 
-use chrono::Datelike;
 use crate::client::FireflyClient;
 use crate::config::Config;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
+use chrono::Datelike;
 
 /// GET /summary — the Monthly Summary page.
 #[get("/summary")]

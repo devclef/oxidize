@@ -220,9 +220,7 @@ impl BulkBudgetLimit {
         let start = get("start").and_then(|s| date_part(&s))?;
         let end = get("end").and_then(|s| date_part(&s)).unwrap_or_default();
         let budget_id = get("budget_id")?;
-        let amount = get("amount")?
-            .parse::<f64>()
-            .ok()?;
+        let amount = get("amount")?.parse::<f64>().ok()?;
 
         Some(Self {
             budget_id,
