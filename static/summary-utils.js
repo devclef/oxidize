@@ -13,6 +13,10 @@
  *    account filter (accounts[] include / exclude_accounts[] exclude)
  *  - MonthSummary.parseAccountFilter(stored)  normalize a persisted filter
  *  - MonthSummary.describeAccountFilter(mode, count)  badge text
+ *  - MonthSummary.groupAccounts(accounts)  accounts grouped by type, in
+ *    display order, with friendly labels
+ *  - MonthSummary.resolveFilterMode(mode, idCount)  derive the effective
+ *    filter mode from a selection (empty selection => 'all')
  *
  * Account filter: { mode: 'all' | 'include' | 'exclude', ids: string[] },
  * persisted under MonthSummary.ACCOUNT_FILTER_KEY in localStorage.
@@ -132,6 +136,60 @@
         return '';
     }
 
+    // Display order and labels for account type groups.
+    var ACCOUNT_TYPE_ORDER = ['asset', 'cash', 'liability', 'liabilities', 'expense', 'revenue'];
+    var ACCOUNT_TYPE_LABELS = {
+        asset: 'Assets',
+        cash: 'Cash',
+        liability: 'Liabilities',
+        liabilities: 'Liabilities',
+        expense: 'Expenses',
+        revenue: 'Income'
+    };
+
+    // Group accounts by type for the account filter list. Known types come
+    // first (in ACCOUNT_TYPE_ORDER), any unknown types follow alphabetically.
+    // Accounts inside a group are sorted by name (case-insensitive).
+    function groupAccounts(accounts) {
+        var groups = {};
+        var list = Array.isArray(accounts) ? accounts : [];
+        for (var i = 0; i < list.length; i++) {
+            var a = list[i] || {};
+            var t = String(a.account_type || 'other').toLowerCase();
+            if (!groups[t]) {
+                groups[t] = { key: t, label: ACCOUNT_TYPE_LABELS[t] || t, accounts: [] };
+            }
+            groups[t].accounts.push(a);
+        }
+        var keys = Object.keys(groups);
+        keys.sort(function (x, y) {
+            var xi = ACCOUNT_TYPE_ORDER.indexOf(x);
+            var yi = ACCOUNT_TYPE_ORDER.indexOf(y);
+            if (xi !== -1 && yi !== -1) return xi - yi;
+            if (xi !== -1) return -1;
+            if (yi !== -1) return 1;
+            return x < y ? -1 : x > y ? 1 : 0;
+        });
+        return keys.map(function (k) {
+            var g = groups[k];
+            g.accounts.sort(function (a, b) {
+                var an = String(a.name || '').toLowerCase();
+                var bn = String(b.name || '').toLowerCase();
+                return an < bn ? -1 : an > bn ? 1 : 0;
+            });
+            return g;
+        });
+    }
+
+    // Derive the effective filter mode from a selection: an empty selection
+    // always means "all accounts"; a selection from "all" mode becomes an
+    // include; an explicit exclude stays an exclude.
+    function resolveFilterMode(mode, idCount) {
+        var n = parseInt(idCount, 10);
+        if (!isFinite(n) || n <= 0) return 'all';
+        return mode === 'exclude' ? 'exclude' : 'include';
+    }
+
     // Escape text for safe interpolation into innerHTML.
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -155,6 +213,8 @@
         buildAccountFilterParams: buildAccountFilterParams,
         parseAccountFilter: parseAccountFilter,
         describeAccountFilter: describeAccountFilter,
+        groupAccounts: groupAccounts,
+        resolveFilterMode: resolveFilterMode,
         escapeHtml: escapeHtml
     };
 })();
