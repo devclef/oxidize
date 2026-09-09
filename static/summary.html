@@ -144,7 +144,11 @@
     </div>
 
     <script src="/static/ui.js"></script>
-    <script src="/static/summary-utils.js"></script>
+    <!-- ?v= must match MonthSummary.REVISION (summary-utils.js) and
+         REQUIRED_UTILS_REVISION below: a fresh URL on every deploy so a
+         browser/proxy cache entry for the OLD file can never be served to
+         the NEW page (see the version-skew guard in the inline script). -->
+    <script src="/static/summary-utils.js?v=13"></script>
     <script>
     (function () {
         'use strict';
@@ -988,11 +992,60 @@
             });
         }
 
+        // ── Boot with a stale-script guard ─────────────────────────────────
+        //
+        // The page HTML is always fetched fresh, but summary-utils.js is a
+        // separate, browser-cached file. Right after a deploy the fresh page
+        // can therefore meet a stale cached copy that lacks the helpers it
+        // calls (renderAccountFilter would throw, loadSummary would never
+        // run, and the page would sit on its spinner forever with no server
+        // error). The ?v= on the script tag above makes the primary fetch
+        // uncachable; this guard is the backstop for anything the tag cannot
+        // prevent (proxy caches, transient 404s during a rolling restart):
+        // if the loaded revision does not match, re-fetch a fresh copy
+        // (cache-busted URL), load it, and only then init.
+        var REQUIRED_UTILS_REVISION = 13;
+
+        function utilsAreCurrent() {
+            return !!(window.MonthSummary &&
+                window.MonthSummary.REVISION === REQUIRED_UTILS_REVISION);
+        }
+
+        function showStaleScriptError() {
+            var loading = document.getElementById('summary-loading');
+            if (loading) loading.style.display = 'none';
+            var err = document.getElementById('summary-error');
+            if (err) {
+                err.textContent = 'This page loaded an outdated copy of its ' +
+                    'scripts and cannot show your data. Hard-refresh to fix ' +
+                    'it (Ctrl+Shift+R, or Cmd+Shift+R on a Mac).';
+                err.style.display = 'block';
+            }
+        }
+
+        function boot() {
+            if (utilsAreCurrent()) {
+                init();
+                return;
+            }
+            fetch('/static/summary-utils.js?fresh=' + Date.now())
+                .then(function (res) { return res.ok ? res.text() : null; })
+                .then(function (code) {
+                    if (code == null) throw new Error('repair fetch failed');
+                    // The script is an IIFE that assigns window.MonthSummary;
+                    // indirect eval runs it in the global scope.
+                    (0, eval)(code);
+                    if (!utilsAreCurrent()) throw new Error('still stale');
+                    init();
+                })
+                .catch(function () { showStaleScriptError(); });
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/static/sw.js');
             }
-            init();
+            boot();
         });
     })();
     </script>

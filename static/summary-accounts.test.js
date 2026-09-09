@@ -100,6 +100,26 @@ describe('summary page account filter wiring', () => {
         expect(html).toContain('MonthSummary.groupAccounts(');
         expect(html).toContain('MonthSummary.resolveFilterMode(');
     });
+
+    it('loads summary-utils.js with a version query so a stale cache entry can never be served to a new page', () => {
+        expect(html).toMatch(/<script src="\/static\/summary-utils\.js\?v=\d+"><\/script>/);
+    });
+
+    it('keeps the script tag version, the page requirement, and the utils REVISION in lockstep', () => {
+        const tagVersion = Number(html.match(/summary-utils\.js\?v=(\d+)/)[1]);
+        const requiredVersion = Number(html.match(/REQUIRED_UTILS_REVISION\s*=\s*(\d+)/)[1]);
+        const sandbox = {};
+        new Function('window', utils)(sandbox); // utils IIFE assigns window.MonthSummary
+        expect(tagVersion).toBeGreaterThan(0);
+        expect(requiredVersion).toBe(tagVersion);
+        expect(Number(sandbox.MonthSummary.REVISION)).toBe(tagVersion);
+    });
+
+    it('precaches the same versioned summary-utils.js in the service worker', () => {
+        const swSource = readFileSync(path.resolve(root, 'static/sw.js'), 'utf8');
+        const tagVersion = html.match(/summary-utils\.js\?v=(\d+)/)[1];
+        expect(swSource).toContain(`/static/summary-utils.js?v=${tagVersion}`);
+    });
 });
 
 describe('summary page account filter helpers', () => {
@@ -141,15 +161,19 @@ describe('summary page account filter (functional)', () => {
      * A fresh JSDOM per test keeps listeners and state from one test from
      * leaking into the next.
      */
-    async function runPage({ filter, accounts, summary } = {}) {
+    // What the page's guard re-fetches when it detects a stale copy.
+    // Defaults to the real, current utils file (a fresh network copy).
+    async function runPage({ filter, accounts, summary, utilsSrc, repairUtils, repairOk = true } = {}) {
         const htmlSrc = readFileSync(path.resolve(root, 'static/summary.html'), 'utf8');
-        const utilsSrc = readFileSync(path.resolve(root, 'static/summary-utils.js'), 'utf8');
+        const currentUtilsSrc = readFileSync(path.resolve(root, 'static/summary-utils.js'), 'utf8');
 
         // The real page, with the external utils script inlined so jsdom
-        // executes it (external resources are not fetched).
+        // executes it (external resources are not fetched). The tag carries
+        // a ?v= on the real page; match it with a regex so the harness
+        // survives version bumps.
         const pageHtml = htmlSrc.replace(
-            '<script src="/static/summary-utils.js"></script>',
-            `<script>${utilsSrc}</script>`
+            /<script src="\/static\/summary-utils\.js(\?v=\d+)?"><\/script>/,
+            `<script>${utilsSrc === undefined ? currentUtilsSrc : utilsSrc}</script>`
         );
         const virtualConsole = new VirtualConsole(); // swallow jsdom noise
         const dom = new JSDOM(pageHtml, {
@@ -189,10 +213,21 @@ describe('summary page account filter (functional)', () => {
         const fetched = [];
         win.fetch = (url) => {
             fetched.push(String(url));
+            const u = String(url);
+            if (u.includes('/static/summary-utils.js')) {
+                // The version-skew guard's repair fetch (served as text).
+                return Promise.resolve({
+                    ok: repairOk,
+                    text: () => Promise.resolve(
+                        repairUtils === undefined ? currentUtilsSrc : repairUtils
+                    ),
+                    json: () => Promise.resolve({}),
+                });
+            }
             return Promise.resolve({
                 ok: true,
                 json: () => Promise.resolve(
-                    String(url).includes('/api/accounts') ? accountsBody : summaryBody
+                    u.includes('/api/accounts') ? accountsBody : summaryBody
                 ),
             });
         };
@@ -446,4 +481,67 @@ describe('summary page account filter (functional)', () => {
     function win_stored(doc) {
         return doc.defaultView.localStorage.getItem('oxidize_summary_account_filter');
     }
+
+    // Regression: right after a deploy the fresh page can meet a stale,
+    // browser-cached summary-utils.js that lacks the helpers the new page
+    // calls. renderAccountFilter threw, loadSummary never ran, and the page
+    // sat on its spinner forever with no server error. The page must now
+    // detect the mismatch, re-fetch a fresh copy of the utils file, and
+    // load normally (or at least stop the spinner with a clear message).
+    describe('stale summary-utils.js after deploy (version-skew regression)', () => {
+        // A pre-revision copy of the utils file: has the classic helpers but
+        // no REVISION and no groupAccounts/resolveFilterMode.
+        const staleUtilsSrc = [
+            'window.MonthSummary = {',
+            '    buildAccountFilterParams: function () { return []; },',
+            '    parseAccountFilter: function () { return { mode: "all", ids: [] }; },',
+            '    describeAccountFilter: function () { return ""; },',
+            "    ACCOUNT_FILTER_KEY: 'oxidize_summary_account_filter'",
+            '};',
+        ].join('\n');
+        const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+        const utilsFetches = (fetched) =>
+            fetched.filter((u) => u.includes('/static/summary-utils.js'));
+
+        it('boots straight into init when the utils file is current', async () => {
+            const { fetched } = await runPage();
+            expect(utilsFetches(fetched)).toHaveLength(0);
+            expect(summaryUrls(fetched)).toHaveLength(1);
+        });
+
+        it('re-fetches a fresh copy when a stale cached copy is loaded, then shows data', async () => {
+            const { fetched, doc } = await runPage({ utilsSrc: staleUtilsSrc });
+            await settle();
+            const repair = utilsFetches(fetched);
+            expect(repair).toHaveLength(1);
+            expect(repair[0]).toContain('?fresh=');
+            // The repair delivered the current file, so the page loaded as normal.
+            expect(summaryUrls(fetched)).toHaveLength(1);
+            expect(doc.getElementById('summary-loading').style.display).toBe('none');
+            expect(doc.getElementById('summary-content').style.display).toBe('block');
+            expect(doc.getElementById('summary-error').style.display).toBe('none');
+        });
+
+        it('stops the spinner and explains the fix when the repair fetch is still stale', async () => {
+            const { fetched, doc } = await runPage({ utilsSrc: staleUtilsSrc, repairUtils: staleUtilsSrc });
+            await settle();
+            expect(utilsFetches(fetched)).toHaveLength(1);
+            expect(summaryUrls(fetched)).toHaveLength(0);
+            expect(doc.getElementById('summary-loading').style.display).toBe('none');
+            const err = doc.getElementById('summary-error');
+            expect(err.style.display).toBe('block');
+            expect(err.textContent.toLowerCase()).toContain('hard-refresh');
+        });
+
+        it('stops the spinner and explains the fix when the repair fetch fails', async () => {
+            const { fetched, doc } = await runPage({ utilsSrc: staleUtilsSrc, repairOk: false });
+            await settle();
+            expect(utilsFetches(fetched)).toHaveLength(1);
+            expect(summaryUrls(fetched)).toHaveLength(0);
+            expect(doc.getElementById('summary-loading').style.display).toBe('none');
+            const err = doc.getElementById('summary-error');
+            expect(err.style.display).toBe('block');
+            expect(err.textContent.toLowerCase()).toContain('hard-refresh');
+        });
+    });
 });

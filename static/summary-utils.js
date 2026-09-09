@@ -9,6 +9,8 @@
  *  - MonthSummary.daysInMonth(y, m)   28-31
  *  - MonthSummary.pctDelta(cur, prev) (cur-prev)/prev*100, null when undefined
  *  - MonthSummary.isFuture(y, m)      true when strictly after the current month
+ *  - MonthSummary.REVISION            version of this file's API; summary.html
+ *    verifies it at load and self-heals a stale cached copy
  *  - MonthSummary.buildAccountFilterParams(mode, ids)  URL params for the
  *    account filter (accounts[] include / exclude_accounts[] exclude)
  *  - MonthSummary.parseAccountFilter(stored)  normalize a persisted filter
@@ -73,6 +75,15 @@
         var cur = currentYearMonth();
         return year > cur.year || (year === cur.year && month > cur.month);
     }
+
+    // Bump whenever the helpers this file exposes change in a way the page
+    // depends on. summary.html must carry the same number in two places
+    // (the ?v= on the script tag and REQUIRED_UTILS_REVISION) and verifies
+    // it at load time, re-fetching a fresh copy of this file when a stale,
+    // browser-cached copy slips in right after a deploy (see the
+    // version-skew guard in summary.html). A CI test keeps the three in
+    // lockstep.
+    var UTILS_REVISION = 13;
 
     // localStorage key for the persisted account filter.
     var ACCOUNT_FILTER_KEY = 'oxidize_summary_account_filter';
@@ -201,6 +212,7 @@
     }
 
     window.MonthSummary = {
+        REVISION: UTILS_REVISION,
         ACCOUNT_FILTER_KEY: ACCOUNT_FILTER_KEY,
         currentYearMonth: currentYearMonth,
         shiftMonth: shiftMonth,

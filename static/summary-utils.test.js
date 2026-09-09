@@ -257,6 +257,13 @@ describe('groupAccounts', () => {
     });
 });
 
+describe('REVISION', () => {
+    it('exposes an integer REVISION that summary.html verifies at load', () => {
+        expect(Number.isInteger(window.MonthSummary.REVISION)).toBe(true);
+        expect(window.MonthSummary.REVISION).toBeGreaterThan(0);
+    });
+});
+
 describe('resolveFilterMode', () => {
     it('an empty selection always means all accounts', () => {
         expect(window.MonthSummary.resolveFilterMode('include', 0)).toBe('all');

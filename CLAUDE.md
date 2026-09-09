@@ -155,6 +155,24 @@ api_specs/            # OpenAPI spec for Firefly III (reference)
 docs/superpowers/     # Internal docs: plans/ and specs/
 ```
 
+#### Frontend versioning (summary page)
+
+`summary.html` is always served fresh, but `summary-utils.js` is a separate
+browser/proxy-cached file. If the two versions skew right after a deploy, the
+page can hang on its loading spinner (the page calls helpers the stale copy
+lacks). The version strings below must therefore stay in lockstep — a CI
+test enforces this:
+
+1. `MonthSummary.REVISION` in `static/summary-utils.js`
+2. the `?v=` on the utils `<script>` tag in `static/summary.html`
+   (and `REQUIRED_UTILS_REVISION` in the same file's inline script)
+3. the `/static/summary-utils.js?v=` entry in `static/sw.js`'s precache list
+
+Bump all of them together when `summary-utils.js` gains/changes helpers. The
+page's boot guard self-heals residual skew by re-fetching a fresh copy of the
+utils file; if that also comes back stale it stops the spinner and tells the
+user to hard-refresh.
+
 ### Backend Modules in Detail
 
 #### Configuration (`src/config.rs`)
