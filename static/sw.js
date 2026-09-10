@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v14';
+const CACHE_NAME = 'oxidize-cache-v15';
 // The summary-utils.js entry carries the same ?v= as the script tag in
 // summary.html so the precached copy matches what the page requests.
 const STATIC_ASSETS = [
@@ -8,7 +8,7 @@ const STATIC_ASSETS = [
   '/static/date-utils.js',
   '/static/app.js',
   '/static/dashboard.js',
-  '/static/summary-utils.js?v=13'
+  '/static/summary-utils.js?v=14'
 ];
 
 self.addEventListener('install', (event) => {

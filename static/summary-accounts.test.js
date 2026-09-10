@@ -163,7 +163,7 @@ describe('summary page account filter (functional)', () => {
      */
     // What the page's guard re-fetches when it detects a stale copy.
     // Defaults to the real, current utils file (a fresh network copy).
-    async function runPage({ filter, accounts, summary, utilsSrc, repairUtils, repairOk = true } = {}) {
+    async function runPage({ filter, accounts, summary, utilsSrc, repairUtils, repairOk = true, collapsed } = {}) {
         const htmlSrc = readFileSync(path.resolve(root, 'static/summary.html'), 'utf8');
         const currentUtilsSrc = readFileSync(path.resolve(root, 'static/summary-utils.js'), 'utf8');
 
@@ -243,6 +243,9 @@ describe('summary page account filter (functional)', () => {
         if (filter) {
             win.localStorage.setItem('oxidize_summary_account_filter', JSON.stringify(filter));
         }
+        if (collapsed) {
+            win.localStorage.setItem('oxidize_summary_account_collapsed', JSON.stringify(collapsed));
+        }
 
         // The page scripts already ran during parsing; jsdom fires its own
         // (asynchronous) DOMContentLoaded, which triggers init exactly once.
@@ -296,6 +299,79 @@ describe('summary page account filter (functional)', () => {
         expect(groupCheckbox(doc, 'asset').getAttribute('aria-label')).toBe(
             'Select all 1 Assets accounts');
         expect(list.querySelectorAll('.acct-group-toggle').length).toBe(2);
+    });
+
+    it('starts with expense and income groups collapsed (no giant wall of rows)', async () => {
+        const { doc } = await runPage({
+            accounts: [
+                { id: '1', name: 'Checking', account_type: 'asset', balance: '5000', currency: '$' },
+                { id: '2', name: 'Groceries', account_type: 'expense', balance: '-50', currency: '$' },
+                { id: '3', name: 'Salary', account_type: 'revenue', balance: '900', currency: '$' },
+                { id: '4', name: 'Card', account_type: 'liabilities', balance: '-250', currency: '$' },
+            ],
+        });
+        const list = doc.getElementById('account-filter-accounts');
+        const collapsed = (type) => {
+            const g = list.querySelector('.acct-group[data-type="' + type + '"]');
+            return g ? g.classList.contains('collapsed') : null;
+        };
+        expect(collapsed('asset')).toBe(false);
+        expect(collapsed('liability')).toBe(false); // v6 "liabilities" merges into "liability"
+        expect(collapsed('expense')).toBe(true);
+        expect(collapsed('revenue')).toBe(true);
+        // Collapsed groups still show their size in the header.
+        expect(list.querySelector('.acct-group[data-type="expense"] .acct-group-count')
+            .textContent).toBe('(1)');
+    });
+
+    it('renders liability and liabilities accounts under one Liabilities group', async () => {
+        const { doc } = await runPage({
+            accounts: [
+                { id: '1', name: 'Old Card', account_type: 'liability', balance: '-10', currency: '$' },
+                { id: '2', name: 'New Card', account_type: 'liabilities', balance: '-20', currency: '$' },
+            ],
+        });
+        const groups = doc.querySelectorAll('.acct-group');
+        expect(groups).toHaveLength(1);
+        expect(groups[0].getAttribute('data-type')).toBe('liability');
+        expect(groups[0].querySelector('.acct-group-name').textContent).toBe('Liabilities');
+        expect(doc.querySelectorAll('.acct-checkbox')).toHaveLength(2);
+    });
+
+    it('searching reveals matches inside collapsed groups', async () => {
+        const { doc } = await runPage({
+            accounts: [
+                { id: '1', name: 'Checking', account_type: 'asset', balance: '5000', currency: '$' },
+                { id: '2', name: 'Groceries', account_type: 'expense', balance: '-50', currency: '$' },
+            ],
+        });
+        const search = doc.getElementById('account-filter-search');
+        search.value = 'groc';
+        search.dispatchEvent(new doc.defaultView.Event('input', { bubbles: true }));
+        const rows = Array.from(doc.querySelectorAll('.acct-row'));
+        expect(rows).toHaveLength(1);
+        expect(rows[0].textContent).toContain('Groceries');
+        const g = doc.querySelector('.acct-group[data-type="expense"]');
+        expect(g.classList.contains('collapsed')).toBe(false);
+    });
+
+    it('remembers group collapse choices across visits', async () => {
+        const accounts = [
+            { id: '1', name: 'Checking', account_type: 'asset', balance: '5000', currency: '$' },
+            { id: '2', name: 'Groceries', account_type: 'expense', balance: '-50', currency: '$' },
+        ];
+        const { doc } = await runPage({ accounts });
+        // Expand the expense group (collapsed by default).
+        doc.querySelector('.acct-group-toggle[data-type="expense"]').click();
+        const stored = JSON.parse(
+            doc.defaultView.localStorage.getItem('oxidize_summary_account_collapsed')
+        );
+        expect(stored).toEqual({ expense: false });
+
+        // A fresh page with that saved state starts with expenses expanded.
+        const second = await runPage({ collapsed: { expense: false }, accounts });
+        const g = second.doc.querySelector('.acct-group[data-type="expense"]');
+        expect(g.classList.contains('collapsed')).toBe(false);
     });
 
     it('restores a persisted include filter into the checkbox list', async () => {

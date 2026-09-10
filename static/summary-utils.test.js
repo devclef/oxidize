@@ -224,11 +224,41 @@ describe('groupAccounts', () => {
         ]);
     });
 
-    it('uses friendly labels and leaves unknown types as-is', () => {
+    it('uses friendly labels and title-cases unknown types', () => {
         const groups = window.MonthSummary.groupAccounts(accounts);
         expect(groups.map((g) => g.label)).toEqual([
-            'Assets', 'Cash', 'Liabilities', 'Expenses', 'Income', 'weird',
+            'Assets', 'Cash', 'Liabilities', 'Expenses', 'Income', 'Weird',
         ]);
+    });
+
+    it('merges the Firefly v5/v6 liability spellings and loans into one group', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'Old Card', account_type: 'liability' },
+            { id: '2', name: 'New Card', account_type: 'liabilities' },
+            { id: '3', name: 'Mortgage', account_type: 'loan' },
+            { id: '4', name: 'Wallet', account_type: 'cash' },
+        ]);
+        expect(groups.map((g) => g.key)).toEqual(['cash', 'liability']);
+        const liab = groups.find((g) => g.key === 'liability');
+        expect(liab.label).toBe('Liabilities');
+        // All three spellings land in the same group (rows sorted by name).
+        expect(liab.accounts.map((a) => a.id).sort()).toEqual(['1', '2', '3']);
+    });
+
+    it('labels Firefly v6 import accounts as Imports', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'Import Co', account_type: 'import' },
+        ]);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].key).toBe('import');
+        expect(groups[0].label).toBe('Imports');
+    });
+
+    it('title-cases hyphenated unknown types', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'X', account_type: 'credit-card' },
+        ]);
+        expect(groups[0].label).toBe('Credit Card');
     });
 
     it('sorts accounts inside a group by name (case-insensitive)', () => {
@@ -258,6 +288,16 @@ describe('groupAccounts', () => {
 });
 
 describe('REVISION', () => {
+    it('starts with only expense and revenue groups collapsed', () => {
+        const m = window.MonthSummary;
+        expect(m.isDefaultCollapsed('expense')).toBe(true);
+        expect(m.isDefaultCollapsed('revenue')).toBe(true);
+        expect(m.isDefaultCollapsed('asset')).toBe(false);
+        expect(m.isDefaultCollapsed('cash')).toBe(false);
+        expect(m.isDefaultCollapsed('liability')).toBe(false);
+        expect(m.isDefaultCollapsed('weird')).toBe(false);
+    });
+
     it('exposes an integer REVISION that summary.html verifies at load', () => {
         expect(Number.isInteger(window.MonthSummary.REVISION)).toBe(true);
         expect(window.MonthSummary.REVISION).toBeGreaterThan(0);

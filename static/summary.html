@@ -66,9 +66,11 @@
         <p class="account-filter-hint">
             Pick which accounts the summary counts: income, spending, categories,
             top expenses and the charts all follow this filter. Budgets and net
-            worth always cover every account. Check a group header to pick a
-            whole account type at once, and search to find an account quickly.
-            Changes apply automatically.
+            worth always cover every account. Accounts are grouped by type -
+            check a group header to pick a whole type at once, and search to
+            find an account quickly. Expenses and Income start collapsed to
+            keep the list short; click a header to expand them. Changes apply
+            automatically.
         </p>
         <div class="account-filter-toolbar">
             <div class="account-filter-mode" role="radiogroup" aria-label="Account filter mode" id="account-filter-mode">
@@ -148,7 +150,7 @@
          REQUIRED_UTILS_REVISION below: a fresh URL on every deploy so a
          browser/proxy cache entry for the OLD file can never be served to
          the NEW page (see the version-skew guard in the inline script). -->
-    <script src="/static/summary-utils.js?v=13"></script>
+    <script src="/static/summary-utils.js?v=14"></script>
     <script>
     (function () {
         'use strict';
@@ -656,7 +658,8 @@
         // ── Account filter ───────────────────────────────────────────────
 
         var accountSearch = '';
-        var collapsedGroups = {};
+        var collapsedOverrides = {};
+        var COLLAPSED_STATE_KEY = 'oxidize_summary_account_collapsed';
         var applyTimer = null;
         var applyDelayMs = 400;
 
@@ -700,6 +703,40 @@
             accountFilter.mode = MonthSummary.resolveFilterMode(accountFilter.mode, accountFilter.ids.length);
         }
 
+        // User choices for which groups are collapsed, persisted across
+        // visits. Groups without a saved choice fall back to
+        // MonthSummary.isDefaultCollapsed (Expenses and Income start
+        // collapsed so the list does not open as one giant wall of rows).
+        function loadCollapsedState() {
+            try {
+                var raw = JSON.parse(localStorage.getItem(COLLAPSED_STATE_KEY) || 'null');
+                if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+                    Object.keys(raw).forEach(function (k) {
+                        collapsedOverrides[k] = !!raw[k];
+                    });
+                }
+            } catch (e) { /* corrupt state: fall back to the defaults */ }
+        }
+
+        function saveCollapsedState() {
+            try {
+                localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify(collapsedOverrides));
+            } catch (e) { /* non-fatal: collapse state just won't persist */ }
+        }
+
+        function isGroupCollapsed(key) {
+            if (Object.prototype.hasOwnProperty.call(collapsedOverrides, key)) {
+                return collapsedOverrides[key];
+            }
+            return MonthSummary.isDefaultCollapsed(key);
+        }
+
+        // While searching, groups are treated as expanded so a match inside
+        // a collapsed group (e.g. an expense account) is actually visible.
+        function isGroupHiddenByCollapse(key) {
+            return !accountSearch && isGroupCollapsed(key);
+        }
+
         function matchesSearch(a) {
             if (!accountSearch) return true;
             return String(a.name || '').toLowerCase().indexOf(accountSearch) !== -1;
@@ -713,7 +750,7 @@
         function shownAccountIds() {
             var out = [];
             MonthSummary.groupAccounts(accountList).forEach(function (g) {
-                if (collapsedGroups[g.key]) return;
+                if (isGroupHiddenByCollapse(g.key)) return;
                 g.accounts.forEach(function (a) {
                     if (matchesSearch(a)) out.push(a.id);
                 });
@@ -770,7 +807,7 @@
             var html = groups.map(function (g, idx) {
                 var visible = groupVisibleAccounts(g);
                 if (!visible.length) return '';
-                var collapsed = !!collapsedGroups[g.key];
+                var collapsed = isGroupHiddenByCollapse(g.key);
                 var checkedCount = visible.filter(function (a) { return sel[a.id]; }).length;
                 var rows = visible.map(function (a) {
                     var bal = parseFloat(a.balance);
@@ -893,8 +930,8 @@
             if (!t || !t.classList || !t.classList.contains('acct-group-toggle')) return;
             var type = t.getAttribute('data-type');
             if (!type) return;
-            if (collapsedGroups[type]) delete collapsedGroups[type];
-            else collapsedGroups[type] = true;
+            collapsedOverrides[type] = !isGroupCollapsed(type);
+            saveCollapsedState();
             renderAccountFilter();
         }
 
@@ -954,6 +991,7 @@
             updateMonthNav();
 
             loadStoredAccountFilter();
+            loadCollapsedState();
             wireAccountFilterEvents();
             loadAccounts().then(function () {
                 pruneStaleIds();
@@ -1004,7 +1042,7 @@
         // prevent (proxy caches, transient 404s during a rolling restart):
         // if the loaded revision does not match, re-fetch a fresh copy
         // (cache-busted URL), load it, and only then init.
-        var REQUIRED_UTILS_REVISION = 13;
+        var REQUIRED_UTILS_REVISION = 14;
 
         function utilsAreCurrent() {
             return !!(window.MonthSummary &&

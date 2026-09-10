@@ -16,7 +16,10 @@
  *  - MonthSummary.parseAccountFilter(stored)  normalize a persisted filter
  *  - MonthSummary.describeAccountFilter(mode, count)  badge text
  *  - MonthSummary.groupAccounts(accounts)  accounts grouped by type, in
- *    display order, with friendly labels
+ *    display order, with friendly labels (the Firefly v5/v6 liability
+ *    spellings and loans merge into one "Liabilities" group)
+ *  - MonthSummary.isDefaultCollapsed(groupKey)  true for groups that start
+ *    collapsed (Expenses, Income) when the user has no saved choice
  *  - MonthSummary.resolveFilterMode(mode, idCount)  derive the effective
  *    filter mode from a selection (empty selection => 'all')
  *
@@ -83,7 +86,7 @@
     // browser-cached copy slips in right after a deploy (see the
     // version-skew guard in summary.html). A CI test keeps the three in
     // lockstep.
-    var UTILS_REVISION = 13;
+    var UTILS_REVISION = 14;
 
     // localStorage key for the persisted account filter.
     var ACCOUNT_FILTER_KEY = 'oxidize_summary_account_filter';
@@ -147,16 +150,50 @@
         return '';
     }
 
+    // Canonical group for each raw account-type string. Firefly III v5 and
+    // v6 spell the liability family differently ("liability" vs
+    // "liabilities"), and some versions report loans under their own type
+    // string; all of those are one "Liabilities" group, mirroring the
+    // backend's liability-family handling (is_liability_family).
+    var ACCOUNT_TYPE_GROUP = {
+        asset: 'asset',
+        cash: 'cash',
+        liability: 'liability',
+        liabilities: 'liability',
+        loan: 'liability',
+        expense: 'expense',
+        revenue: 'revenue',
+        import: 'import'
+    };
+
     // Display order and labels for account type groups.
-    var ACCOUNT_TYPE_ORDER = ['asset', 'cash', 'liability', 'liabilities', 'expense', 'revenue'];
+    var ACCOUNT_TYPE_ORDER = ['asset', 'cash', 'liability', 'expense', 'revenue', 'import'];
     var ACCOUNT_TYPE_LABELS = {
         asset: 'Assets',
         cash: 'Cash',
         liability: 'Liabilities',
-        liabilities: 'Liabilities',
         expense: 'Expenses',
-        revenue: 'Income'
+        revenue: 'Income',
+        import: 'Imports'
     };
+
+    // Groups collapsed by default in the account filter. Individual expense
+    // and revenue accounts are rarely picked one by one, and with many
+    // accounts those two groups are what make the list open as one giant
+    // wall of rows; a header click expands them and the choice is remembered.
+    var DEFAULT_COLLAPSED_TYPES = ['expense', 'revenue'];
+
+    // "credit-card" -> "Credit Card": a readable label for unknown types.
+    function titleCaseType(raw) {
+        return String(raw).split(/[-_\s]+/).filter(Boolean).map(function (w) {
+            return w.charAt(0).toUpperCase() + w.slice(1);
+        }).join(' ');
+    }
+
+    // True for groups that start collapsed when the user has no saved choice.
+    function isDefaultCollapsed(groupKey) {
+        return DEFAULT_COLLAPSED_TYPES.indexOf(groupKey) !== -1;
+    }
 
     // Group accounts by type for the account filter list. Known types come
     // first (in ACCOUNT_TYPE_ORDER), any unknown types follow alphabetically.
@@ -166,11 +203,16 @@
         var list = Array.isArray(accounts) ? accounts : [];
         for (var i = 0; i < list.length; i++) {
             var a = list[i] || {};
-            var t = String(a.account_type || 'other').toLowerCase();
-            if (!groups[t]) {
-                groups[t] = { key: t, label: ACCOUNT_TYPE_LABELS[t] || t, accounts: [] };
+            var raw = String(a.account_type || 'other').toLowerCase();
+            var key = ACCOUNT_TYPE_GROUP[raw] || raw;
+            if (!groups[key]) {
+                groups[key] = {
+                    key: key,
+                    label: ACCOUNT_TYPE_LABELS[key] || titleCaseType(key),
+                    accounts: []
+                };
             }
-            groups[t].accounts.push(a);
+            groups[key].accounts.push(a);
         }
         var keys = Object.keys(groups);
         keys.sort(function (x, y) {
@@ -226,6 +268,7 @@
         parseAccountFilter: parseAccountFilter,
         describeAccountFilter: describeAccountFilter,
         groupAccounts: groupAccounts,
+        isDefaultCollapsed: isDefaultCollapsed,
         resolveFilterMode: resolveFilterMode,
         escapeHtml: escapeHtml
     };
