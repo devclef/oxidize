@@ -3622,3 +3622,96 @@ button:focus-visible,
     font-size: var(--text-sm);
     margin: calc(-1 * var(--space-2)) 0 var(--space-3);
 }
+
+/* ── Saved This Month stat tile ─────────────────────────────────────────
+   Used both in the Widget Builder preview (#tile-preview) and inside
+   dashboard widgets. Theme-aware via CSS variables. */
+.tile-preview {
+    padding: var(--space-4);
+}
+
+.stat-tile {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-6);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-1);
+    height: 100%;
+    min-height: 180px;
+}
+
+.stat-tile-value {
+    font-size: 2.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.stat-tile-value.positive { color: var(--success-color); }
+.stat-tile-value.negative { color: var(--error-color); }
+
+.stat-tile-label {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--heading-color);
+}
+
+.stat-tile-sub {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: calc(-1 * var(--space-1));
+}
+
+.stat-tile-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-light);
+}
+
+.stat-tile-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 110px;
+}
+
+.stat-tile-row span {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.stat-tile-row strong {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.stat-tile-compare {
+    margin-top: var(--space-3);
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.stat-tile-delta {
+    font-weight: 700;
+    font-size: var(--text-base);
+}
+
+.stat-tile-compare.up .stat-tile-delta { color: var(--success-color); }
+.stat-tile-compare.down .stat-tile-delta { color: var(--error-color); }
+
+.stat-tile-compare-note {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}

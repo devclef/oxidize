@@ -14,7 +14,7 @@ pub use budget::{
     BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit, BudgetRead,
 };
 pub use category::{CategoryListResponse, CategoryRead, ParentCategory};
-pub use chart::{ChartDataSet, ChartLine};
+pub use chart::{ChartDataSet, ChartLine, MonthStats, SavedThisMonth};
 pub use dashboard::Dashboard;
 pub use exclusions::Exclusions;
 pub use group::Group;

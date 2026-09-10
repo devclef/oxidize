@@ -202,6 +202,46 @@ pub async fn get_earned_spent_since(
     }
 }
 
+/// GET endpoint for the "Saved this Month" stat tile.
+///
+/// Returns the current calendar month's earned/spent/saved compared against
+/// the previous full month. Optionally scoped to a set of accounts.
+#[get("/api/saved-this-month")]
+pub async fn get_saved_this_month(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
+    let mut account_ids: Vec<String> = Vec::new();
+    for (k, v) in params {
+        match k.as_str() {
+            "accounts[]" | "accounts" => {
+                account_ids.push(v);
+            }
+            _ => {
+                if k == "accounts%5B%5D" {
+                    account_ids.push(v);
+                }
+            }
+        }
+    }
+
+    let account_ids_opt = if account_ids.is_empty() {
+        None
+    } else {
+        Some(account_ids)
+    };
+
+    match client.get_saved_this_month(account_ids_opt, &exclusions).await {
+        Ok(stats) => HttpResponse::Ok().json(stats),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 /// GET endpoint for expense by category chart data
 #[get("/api/expenses-by-category")]
 pub async fn get_expenses_by_category(

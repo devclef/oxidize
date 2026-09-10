@@ -8,8 +8,8 @@ use crate::models::summary::{
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, ParentCategory, SankeyFlowData,
-    SankeyFlowType, SankeyLink, SimpleAccount,
+    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, MonthStats, ParentCategory,
+    SavedThisMonth, SankeyFlowData, SankeyFlowType, SankeyLink, SimpleAccount,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -1110,6 +1110,174 @@ impl FireflyClient {
                 entries: serde_json::to_value(spent_entries).unwrap(),
             },
         ])
+    }
+
+    /// Sum earned and spent over a date range using the same journal-level
+    /// classification as `get_earned_spent`. Returns
+    /// (earned, spent, currency_symbol, currency_code).
+    async fn sum_earned_spent_for_range(
+        &self,
+        start: &str,
+        end: &str,
+        account_ids: Option<&Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<(f64, f64, Option<String>, Option<String>), String> {
+        let all_transactions = self
+            .fetch_all_transactions(start, end, account_ids, None, None)
+            .await?;
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        // Flatten transactions into individual journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        let mut earned = 0.0f64;
+        let mut spent = 0.0f64;
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+            let is_earned = journal_counts_earned(journal, &selected_ids);
+            let is_spent = journal_counts_spent(journal, &selected_ids);
+            if is_earned || is_spent {
+                if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
+                    if let Ok(amount) = amount_str.parse::<f64>() {
+                        if is_earned {
+                            earned += amount;
+                        }
+                        if is_spent {
+                            spent += amount;
+                        }
+                    }
+                }
+            }
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+            }
+        }
+
+        Ok((earned, spent, currency_symbol, currency_code))
+    }
+
+    /// Compute the date ranges for the "Saved this Month" tile: the current
+    /// (partial) month from the first of the month to `now`, and the
+    /// previous (full) month. Returns
+    /// (cur_start, cur_end, prev_start, prev_end).
+    ///
+    /// Kept as a pure function so the month-boundary math (including the
+    /// January -> December-of-previous-year rollover) is unit-testable.
+    pub fn saved_this_month_ranges(now: NaiveDate) -> (NaiveDate, NaiveDate, NaiveDate, NaiveDate) {
+        let cur_start = NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+            .expect("valid current month start");
+        let cur_end = now;
+        let prev_end = cur_start - Duration::days(1);
+        let prev_start = NaiveDate::from_ymd_opt(prev_end.year(), prev_end.month(), 1)
+            .expect("valid previous month start");
+        (cur_start, cur_end, prev_start, prev_end)
+    }
+
+    /// Compute the "Saved this Month" tile: current calendar month (start of
+    /// month to today) compared against the previous full month.
+    pub async fn get_saved_this_month(
+        &self,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<SavedThisMonth, String> {
+        let now = Utc::now().date_naive();
+        let (cur_start, cur_end, prev_start, prev_end) = Self::saved_this_month_ranges(now);
+        let month_key = format!("{}-{:02}", cur_start.year(), cur_start.month());
+
+        // Check cache first
+        if let Some(cached) =
+            self.cache
+                .get_saved_this_month(&month_key, account_ids.as_ref(), exclusions)
+        {
+            debug!("Cache hit for saved this month");
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached saved this month: {}", e));
+        }
+
+        let (cur_earned, cur_spent, mut symbol, mut code) = self
+            .sum_earned_spent_for_range(
+                &cur_start.format("%Y-%m-%d").to_string(),
+                &cur_end.format("%Y-%m-%d").to_string(),
+                account_ids.as_ref(),
+                exclusions,
+            )
+            .await?;
+
+        let (prev_earned, prev_spent, prev_symbol, prev_code) = self
+            .sum_earned_spent_for_range(
+                &prev_start.format("%Y-%m-%d").to_string(),
+                &prev_end.format("%Y-%m-%d").to_string(),
+                account_ids.as_ref(),
+                exclusions,
+            )
+            .await?;
+
+        if symbol.is_none() {
+            symbol = prev_symbol;
+        }
+        if code.is_none() {
+            code = prev_code;
+        }
+
+        let cur_saved = cur_earned - cur_spent;
+        let prev_saved = prev_earned - prev_spent;
+
+        let result = SavedThisMonth {
+            currency_symbol: symbol,
+            currency_code: code,
+            current_month: MonthStats {
+                label: cur_start.format("%B %Y").to_string(),
+                earned: cur_earned,
+                spent: cur_spent,
+                saved: cur_saved,
+            },
+            previous_month: MonthStats {
+                label: prev_start.format("%B %Y").to_string(),
+                earned: prev_earned,
+                spent: prev_spent,
+                saved: prev_saved,
+            },
+            difference: cur_saved - prev_saved,
+            current_month_start: cur_start.format("%Y-%m-%d").to_string(),
+            current_month_end: cur_end.format("%Y-%m-%d").to_string(),
+        };
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_saved_this_month(
+                &month_key,
+                account_ids.as_ref(),
+                exclusions,
+                json,
+            );
+        }
+
+        Ok(result)
     }
 
     /// Sum all numeric values in a ChartDataSet entries object

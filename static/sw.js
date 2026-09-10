@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxidize-cache-v15';
+const CACHE_NAME = 'oxidize-cache-v16';
 // The summary-utils.js entry carries the same ?v= as the script tag in
 // summary.html so the precached copy matches what the page requests.
 const STATIC_ASSETS = [

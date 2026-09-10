@@ -2378,6 +2378,109 @@ function renderNetWorthChartDashboard(ctx, widget, history) {
     });
 }
 
+function formatTileMoney(value, symbol) {
+    const n = Number.isFinite(value) ? value : 0;
+    const sign = n < 0 ? '-' : '';
+    const abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return sign + (symbol || '') + abs;
+}
+
+function formatTileRange(start, end) {
+    const parse = (str) => { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d); };
+    try {
+        const a = parse(start), b = parse(end);
+        const mo = (dt) => dt.toLocaleString(undefined, { month: 'short' });
+        return `${mo(a)} ${a.getDate()} \u2013 ${mo(b)} ${b.getDate()}`;
+    } catch {
+        return '';
+    }
+}
+
+// Builds the markup for the "Saved This Month" tile (dashboard variant).
+function buildSavedTileHtml(data) {
+    const cur = data.current_month || {};
+    const prev = data.previous_month || {};
+    const symbol = data.currency_symbol || '';
+    const saved = Number(cur.saved) || 0;
+    const diff = Number(data.difference) || 0;
+    const up = diff >= 0;
+    const range = formatTileRange(data.current_month_start, data.current_month_end);
+
+    return `
+        <div class="stat-tile">
+            <div class="stat-tile-value ${saved < 0 ? 'negative' : 'positive'}">${formatTileMoney(saved, symbol)}</div>
+            <div class="stat-tile-label">Saved in ${escapeHtml(cur.label || 'this month')}</div>
+            ${range ? `<div class="stat-tile-sub">${range}</div>` : ''}
+            <div class="stat-tile-breakdown">
+                <div class="stat-tile-row"><span>Income</span><strong>${formatTileMoney(cur.earned || 0, symbol)}</strong></div>
+                <div class="stat-tile-row"><span>Expenses</span><strong>${formatTileMoney(cur.spent || 0, symbol)}</strong></div>
+            </div>
+            <div class="stat-tile-compare ${up ? 'up' : 'down'}">
+                <span class="stat-tile-delta">${up ? '\u25b2' : '\u25bc'} ${formatTileMoney(Math.abs(diff), symbol)}</span>
+                <span class="stat-tile-compare-note">vs ${escapeHtml(prev.label || 'last month')} (${formatTileMoney(prev.saved || 0, symbol)})</span>
+            </div>
+        </div>`;
+}
+
+// Renders the "Saved This Month" stat tile in place of a chart canvas.
+async function renderSavedTileWidget(widget, canvasId, allGroups = []) {
+    // Resolve account IDs from groups + individual
+    const groupIds = widget.group_ids || [];
+    const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+    const groupAccountIds = new Set();
+    widgetGroups.forEach(g => g.account_ids.forEach(id => groupAccountIds.add(id)));
+    const allWidgetAccountIds = [...new Set([...(widget.accounts || []), ...groupAccountIds])];
+
+    const errorDiv = document.getElementById(canvasId + '-error');
+    if (errorDiv) errorDiv.textContent = '';
+
+    // Hide the canvas and inject a tile container into the chart area
+    const canvas = document.getElementById(canvasId);
+    if (canvas) canvas.style.display = 'none';
+    const chartEl = document.querySelector(`.widget[data-widget-id="${widget.id}"] .widget-chart`);
+    let tileEl = document.getElementById(canvasId + '-tile');
+    if (!tileEl && chartEl) {
+        tileEl = document.createElement('div');
+        tileEl.id = canvasId + '-tile';
+        tileEl.style.height = '100%';
+        chartEl.appendChild(tileEl);
+    }
+    if (!tileEl) return;
+    tileEl.innerHTML = '<div class="loading">' + OxiUI.spinnerHtml('Loading savings\u2026') + '</div>';
+
+    const params = new URLSearchParams();
+    allWidgetAccountIds.forEach(id => params.append('accounts[]', id));
+    let url = '/api/saved-this-month';
+    if (params.toString()) url += `?${params.toString()}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Error: ${response.status} ${response.statusText}`);
+        const data = await response.json();
+        tileEl.innerHTML = buildSavedTileHtml(data);
+    } catch (e) {
+        if (errorDiv) errorDiv.textContent = 'Failed to load savings: ' + e.message;
+        tileEl.innerHTML = '';
+    }
+
+    // The tile has no date range, chart type, or display options to tweak,
+    // so hide those parts of the widget settings.
+    const settingsEl = document.getElementById(widget.id + '-settings');
+    if (settingsEl) {
+        const firstSection = settingsEl.querySelector('.widget-settings-section');
+        if (firstSection) firstSection.style.display = 'none';
+        settingsEl.querySelectorAll('.widget-settings-section').forEach(sec => {
+            const strong = sec.querySelector('strong');
+            if (strong) {
+                const label = strong.textContent.trim();
+                if (label === 'Display Options' || label === 'Exclusions') {
+                    sec.style.display = 'none';
+                }
+            }
+        });
+    }
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
@@ -2397,6 +2500,12 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
         // Handle card_paydown widget type separately
         if (widgetType === 'card_paydown') {
             await renderCardPaydownWidget(widget, canvasId, allGroups, effectiveStart, effectiveEnd);
+            return;
+        }
+
+        // Handle the Saved This Month stat tile (a number, not a chart)
+        if (widgetType === 'saved_this_month') {
+            await renderSavedTileWidget(widget, canvasId, allGroups);
             return;
         }
 
@@ -3479,7 +3588,7 @@ async function renderDashboard() {
         container.innerHTML = `
             <div class="empty-dashboard">
                 <h3>No Widgets on ${dashName}</h3>
-                <p>Go to the <a href="/">Graph Builder</a> to create your first widget, then assign it to this dashboard in widget settings.</p>
+                <p>Go to the <a href="/">Widget Builder</a> to create your first widget, then assign it to this dashboard in widget settings.</p>
             </div>
         `;
         // Update widget count
@@ -3564,6 +3673,8 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge card-paydown">Card Paydown</span>';
         } else if (widgetType === 'net_worth') {
             widgetTypeBadge = '<span class="widget-type-badge net-worth">Net Worth</span>';
+        } else if (widgetType === 'saved_this_month') {
+            widgetTypeBadge = '<span class="widget-type-badge saved">Saved This Month</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }

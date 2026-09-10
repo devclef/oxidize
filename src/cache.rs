@@ -34,6 +34,7 @@ pub struct DataCache {
     budget_limit: RwLock<HashMap<String, CacheEntry<String>>>,
     budget_limits: RwLock<HashMap<String, CacheEntry<String>>>,
     card_paydown: RwLock<HashMap<String, CacheEntry<String>>>,
+    saved_this_month: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -61,6 +62,7 @@ impl DataCache {
             budget_limit: RwLock::new(HashMap::new()),
             budget_limits: RwLock::new(HashMap::new()),
             card_paydown: RwLock::new(HashMap::new()),
+            saved_this_month: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -413,6 +415,47 @@ impl DataCache {
         Self::set_tiered(&self.earned_spent, &key, &data, self.ttl_seconds);
     }
 
+    // ── Saved this month ───────────────────────────────────────────────
+
+    fn saved_this_month_key(
+        month: &str,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let accounts = match account_ids {
+            Some(ids) if !ids.is_empty() => ids.join(","),
+            _ => "all".to_string(),
+        };
+        format!(
+            "v{}:saved_this_month:{}:{}:{}",
+            CACHE_VERSION,
+            month,
+            accounts,
+            exclusions.cache_key()
+        )
+    }
+
+    pub fn get_saved_this_month(
+        &self,
+        month: &str,
+        account_ids: Option<&Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::saved_this_month_key(month, account_ids.map(|v| v.as_slice()), exclusions);
+        Self::get_tiered(&self.saved_this_month, &key)
+    }
+
+    pub fn set_saved_this_month(
+        &self,
+        month: &str,
+        account_ids: Option<&Vec<String>>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::saved_this_month_key(month, account_ids.map(|v| v.as_slice()), exclusions);
+        Self::set_tiered(&self.saved_this_month, &key, &data, self.ttl_seconds);
+    }
+
     // ── Expenses by category ─────────────────────────────────────────
 
     fn expenses_category_key(
@@ -647,6 +690,7 @@ impl DataCache {
         self.clear_budget_limit();
         self.clear_budget_limits();
         self.clear_card_paydown();
+        self.clear_saved_this_month();
     }
 
     pub fn clear_accounts(&self) {
@@ -685,6 +729,13 @@ impl DataCache {
         Self::clear_tiered(
             &self.earned_spent,
             Some(&format!("v{}:earned_spent:", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_saved_this_month(&self) {
+        Self::clear_tiered(
+            &self.saved_this_month,
+            Some(&format!("v{}:saved_this_month:", CACHE_VERSION)),
         );
     }
 
