@@ -9,7 +9,7 @@ use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
     CategoryListResponse, ChartDataSet, ChartLine, Exclusions, MonthStats, ParentCategory,
-    SavedThisMonth, SankeyFlowData, SankeyFlowType, SankeyLink, SimpleAccount,
+    SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -1190,8 +1190,8 @@ impl FireflyClient {
     /// Kept as a pure function so the month-boundary math (including the
     /// January -> December-of-previous-year rollover) is unit-testable.
     pub fn saved_this_month_ranges(now: NaiveDate) -> (NaiveDate, NaiveDate, NaiveDate, NaiveDate) {
-        let cur_start = NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
-            .expect("valid current month start");
+        let cur_start =
+            NaiveDate::from_ymd_opt(now.year(), now.month(), 1).expect("valid current month start");
         let cur_end = now;
         let prev_end = cur_start - Duration::days(1);
         let prev_start = NaiveDate::from_ymd_opt(prev_end.year(), prev_end.month(), 1)
@@ -1269,12 +1269,8 @@ impl FireflyClient {
         };
 
         if let Ok(json) = serde_json::to_string(&result) {
-            self.cache.set_saved_this_month(
-                &month_key,
-                account_ids.as_ref(),
-                exclusions,
-                json,
-            );
+            self.cache
+                .set_saved_this_month(&month_key, account_ids.as_ref(), exclusions, json);
         }
 
         Ok(result)

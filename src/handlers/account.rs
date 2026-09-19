@@ -236,7 +236,10 @@ pub async fn get_saved_this_month(
         Some(account_ids)
     };
 
-    match client.get_saved_this_month(account_ids_opt, &exclusions).await {
+    match client
+        .get_saved_this_month(account_ids_opt, &exclusions)
+        .await
+    {
         Ok(stats) => HttpResponse::Ok().json(stats),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
