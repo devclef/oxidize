@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Oxidize - Graph Builder</title>
+    <title>Oxidize - Widget Builder</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
     <meta name="theme-color" content="#3b82f6">
     <link rel="stylesheet" href="/static/style.css">
@@ -16,7 +16,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
             Oxidize
         </span>
-        <a href="/" class="active">Graph Builder</a>
+        <a href="/" class="active">Widget Builder</a>
         <a href="/dashboard">Dashboard</a>
         <a href="/summary">Monthly Summary</a>
         <a href="/budget-comparison">Budget Comparison</a>
@@ -33,8 +33,8 @@
     </nav>
     <header class="page-header">
         <div>
-            <h1>Graph Builder</h1>
-            <p class="page-subtitle">Select accounts, pick a chart type, and save your graphs as dashboard widgets.</p>
+            <h1>Widget Builder</h1>
+            <p class="page-subtitle">Select accounts, pick a graph or a stat tile, and save it as a dashboard widget.</p>
         </div>
         <button id="refresh-data-btn" class="ghost-btn" title="Clear cache and fetch fresh data from Firefly III">Refresh Data</button>
     </header>
@@ -60,7 +60,7 @@
 
         <div id="accounts-content">
             <div id="app">
-                <div class="empty-state"><p>Pick an account type above, then click <strong>Fetch Accounts</strong> to start building a graph.</p></div>
+                <div class="empty-state"><p>Pick an account type above, then click <strong>Fetch Accounts</strong> to start building a widget.</p></div>
             </div>
         </div>
     </section>
@@ -130,13 +130,14 @@
                 <option value="budget_spent">Budget Spent</option>
                 <option value="category_subcat">Category Subcategories</option>
                 <option value="card_paydown">Card Paydown</option>
+                <option value="saved_this_month">Saved This Month</option>
             </select>
         </div>
 
         <!-- Primary chart controls, grouped by purpose -->
         <div class="chart-controls">
             <!-- Date range group -->
-            <fieldset class="control-group">
+            <fieldset class="control-group" id="date-range-group">
                 <legend class="control-group-label">Date Range</legend>
                 <div class="control-row time-range-controls">
                     <label for="time-range-select">Preset:</label>
@@ -178,7 +179,7 @@
             </fieldset>
 
             <!-- Display group -->
-            <fieldset class="control-group">
+            <fieldset class="control-group" id="display-group">
                 <legend class="control-group-label">Display</legend>
                 <div class="control-row">
                     <label for="interval-select">Interval:</label>
@@ -358,6 +359,7 @@
         <div class="chart-wrapper">
             <canvas id="balanceChart"></canvas>
         </div>
+        <div id="tile-preview" class="tile-preview" style="display: none;"></div>
         <div id="split-legend" class="chart-legend" style="display: none;">
             <div class="legend-container" id="legend-items"></div>
         </div>

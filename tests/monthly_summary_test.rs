@@ -14,11 +14,18 @@ mod tests {
     use oxidize::client::FireflyClient;
     use oxidize::config::Config;
     use oxidize::models::summary::{
-        budget_status, month_range, pct_change, project_full_month, shift_months,
-        BulkBudgetLimit,
+        budget_status, month_range, pct_change, project_full_month, shift_months, BulkBudgetLimit,
     };
     use oxidize::models::Exclusions;
     use serde_json::json;
+
+    /// Sum of a chart dataset's entry values.
+    fn parse_entries(entries: &serde_json::Value) -> f64 {
+        entries
+            .as_object()
+            .map(|m| m.values().filter_map(|v| v.as_f64()).sum::<f64>())
+            .unwrap_or(0.0)
+    }
 
     // ── Pure helper tests ────────────────────────────────────────────────
 
@@ -112,7 +119,9 @@ mod tests {
         assert_eq!(limit.currency_code.as_deref(), Some("EUR"));
 
         // Missing required fields -> None
-        assert!(BulkBudgetLimit::from_value(&json!({"attributes": {"start": "2026-03-01"}})).is_none());
+        assert!(
+            BulkBudgetLimit::from_value(&json!({"attributes": {"start": "2026-03-01"}})).is_none()
+        );
         assert!(BulkBudgetLimit::from_value(&json!({})).is_none());
     }
 
@@ -135,8 +144,16 @@ mod tests {
 
     /// A withdrawal journal.
     #[allow(clippy::too_many_arguments)] // fixture helper: one arg per field
-    fn withdrawal_tx(id: &str, date: &str, amount: f64, description: &str, category: &str,
-                     budget: &str, source: &str, dest: &str) -> serde_json::Value {
+    fn withdrawal_tx(
+        id: &str,
+        date: &str,
+        amount: f64,
+        description: &str,
+        category: &str,
+        budget: &str,
+        source: &str,
+        dest: &str,
+    ) -> serde_json::Value {
         json!({
             "type": "transactions",
             "id": id,
@@ -158,8 +175,15 @@ mod tests {
     }
 
     /// A deposit journal.
-    fn deposit_tx(id: &str, date: &str, amount: f64, description: &str, category: &str,
-                  source: &str, dest: &str) -> serde_json::Value {
+    fn deposit_tx(
+        id: &str,
+        date: &str,
+        amount: f64,
+        description: &str,
+        category: &str,
+        source: &str,
+        dest: &str,
+    ) -> serde_json::Value {
         json!({
             "type": "transactions",
             "id": id,
@@ -180,8 +204,14 @@ mod tests {
     }
 
     /// A transfer journal (asset -> asset, e.g. moving money to savings).
-    fn transfer_tx(id: &str, date: &str, amount: f64, description: &str,
-                   source: &str, dest: &str) -> serde_json::Value {
+    fn transfer_tx(
+        id: &str,
+        date: &str,
+        amount: f64,
+        description: &str,
+        source: &str,
+        dest: &str,
+    ) -> serde_json::Value {
         json!({
             "type": "transactions",
             "id": id,
@@ -213,13 +243,47 @@ mod tests {
         let d = |day: u32| format!("{}-{:02}-{:02}", y, m, day);
         tx_list(vec![
             deposit_tx("m-sal", &d(1), 3000.0, "Salary", "Income:Salary", "20", "1"),
-            withdrawal_tx("m-gro1", &d(5), 100.0, "Groceries A", "Food & Drink:Groceries",
-                          "Groceries", "1", "10"),
-            withdrawal_tx("m-rent", &d(10), 500.0, "Rent", "Housing:Rent", "Rent", "1", "11"),
-            withdrawal_tx("m-gro2", &d(12), 250.0, "Groceries B", "Food & Drink:Groceries",
-                          "Groceries", "1", "10"),
+            withdrawal_tx(
+                "m-gro1",
+                &d(5),
+                100.0,
+                "Groceries A",
+                "Food & Drink:Groceries",
+                "Groceries",
+                "1",
+                "10",
+            ),
+            withdrawal_tx(
+                "m-rent",
+                &d(10),
+                500.0,
+                "Rent",
+                "Housing:Rent",
+                "Rent",
+                "1",
+                "11",
+            ),
+            withdrawal_tx(
+                "m-gro2",
+                &d(12),
+                250.0,
+                "Groceries B",
+                "Food & Drink:Groceries",
+                "Groceries",
+                "1",
+                "10",
+            ),
             transfer_tx("m-save", &d(15), 999.0, "Move to savings", "1", "2"),
-            withdrawal_tx("m-car", &d(20), 1200.0, "Car repair", "Cars:Repairs", "", "1", "12"),
+            withdrawal_tx(
+                "m-car",
+                &d(20),
+                1200.0,
+                "Car repair",
+                "Cars:Repairs",
+                "",
+                "1",
+                "12",
+            ),
         ])
     }
 
@@ -228,7 +292,16 @@ mod tests {
         let d = |day: u32| format!("{}-{:02}-{:02}", y, m, day);
         tx_list(vec![
             deposit_tx("p-sal", &d(1), 3000.0, "Salary", "Income:Salary", "20", "1"),
-            withdrawal_tx("p-misc", &d(5), 2000.0, "Misc", "Household:Misc", "", "1", "13"),
+            withdrawal_tx(
+                "p-misc",
+                &d(5),
+                2000.0,
+                "Misc",
+                "Household:Misc",
+                "",
+                "1",
+                "13",
+            ),
         ])
     }
 
@@ -311,6 +384,8 @@ mod tests {
         .to_string()
     }
 
+    /// Firefly III reports debt liability balances as NEGATIVE values
+    /// (a $2,000 debt has balance -2000), so net worth = assets + liabilities.
     fn net_worth_liability_body(y: i32, m: u32) -> String {
         let first = format!("{}-{:02}-01", y, m);
         let last = format!("{}-{:02}-28", y, m);
@@ -320,8 +395,8 @@ mod tests {
                 "currency_symbol": "$",
                 "currency_code": "USD",
                 "entries": {
-                    first: 2000.0,
-                    last: 1900.0
+                    first: -2000.0,
+                    last: -1900.0
                 }
             }
         ])
@@ -365,9 +440,7 @@ mod tests {
             }
             server
                 .mock("GET", "/v1/transactions")
-                .match_query(mockito::Matcher::Regex(format!(
-                    r"start={}&end={}", cs, ce
-                )))
+                .match_query(mockito::Matcher::Regex(format!(r"start={}&end={}", cs, ce)))
                 .with_status(200)
                 .with_header("content-type", "application/json")
                 .with_body(tx_list(vec![]).to_string())
@@ -401,14 +474,18 @@ mod tests {
             &mut server,
             y,
             m,
-            &[(p_start_s.clone(), p_end_s.clone()), (m_start_s.clone(), m_end_s.clone())],
+            &[
+                (p_start_s.clone(), p_end_s.clone()),
+                (m_start_s.clone(), m_end_s.clone()),
+            ],
         )
         .await;
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", p_start_s, p_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                p_start_s, p_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(prev_month_fixture(py, pm).to_string())
@@ -416,9 +493,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(month_fixture(y, m).to_string())
@@ -435,9 +513,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(budget_spent_body(y, m))
@@ -445,9 +524,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/budget-limits")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(budget_limits_body(&m_start_s, &m_end_s))
@@ -455,9 +535,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=assets", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=assets",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(net_worth_asset_body(y, m))
@@ -465,9 +546,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=liabilities", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=liabilities",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(net_worth_liability_body(y, m))
@@ -483,7 +565,7 @@ mod tests {
 
         let client = FireflyClient::new(make_test_config(url));
         let summary = client
-            .get_month_summary(y, m, None, &Exclusions::new(vec![], vec![]))
+            .get_month_summary(y, m, None, None, &Exclusions::new(vec![], vec![]))
             .await
             .unwrap();
 
@@ -493,7 +575,11 @@ mod tests {
         assert_eq!(summary.start_date, m_start_s);
         assert_eq!(summary.end_date, m_end_s);
         assert!(!summary.is_current_month);
-        assert!(summary.warnings.is_empty(), "unexpected warnings: {:?}", summary.warnings);
+        assert!(
+            summary.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            summary.warnings
+        );
 
         // ── Headline totals ──
         let t = &summary.totals;
@@ -512,7 +598,7 @@ mod tests {
         assert!((t.earned_delta_pct.unwrap() - 0.0).abs() < 1e-9);
         assert!((t.spent_delta_pct.unwrap() - 2.5).abs() < 1e-9);
 
-        // ── Net worth: 10800 - 1900 = 8900 end, 10000 - 2000 = 8000 start ──
+        // ── Net worth: 10800 + (-1900) = 8900 end, 10000 + (-2000) = 8000 start ──
         assert!((t.net_worth.unwrap() - 8900.0).abs() < 1e-6);
         assert!((t.net_worth_delta.unwrap() - 900.0).abs() < 1e-6);
 
@@ -569,11 +655,17 @@ mod tests {
         assert!((summary.top_expenses[0].amount - 1200.0).abs() < 1e-6);
         assert_eq!(summary.top_expenses[0].description, "Car repair");
         assert_eq!(summary.top_expenses[0].account.as_deref(), Some("Garage"));
-        assert_eq!(summary.top_expenses[0].category.as_deref(), Some("Cars:Repairs"));
+        assert_eq!(
+            summary.top_expenses[0].category.as_deref(),
+            Some("Cars:Repairs")
+        );
         assert!((summary.top_expenses[1].amount - 500.0).abs() < 1e-6);
         assert!((summary.top_expenses[2].amount - 250.0).abs() < 1e-6);
         assert!((summary.top_expenses[3].amount - 100.0).abs() < 1e-6);
-        assert!(!summary.top_expenses.iter().any(|t| (t.amount - 999.0).abs() < 1e-6));
+        assert!(!summary
+            .top_expenses
+            .iter()
+            .any(|t| (t.amount - 999.0).abs() < 1e-6));
 
         // ── 12-month trend: oldest 10 months empty, prior month has data ──
         let trend = &summary.trend_12m;
@@ -583,8 +675,16 @@ mod tests {
         let expected_last = format!("{}-{:02}", y, m);
         assert_eq!(trend.labels[11], expected_last);
         for i in 0..10 {
-            assert!((trend.earned[i] - 0.0).abs() < 1e-6, "month {}", trend.labels[i]);
-            assert!((trend.spent[i] - 0.0).abs() < 1e-6, "month {}", trend.labels[i]);
+            assert!(
+                (trend.earned[i] - 0.0).abs() < 1e-6,
+                "month {}",
+                trend.labels[i]
+            );
+            assert!(
+                (trend.spent[i] - 0.0).abs() < 1e-6,
+                "month {}",
+                trend.labels[i]
+            );
         }
         // Prior month (mocked with salary 3000 + 2000 spent)
         assert!((trend.earned[10] - 3000.0).abs() < 1e-6);
@@ -617,7 +717,16 @@ mod tests {
         let d1 = format!("{}-{:02}-01", y, m);
         let current_txs = tx_list(vec![
             deposit_tx("c-sal", &d1, 3000.0, "Salary", "Income:Salary", "20", "1"),
-            withdrawal_tx("c-sub", &d1, 100.0, "Subscription", "Software:Subs", "Subs", "1", "10"),
+            withdrawal_tx(
+                "c-sub",
+                &d1,
+                100.0,
+                "Subscription",
+                "Software:Subs",
+                "Subs",
+                "1",
+                "10",
+            ),
         ]);
 
         // Transactions mocks: one mock per exact query (no catch-all).
@@ -625,15 +734,19 @@ mod tests {
             &mut server,
             y,
             m,
-            &[(m_start_s.clone(), today_s.clone()), (m_start_s.clone(), m_end_s.clone())],
+            &[
+                (m_start_s.clone(), today_s.clone()),
+                (m_start_s.clone(), m_end_s.clone()),
+            ],
         )
         .await;
         // Current month, end clamped to today (daily + top-expenses fetch).
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, today_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, today_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(current_txs.to_string())
@@ -642,9 +755,10 @@ mod tests {
         // Current month, end at calendar month end (12-month trend window).
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(current_txs.to_string())
@@ -669,9 +783,10 @@ mod tests {
         let budget_key = d1.clone();
         server
             .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, today_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, today_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -687,9 +802,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/budget-limits")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", m_start_s, today_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                m_start_s, today_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -712,9 +828,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=assets", m_start_s, today_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=assets",
+                m_start_s, today_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -730,9 +847,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=liabilities", m_start_s, today_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=liabilities",
+                m_start_s, today_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -740,7 +858,7 @@ mod tests {
                     "label": "Liabilities",
                     "currency_symbol": "$",
                     "currency_code": "USD",
-                    "entries": { d1.clone(): 2000.0, today_s.clone(): 2000.0 }
+                    "entries": { d1.clone(): -2000.0, today_s.clone(): -2000.0 }
                 }])
                 .to_string(),
             )
@@ -756,13 +874,17 @@ mod tests {
 
         let client = FireflyClient::new(make_test_config(url));
         let summary = client
-            .get_month_summary(y, m, None, &Exclusions::new(vec![], vec![]))
+            .get_month_summary(y, m, None, None, &Exclusions::new(vec![], vec![]))
             .await
             .unwrap();
 
         assert!(summary.is_current_month);
         assert_eq!(summary.end_date, m_end_s); // full calendar month end
-        assert!(summary.warnings.is_empty(), "unexpected warnings: {:?}", summary.warnings);
+        assert!(
+            summary.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            summary.warnings
+        );
 
         let t = &summary.totals;
         assert_eq!(t.days_elapsed, days_elapsed);
@@ -777,7 +899,7 @@ mod tests {
         assert!(t.earned_delta_pct.is_none());
         assert!(t.spent_delta_pct.is_none());
 
-        // Net worth: 10100 - 2000 = 8100, delta 100.
+        // Net worth: 10100 + (-2000) = 8100, delta 100.
         assert!((t.net_worth.unwrap() - 8100.0).abs() < 1e-6);
         assert!((t.net_worth_delta.unwrap() - 100.0).abs() < 1e-6);
 
@@ -795,8 +917,16 @@ mod tests {
         // Trend: only the current (last) month has data.
         assert_eq!(summary.trend_12m.labels.len(), 12);
         for i in 0..11 {
-            assert!((summary.trend_12m.spent[i] - 0.0).abs() < 1e-6, "month {}", summary.trend_12m.labels[i]);
-            assert!((summary.trend_12m.earned[i] - 0.0).abs() < 1e-6, "month {}", summary.trend_12m.labels[i]);
+            assert!(
+                (summary.trend_12m.spent[i] - 0.0).abs() < 1e-6,
+                "month {}",
+                summary.trend_12m.labels[i]
+            );
+            assert!(
+                (summary.trend_12m.earned[i] - 0.0).abs() < 1e-6,
+                "month {}",
+                summary.trend_12m.labels[i]
+            );
         }
         assert!((summary.trend_12m.spent[11] - 100.0).abs() < 1e-6);
         assert!((summary.trend_12m.earned[11] - 3000.0).abs() < 1e-6);
@@ -822,9 +952,10 @@ mod tests {
 
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}", p_start_s, p_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                p_start_s, p_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(prev_month_fixture(py, pm).to_string())
@@ -832,9 +963,7 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/transactions")
-            .match_query(mockito::Matcher::Regex(
-                r".*".to_string(),
-            ))
+            .match_query(mockito::Matcher::Regex(r".*".to_string()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(month_fixture(y, m).to_string())
@@ -864,9 +993,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=assets", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=assets",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(net_worth_asset_body(y, m))
@@ -874,9 +1004,10 @@ mod tests {
             .await;
         server
             .mock("GET", "/v1/chart/account/overview")
-            .match_query(mockito::Matcher::Regex(
-                format!(r"start={}&end={}&period=1D&preselected=liabilities", m_start_s, m_end_s),
-            ))
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}&period=1D&preselected=liabilities",
+                m_start_s, m_end_s
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(net_worth_liability_body(y, m))
@@ -893,7 +1024,7 @@ mod tests {
         let client = FireflyClient::new(make_test_config(url));
         let exclusions = Exclusions::new(vec!["Cars".to_string()], vec![]);
         let summary = client
-            .get_month_summary(y, m, None, &exclusions)
+            .get_month_summary(y, m, None, None, &exclusions)
             .await
             .unwrap();
 
@@ -910,8 +1041,287 @@ mod tests {
         assert_eq!(top.name, "Housing:Rent");
         assert!((top.pct - 500.0 / 850.0 * 100.0).abs() < 1e-6);
 
-        assert!(!summary.top_expenses.iter().any(|t| t.description == "Car repair"));
+        assert!(!summary
+            .top_expenses
+            .iter()
+            .any(|t| t.description == "Car repair"));
         assert!((summary.top_expenses[0].amount - 500.0).abs() < 1e-6);
+    }
+
+    // ── Account include/exclude filters ─────────────────────────────────
+
+    /// Accounts with a second asset account and a liability (credit card).
+    fn accounts_body_3accts() -> String {
+        json!({
+            "data": [
+                { "id": "1", "attributes": { "name": "Checking", "type": "asset", "current_balance": "5000.00", "currency_symbol": "$" } },
+                { "id": "2", "attributes": { "name": "Savings", "type": "asset", "current_balance": "9000.00", "currency_symbol": "$" } },
+                { "id": "3", "attributes": { "name": "Credit Card", "type": "liability", "current_balance": "-250.00", "currency_symbol": "$" } },
+                { "id": "10", "attributes": { "name": "Supermarket", "type": "expense", "current_balance": "-100.00", "currency_symbol": "$" } },
+                { "id": "11", "attributes": { "name": "Landlord", "type": "expense", "current_balance": "-500.00", "currency_symbol": "$" } },
+                { "id": "12", "attributes": { "name": "Takeout", "type": "expense", "current_balance": "-250.00", "currency_symbol": "$" } },
+                { "id": "13", "attributes": { "name": "Garage", "type": "expense", "current_balance": "-1200.00", "currency_symbol": "$" } },
+                { "id": "20", "attributes": { "name": "Employer", "type": "revenue", "current_balance": "3000.00", "currency_symbol": "$" } }
+            ]
+        })
+        .to_string()
+    }
+
+    /// Fixture spread across three money accounts:
+    ///   earned:  3000 salary into Checking (day 1)
+    ///   spent:   100 groceries from Checking (5th)
+    ///            + 500 rent from Savings (10th)
+    ///            + 250 card purchase from Credit Card (12th)
+    ///            + 1200 car repair from Savings (20th) = 2050
+    ///   transfer: 999 Checking -> Savings (15th) -- never counts as spending
+    fn month_fixture_3accts(y: i32, m: u32) -> serde_json::Value {
+        let d = |day: u32| format!("{}-{:02}-{:02}", y, m, day);
+        tx_list(vec![
+            deposit_tx("t-sal", &d(1), 3000.0, "Salary", "Income:Salary", "20", "1"),
+            withdrawal_tx(
+                "t-gro",
+                &d(5),
+                100.0,
+                "Groceries",
+                "Food & Drink:Groceries",
+                "",
+                "1",
+                "10",
+            ),
+            withdrawal_tx(
+                "t-rent",
+                &d(10),
+                500.0,
+                "Rent",
+                "Housing:Rent",
+                "",
+                "2",
+                "11",
+            ),
+            withdrawal_tx(
+                "t-card",
+                &d(12),
+                250.0,
+                "Card charge",
+                "Dining:Takeout",
+                "",
+                "3",
+                "12",
+            ),
+            transfer_tx("t-xfer", &d(15), 999.0, "Move to savings", "1", "2"),
+            withdrawal_tx(
+                "t-car",
+                &d(20),
+                1200.0,
+                "Car repair",
+                "Cars:Repairs",
+                "",
+                "2",
+                "13",
+            ),
+        ])
+    }
+
+    /// Mock every endpoint the summary touches, returning the 3-account
+    /// fixture for ALL transaction date ranges (filtering happens
+    /// client-side, so one catch-all mock covers daily, trend and
+    /// top-expenses fetches).
+    async fn mock_summary_server(server: &mut mockito::Server, body: &str) {
+        server
+            .mock("GET", "/v1/transactions")
+            .match_query(mockito::Matcher::Regex(r".*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/budgets")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "data": [] }).to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/chart/budget/overview")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("[]")
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/budget-limits")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "data": [] }).to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/chart/account/overview")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("[]")
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/accounts")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(accounts_body_3accts())
+            .create_async()
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_month_summary_account_filter_variants() {
+        let now = chrono::Utc::now();
+        let (y, m) = shift_months(now.year(), now.month(), -6);
+        let mut server = mockito::Server::new_async().await;
+        let body = month_fixture_3accts(y, m).to_string();
+        mock_summary_server(&mut server, &body).await;
+        let client = FireflyClient::new(make_test_config(server.url()));
+        let none = None;
+        let no_excl = Exclusions::new(vec![], vec![]);
+
+        // Baseline (no account filter): all deposits/withdrawals count,
+        // the internal transfer does not.
+        let base = client
+            .get_month_summary(y, m, none.clone(), none.clone(), &no_excl)
+            .await
+            .unwrap();
+        assert!((base.totals.earned - 3000.0).abs() < 1e-6);
+        assert!((base.totals.spent - 2050.0).abs() < 1e-6);
+
+        // Exclude Checking (id 1): salary, groceries and the transfer are
+        // dropped entirely (they touch the excluded account); rent, the
+        // card charge and the car repair remain.
+        let excl_checking = client
+            .get_month_summary(y, m, none.clone(), Some(vec!["1".to_string()]), &no_excl)
+            .await
+            .unwrap();
+        assert!((excl_checking.totals.earned - 0.0).abs() < 1e-6);
+        assert!((excl_checking.totals.spent - 1950.0).abs() < 1e-6);
+        let cat_sum: f64 = excl_checking.categories.iter().map(|c| c.amount).sum();
+        assert!((cat_sum - 1950.0).abs() < 1e-6);
+        assert_eq!(excl_checking.categories.len(), 3);
+        assert_eq!(excl_checking.categories[0].name, "Cars:Repairs");
+        assert_eq!(excl_checking.categories[1].name, "Housing:Rent");
+        assert_eq!(excl_checking.categories[2].name, "Dining:Takeout");
+        assert!(!excl_checking
+            .categories
+            .iter()
+            .any(|c| c.name == "Food & Drink:Groceries"));
+        assert_eq!(excl_checking.top_expenses.len(), 3);
+        assert!((excl_checking.top_expenses[0].amount - 1200.0).abs() < 1e-6);
+        assert_eq!(excl_checking.top_expenses[0].description, "Car repair");
+        assert_eq!(excl_checking.top_expenses[1].description, "Rent");
+        assert_eq!(excl_checking.top_expenses[2].description, "Card charge");
+        // The 12-month trend agrees with the filtered totals.
+        let t = &excl_checking.trend_12m;
+        assert!((t.earned[t.earned.len() - 1] - 0.0).abs() < 1e-6);
+        assert!((t.spent[t.spent.len() - 1] - 1950.0).abs() < 1e-6);
+
+        // Exclude the Credit Card (id 3): only the card charge drops.
+        let excl_card = client
+            .get_month_summary(y, m, none.clone(), Some(vec!["3".to_string()]), &no_excl)
+            .await
+            .unwrap();
+        assert!((excl_card.totals.earned - 3000.0).abs() < 1e-6);
+        assert!((excl_card.totals.spent - 1800.0).abs() < 1e-6);
+        assert!(!excl_card
+            .categories
+            .iter()
+            .any(|c| c.name == "Dining:Takeout"));
+
+        // Include only Savings (id 2): rent + car count as spent, the
+        // transfer INTO Savings counts as earned.
+        let incl_savings = client
+            .get_month_summary(y, m, Some(vec!["2".to_string()]), none.clone(), &no_excl)
+            .await
+            .unwrap();
+        assert!((incl_savings.totals.earned - 999.0).abs() < 1e-6);
+        assert!((incl_savings.totals.spent - 1700.0).abs() < 1e-6);
+
+        // Include + exclude of the SAME account: the exclusion wins, so
+        // everything involving Savings drops.
+        let incl_and_excl = client
+            .get_month_summary(
+                y,
+                m,
+                Some(vec!["2".to_string()]),
+                Some(vec!["2".to_string()]),
+                &no_excl,
+            )
+            .await
+            .unwrap();
+        assert!((incl_and_excl.totals.earned - 0.0).abs() < 1e-6);
+        assert!((incl_and_excl.totals.spent - 0.0).abs() < 1e-6);
+        assert!(incl_and_excl.top_expenses.is_empty());
+    }
+
+    /// get_earned_spent supports account exclusion directly (used by the
+    /// summary trend/totals): transactions touching an excluded account are
+    /// dropped from both the earned and spent lines.
+    #[tokio::test]
+    async fn test_earned_spent_excludes_accounts() {
+        let now = chrono::Utc::now();
+        let (y, m) = shift_months(now.year(), now.month(), -6);
+        let (m_start, m_end, _) = month_range(y, m).unwrap();
+        let start = m_start.format("%Y-%m-%d").to_string();
+        let end = m_end.format("%Y-%m-%d").to_string();
+
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/v1/transactions")
+            .match_query(mockito::Matcher::Regex(format!(
+                r"start={}&end={}",
+                start, end
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(month_fixture_3accts(y, m).to_string())
+            .create_async()
+            .await;
+        let client = FireflyClient::new(make_test_config(server.url()));
+
+        let sum = |line: &oxidize::models::chart::ChartLine, label: &str| -> f64 {
+            line.iter()
+                .find(|ds| ds.label == label)
+                .map(|ds| parse_entries(&ds.entries))
+                .unwrap_or(0.0)
+        };
+
+        let all = client
+            .get_earned_spent(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1M".into()),
+                None,
+                None,
+                &Exclusions::default(),
+            )
+            .await
+            .unwrap();
+        assert!((sum(&all, "earned") - 3000.0).abs() < 1e-6);
+        assert!((sum(&all, "spent") - 2050.0).abs() < 1e-6);
+
+        let excl = client
+            .get_earned_spent(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1M".into()),
+                None,
+                Some(vec!["1".to_string()]),
+                &Exclusions::default(),
+            )
+            .await
+            .unwrap();
+        assert!((sum(&excl, "earned") - 0.0).abs() < 1e-6);
+        assert!((sum(&excl, "spent") - 1950.0).abs() < 1e-6);
     }
 
     // ── Error cases ──────────────────────────────────────────────────────
@@ -922,7 +1332,7 @@ mod tests {
         let url = server.url();
         let client = FireflyClient::new(make_test_config(url));
         let err = client
-            .get_month_summary(2099, 12, None, &Exclusions::new(vec![], vec![]))
+            .get_month_summary(2099, 12, None, None, &Exclusions::new(vec![], vec![]))
             .await
             .unwrap_err();
         assert!(err.contains("future"), "unexpected error: {}", err);
@@ -934,7 +1344,7 @@ mod tests {
         let url = server.url();
         let client = FireflyClient::new(make_test_config(url));
         let err = client
-            .get_month_summary(2026, 13, None, &Exclusions::new(vec![], vec![]))
+            .get_month_summary(2026, 13, None, None, &Exclusions::new(vec![], vec![]))
             .await
             .unwrap_err();
         assert!(err.contains("Invalid month"), "unexpected error: {}", err);

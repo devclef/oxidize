@@ -123,3 +123,201 @@ describe('escapeHtml', () => {
         expect(window.MonthSummary.escapeHtml(42)).toBe('42');
     });
 });
+
+describe('account filter helpers', () => {
+    it('exposes a stable storage key', () => {
+        expect(typeof window.MonthSummary.ACCOUNT_FILTER_KEY).toBe('string');
+        expect(window.MonthSummary.ACCOUNT_FILTER_KEY.length).toBeGreaterThan(0);
+    });
+
+    it('builds include params from account ids', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'include',
+            ['1', '2', '3']
+        );
+        expect(pairs).toEqual([
+            ['accounts[]', '1'],
+            ['accounts[]', '2'],
+            ['accounts[]', '3'],
+        ]);
+    });
+
+    it('builds exclude params from account ids', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'exclude',
+            ['7']
+        );
+        expect(pairs).toEqual([['exclude_accounts[]', '7']]);
+    });
+
+    it('returns no params for all-accounts mode', () => {
+        expect(window.MonthSummary.buildAccountFilterParams('all', ['1', '2'])).toEqual([]);
+    });
+
+    it('returns no params when the selection is empty', () => {
+        expect(window.MonthSummary.buildAccountFilterParams('include', [])).toEqual([]);
+        expect(window.MonthSummary.buildAccountFilterParams('exclude', [])).toEqual([]);
+    });
+
+    it('normalizes ids to trimmed, de-duplicated strings', () => {
+        const pairs = window.MonthSummary.buildAccountFilterParams(
+            'exclude',
+            [' 1 ', '1', 2, '', null, '3']
+        );
+        expect(pairs).toEqual([
+            ['exclude_accounts[]', '1'],
+            ['exclude_accounts[]', '2'],
+            ['exclude_accounts[]', '3'],
+        ]);
+    });
+
+    it('parses a stored filter object', () => {
+        const parsed = window.MonthSummary.parseAccountFilter(
+            { mode: 'exclude', ids: ['1', '2'] }
+        );
+        expect(parsed).toEqual({ mode: 'exclude', ids: ['1', '2'] });
+    });
+
+    it('falls back to all-accounts for missing or invalid stored data', () => {
+        const fallback = { mode: 'all', ids: [] };
+        expect(window.MonthSummary.parseAccountFilter(null)).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter(undefined)).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter('nonsense')).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({})).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'bogus', ids: ['1'] })).toEqual(fallback);
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'include', ids: 'nope' })).toEqual(fallback);
+    });
+
+    it('coerces an include/exclude mode with no ids to all-accounts', () => {
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'include', ids: [] })).toEqual(
+            { mode: 'all', ids: [] }
+        );
+        expect(window.MonthSummary.parseAccountFilter({ mode: 'exclude', ids: [] })).toEqual(
+            { mode: 'all', ids: [] }
+        );
+    });
+
+    it('describes the active filter for display', () => {
+        expect(window.MonthSummary.describeAccountFilter('all')).toBe('');
+        expect(window.MonthSummary.describeAccountFilter('include', 3)).toBe('3 accounts included');
+        expect(window.MonthSummary.describeAccountFilter('include', 1)).toBe('1 account included');
+        expect(window.MonthSummary.describeAccountFilter('exclude', 2)).toBe('2 accounts excluded');
+        expect(window.MonthSummary.describeAccountFilter('exclude', 1)).toBe('1 account excluded');
+    });
+});
+
+describe('groupAccounts', () => {
+    const accounts = [
+        { id: '1', name: 'Credit Card', account_type: 'liability' },
+        { id: '2', name: 'Z Checking', account_type: 'asset' },
+        { id: '3', name: 'A Savings', account_type: 'asset' },
+        { id: '4', name: 'Salary', account_type: 'revenue' },
+        { id: '5', name: 'Groceries', account_type: 'expense' },
+        { id: '6', name: 'Cash Wallet', account_type: 'cash' },
+        { id: '7', name: 'Mystery', account_type: 'weird' },
+    ];
+
+    it('groups by type in display order: asset, cash, liability, expense, revenue', () => {
+        const groups = window.MonthSummary.groupAccounts(accounts);
+        expect(groups.map((g) => g.key)).toEqual([
+            'asset', 'cash', 'liability', 'expense', 'revenue', 'weird',
+        ]);
+    });
+
+    it('uses friendly labels and title-cases unknown types', () => {
+        const groups = window.MonthSummary.groupAccounts(accounts);
+        expect(groups.map((g) => g.label)).toEqual([
+            'Assets', 'Cash', 'Liabilities', 'Expenses', 'Income', 'Weird',
+        ]);
+    });
+
+    it('merges the Firefly v5/v6 liability spellings and loans into one group', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'Old Card', account_type: 'liability' },
+            { id: '2', name: 'New Card', account_type: 'liabilities' },
+            { id: '3', name: 'Mortgage', account_type: 'loan' },
+            { id: '4', name: 'Wallet', account_type: 'cash' },
+        ]);
+        expect(groups.map((g) => g.key)).toEqual(['cash', 'liability']);
+        const liab = groups.find((g) => g.key === 'liability');
+        expect(liab.label).toBe('Liabilities');
+        // All three spellings land in the same group (rows sorted by name).
+        expect(liab.accounts.map((a) => a.id).sort()).toEqual(['1', '2', '3']);
+    });
+
+    it('labels Firefly v6 import accounts as Imports', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'Import Co', account_type: 'import' },
+        ]);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].key).toBe('import');
+        expect(groups[0].label).toBe('Imports');
+    });
+
+    it('title-cases hyphenated unknown types', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'X', account_type: 'credit-card' },
+        ]);
+        expect(groups[0].label).toBe('Credit Card');
+    });
+
+    it('sorts accounts inside a group by name (case-insensitive)', () => {
+        const groups = window.MonthSummary.groupAccounts(accounts);
+        const assets = groups.find((g) => g.key === 'asset');
+        expect(assets.accounts.map((a) => a.name)).toEqual(['A Savings', 'Z Checking']);
+    });
+
+    it('treats missing types as "other" and tolerates bad input', () => {
+        expect(window.MonthSummary.groupAccounts([
+            { id: '1', name: 'X' },
+            { id: '2', name: 'Y', account_type: null },
+        ]).map((g) => g.key)).toEqual(['other']);
+        expect(window.MonthSummary.groupAccounts(null)).toEqual([]);
+        expect(window.MonthSummary.groupAccounts('nope')).toEqual([]);
+    });
+
+    it('normalizes case in account types', () => {
+        const groups = window.MonthSummary.groupAccounts([
+            { id: '1', name: 'X', account_type: 'ASSET' },
+            { id: '2', name: 'Y', account_type: 'Asset' },
+        ]);
+        expect(groups.length).toBe(1);
+        expect(groups[0].key).toBe('asset');
+        expect(groups[0].accounts).toHaveLength(2);
+    });
+});
+
+describe('REVISION', () => {
+    it('starts with only expense and revenue groups collapsed', () => {
+        const m = window.MonthSummary;
+        expect(m.isDefaultCollapsed('expense')).toBe(true);
+        expect(m.isDefaultCollapsed('revenue')).toBe(true);
+        expect(m.isDefaultCollapsed('asset')).toBe(false);
+        expect(m.isDefaultCollapsed('cash')).toBe(false);
+        expect(m.isDefaultCollapsed('liability')).toBe(false);
+        expect(m.isDefaultCollapsed('weird')).toBe(false);
+    });
+
+    it('exposes an integer REVISION that summary.html verifies at load', () => {
+        expect(Number.isInteger(window.MonthSummary.REVISION)).toBe(true);
+        expect(window.MonthSummary.REVISION).toBeGreaterThan(0);
+    });
+});
+
+describe('resolveFilterMode', () => {
+    it('an empty selection always means all accounts', () => {
+        expect(window.MonthSummary.resolveFilterMode('include', 0)).toBe('all');
+        expect(window.MonthSummary.resolveFilterMode('exclude', 0)).toBe('all');
+        expect(window.MonthSummary.resolveFilterMode('all', 0)).toBe('all');
+    });
+
+    it('a selection from all-accounts mode becomes an include', () => {
+        expect(window.MonthSummary.resolveFilterMode('all', 3)).toBe('include');
+        expect(window.MonthSummary.resolveFilterMode(undefined, 1)).toBe('include');
+    });
+
+    it('an explicit include or exclude stays what it is', () => {
+        expect(window.MonthSummary.resolveFilterMode('include', 2)).toBe('include');
+        expect(window.MonthSummary.resolveFilterMode('exclude', 2)).toBe('exclude');
+    });
+});

@@ -33,6 +33,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::account::refresh_all)
             .service(handlers::account::get_earned_spent)
             .service(handlers::account::get_earned_spent_since)
+            .service(handlers::account::get_saved_this_month)
             .service(handlers::account::get_expenses_by_category)
             .service(handlers::account::get_net_worth)
             .service(handlers::account::get_budget_spent)

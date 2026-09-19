@@ -1,15 +1,15 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::{
-    AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
-    BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, ParentCategory, SankeyFlowData,
-    SankeyFlowType, SankeyLink, SimpleAccount,
-};
 use crate::models::summary::{
     budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
     MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
     MonthTotals, MonthTrend,
+};
+use crate::models::{
+    AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
+    BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
+    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, MonthStats, ParentCategory,
+    SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -291,7 +291,7 @@ impl FireflyClient {
 
         // Fetch all transactions involving the selected accounts
         let transactions = self
-            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None, None)
             .await?;
 
         // Fetch account types (and current balances) to classify journal direction.
@@ -914,6 +914,7 @@ impl FireflyClient {
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
         // Check cache first
@@ -922,6 +923,7 @@ impl FireflyClient {
             end_date.clone(),
             period.clone(),
             account_ids.clone(),
+            excluded_account_ids.clone(),
             exclusions,
         ) {
             debug!("Cache hit for earned/spent");
@@ -935,6 +937,7 @@ impl FireflyClient {
                 end_date.clone(),
                 period.clone(),
                 account_ids.clone(),
+                excluded_account_ids.clone(),
                 None,
                 exclusions,
             )
@@ -947,6 +950,7 @@ impl FireflyClient {
                     end_date,
                     period,
                     account_ids,
+                    excluded_account_ids,
                     exclusions,
                     json,
                 );
@@ -956,12 +960,14 @@ impl FireflyClient {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_earned_spent_with_since(
         &self,
         start_date: Option<String>,
         end_date: Option<String>,
         period: Option<String>,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         since: Option<String>,
         exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
@@ -976,7 +982,13 @@ impl FireflyClient {
         let period_val = period.unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(
+                &start,
+                &end,
+                account_ids.as_ref(),
+                None,
+                excluded_account_ids.as_deref(),
+            )
             .await?;
 
         // Build a set of selected account IDs for transfer filtering
@@ -1100,6 +1112,170 @@ impl FireflyClient {
         ])
     }
 
+    /// Sum earned and spent over a date range using the same journal-level
+    /// classification as `get_earned_spent`. Returns
+    /// (earned, spent, currency_symbol, currency_code).
+    async fn sum_earned_spent_for_range(
+        &self,
+        start: &str,
+        end: &str,
+        account_ids: Option<&Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<(f64, f64, Option<String>, Option<String>), String> {
+        let all_transactions = self
+            .fetch_all_transactions(start, end, account_ids, None, None)
+            .await?;
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        // Flatten transactions into individual journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        let mut earned = 0.0f64;
+        let mut spent = 0.0f64;
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+            let is_earned = journal_counts_earned(journal, &selected_ids);
+            let is_spent = journal_counts_spent(journal, &selected_ids);
+            if is_earned || is_spent {
+                if let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) {
+                    if let Ok(amount) = amount_str.parse::<f64>() {
+                        if is_earned {
+                            earned += amount;
+                        }
+                        if is_spent {
+                            spent += amount;
+                        }
+                    }
+                }
+            }
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+            }
+        }
+
+        Ok((earned, spent, currency_symbol, currency_code))
+    }
+
+    /// Compute the date ranges for the "Saved this Month" tile: the current
+    /// (partial) month from the first of the month to `now`, and the
+    /// previous (full) month. Returns
+    /// (cur_start, cur_end, prev_start, prev_end).
+    ///
+    /// Kept as a pure function so the month-boundary math (including the
+    /// January -> December-of-previous-year rollover) is unit-testable.
+    pub fn saved_this_month_ranges(now: NaiveDate) -> (NaiveDate, NaiveDate, NaiveDate, NaiveDate) {
+        let cur_start =
+            NaiveDate::from_ymd_opt(now.year(), now.month(), 1).expect("valid current month start");
+        let cur_end = now;
+        let prev_end = cur_start - Duration::days(1);
+        let prev_start = NaiveDate::from_ymd_opt(prev_end.year(), prev_end.month(), 1)
+            .expect("valid previous month start");
+        (cur_start, cur_end, prev_start, prev_end)
+    }
+
+    /// Compute the "Saved this Month" tile: current calendar month (start of
+    /// month to today) compared against the previous full month.
+    pub async fn get_saved_this_month(
+        &self,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<SavedThisMonth, String> {
+        let now = Utc::now().date_naive();
+        let (cur_start, cur_end, prev_start, prev_end) = Self::saved_this_month_ranges(now);
+        let month_key = format!("{}-{:02}", cur_start.year(), cur_start.month());
+
+        // Check cache first
+        if let Some(cached) =
+            self.cache
+                .get_saved_this_month(&month_key, account_ids.as_ref(), exclusions)
+        {
+            debug!("Cache hit for saved this month");
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached saved this month: {}", e));
+        }
+
+        let (cur_earned, cur_spent, mut symbol, mut code) = self
+            .sum_earned_spent_for_range(
+                &cur_start.format("%Y-%m-%d").to_string(),
+                &cur_end.format("%Y-%m-%d").to_string(),
+                account_ids.as_ref(),
+                exclusions,
+            )
+            .await?;
+
+        let (prev_earned, prev_spent, prev_symbol, prev_code) = self
+            .sum_earned_spent_for_range(
+                &prev_start.format("%Y-%m-%d").to_string(),
+                &prev_end.format("%Y-%m-%d").to_string(),
+                account_ids.as_ref(),
+                exclusions,
+            )
+            .await?;
+
+        if symbol.is_none() {
+            symbol = prev_symbol;
+        }
+        if code.is_none() {
+            code = prev_code;
+        }
+
+        let cur_saved = cur_earned - cur_spent;
+        let prev_saved = prev_earned - prev_spent;
+
+        let result = SavedThisMonth {
+            currency_symbol: symbol,
+            currency_code: code,
+            current_month: MonthStats {
+                label: cur_start.format("%B %Y").to_string(),
+                earned: cur_earned,
+                spent: cur_spent,
+                saved: cur_saved,
+            },
+            previous_month: MonthStats {
+                label: prev_start.format("%B %Y").to_string(),
+                earned: prev_earned,
+                spent: prev_spent,
+                saved: prev_saved,
+            },
+            difference: cur_saved - prev_saved,
+            current_month_start: cur_start.format("%Y-%m-%d").to_string(),
+            current_month_end: cur_end.format("%Y-%m-%d").to_string(),
+        };
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache
+                .set_saved_this_month(&month_key, account_ids.as_ref(), exclusions, json);
+        }
+
+        Ok(result)
+    }
+
     /// Sum all numeric values in a ChartDataSet entries object
     fn sum_entries(entries: &serde_json::Value) -> f64 {
         if let serde_json::Value::Object(map) = entries {
@@ -1146,7 +1322,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -1346,10 +1522,16 @@ impl FireflyClient {
             }
         }
 
+        // Firefly III reports liability (debt) account balances as
+        // NEGATIVE values (a $2,000 credit card debt has balance -2000),
+        // so net worth is the plain sum of the asset and liability
+        // balances — the same summation Firefly III itself uses for its
+        // net worth (assets plus negative debt). "Owed to you" liability
+        // accounts have positive balances and are added as assets are.
         for dataset in &liability_data {
             for (date, amount) in parse_chart_entries(&dataset.entries) {
                 let date_part = date.split('T').next().unwrap_or(&date).to_string();
-                *net_worth_entries.entry(date_part).or_insert(0.0) -= amount;
+                *net_worth_entries.entry(date_part).or_insert(0.0) += amount;
             }
         }
 
@@ -1603,7 +1785,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1D".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Flatten transactions into journal entries
@@ -1836,12 +2018,14 @@ impl FireflyClient {
             .clone()
             .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
         let start = start_date.unwrap_or_else(|| {
-            (Utc::now() - Duration::days(30)).format("%Y-%m-%d").to_string()
+            (Utc::now() - Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string()
         });
 
-        if let Some(cached) =
-            self.cache
-                .get_budget_limits(Some(start.clone()), Some(end.clone()))
+        if let Some(cached) = self
+            .cache
+            .get_budget_limits(Some(start.clone()), Some(end.clone()))
         {
             debug!("Cache hit for bulk budget limits");
             return serde_json::from_str(&cached)
@@ -1876,10 +2060,9 @@ impl FireflyClient {
         // Firefly III returns a HAL+JSON envelope {data: [...]} (v6); older
         // versions return a bare array.
         let limits: Vec<BulkBudgetLimit> = match &value {
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .filter_map(BulkBudgetLimit::from_value)
-                .collect(),
+            serde_json::Value::Array(arr) => {
+                arr.iter().filter_map(BulkBudgetLimit::from_value).collect()
+            }
             _ => value
                 .get("data")
                 .and_then(|d| d.as_array())
@@ -1892,7 +2075,12 @@ impl FireflyClient {
                 .set_budget_limits(Some(start.clone()), Some(end.clone()), json);
         }
 
-        debug!("bulk budget limits: {} limits for {} to {}", limits.len(), start, end);
+        debug!(
+            "bulk budget limits: {} limits for {} to {}",
+            limits.len(),
+            start,
+            end
+        );
         Ok(limits)
     }
 
@@ -2230,6 +2418,7 @@ impl FireflyClient {
         end: &str,
         account_ids: Option<&Vec<String>>,
         type_filter: Option<&str>,
+        excluded_account_ids: Option<&[String]>,
     ) -> Result<Vec<serde_json::Value>, String> {
         let chunks = Self::chunk_date_range(start, end)?;
         let mut all_transactions = std::collections::HashMap::new();
@@ -2295,7 +2484,37 @@ impl FireflyClient {
                 all_transactions.retain(|tx| self.transaction_involves_account(tx, &id_set));
             }
         }
+        if let Some(ids) = excluded_account_ids {
+            if !ids.is_empty() {
+                let excl_set: std::collections::HashSet<&str> =
+                    ids.iter().map(String::as_str).collect();
+                all_transactions.retain(|tx| !Self::transaction_touches_excluded(tx, &excl_set));
+            }
+        }
         Ok(all_transactions)
+    }
+
+    /// True when any journal in the transaction touches an excluded account
+    /// (as source or destination). Such transactions are dropped entirely so
+    /// excluding an account removes everything that flows through it.
+    fn transaction_touches_excluded(
+        tx: &serde_json::Value,
+        excluded: &std::collections::HashSet<&str>,
+    ) -> bool {
+        tx.get("attributes")
+            .and_then(|a| a.get("transactions"))
+            .and_then(|t| t.as_array())
+            .map(|transactions| {
+                transactions.iter().any(|t| {
+                    ["source_id", "destination_id"].iter().any(|f| {
+                        t.get(*f)
+                            .and_then(|v| v.as_str())
+                            .map(|id| excluded.contains(id))
+                            .unwrap_or(false)
+                    })
+                })
+            })
+            .unwrap_or(false)
     }
 
     fn transaction_involves_account(
@@ -2566,7 +2785,7 @@ impl FireflyClient {
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None)
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
             .await?;
 
         // Build a set of parent categories for filtering
@@ -2948,7 +3167,7 @@ impl FireflyClient {
         }
 
         let all_transactions = self
-            .fetch_all_transactions(&start, &end, Some(&account_ids), None)
+            .fetch_all_transactions(&start, &end, Some(&account_ids), None, None)
             .await?;
 
         let flow_type_label = match &flow_type {
@@ -3277,17 +3496,26 @@ impl FireflyClient {
     /// transaction set with the same account/exclusion filters, so they
     /// always agree with each other. Budget figures come from Firefly III's
     /// own budget endpoints; net worth from the account overview chart
-    /// (assets minus liabilities).
+    /// (asset balances plus liability balances, where debt balances are negative).
     ///
     /// `month` is 1-12; future months are rejected. Sub-sections that fail
     /// to load (budgets, net worth, previous-month comparison) degrade
     /// gracefully: the affected fields are left empty and the problem is
     /// reported in `warnings`, so the page can still show what loaded.
+    ///
+    /// `account_ids` restricts the summary to the given accounts;
+    /// `excluded_account_ids` drops every transaction that touches one of
+    /// the listed accounts (on either side). When both are given, the
+    /// exclusions win. The filter applies to everything derived from
+    /// transactions (totals, categories, daily series, trend, top
+    /// expenses); budgets and net worth are whole-of-household metrics and
+    /// are not affected.
     pub async fn get_month_summary(
         &self,
         year: i32,
         month: u32,
         account_ids: Option<Vec<String>>,
+        excluded_account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Result<MonthSummary, String> {
         let (month_start, month_end, days_in_month) = month_range(year, month)?;
@@ -3297,7 +3525,11 @@ impl FireflyClient {
         }
         let is_current = today.year() == year && today.month() == month;
         let effective_end = if is_current { today } else { month_end };
-        let days_elapsed: u32 = if is_current { today.day() } else { days_in_month };
+        let days_elapsed: u32 = if is_current {
+            today.day()
+        } else {
+            days_in_month
+        };
 
         let fmt = |d: &NaiveDate| d.format("%Y-%m-%d").to_string();
         let start = fmt(&month_start);
@@ -3315,55 +3547,60 @@ impl FireflyClient {
         let trend_start_s = fmt(&trend_start);
 
         // Fetch all underlying data in parallel.
-        let (daily_r, prev_r, budgets_r, spent_r, limits_r, nw_r, txs_r, accts_r, trend_r) =
-            tokio::join!(
-                self.get_earned_spent(
-                    Some(start.clone()),
-                    Some(end.clone()),
-                    Some("1D".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-                self.get_earned_spent(
-                    Some(prev_start_s),
-                    Some(prev_end_s),
-                    Some("1M".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-                self.get_budgets(None, None),
-                self.get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions),
-                self.get_budget_limits(Some(start.clone()), Some(end.clone())),
-                self.get_net_worth(
-                    Some(start.clone()),
-                    Some(end.clone()),
-                    Some("1D".to_string()),
-                ),
-                self.fetch_all_transactions(&start, &end, account_ids.as_ref(), None),
-                self.get_accounts(None),
-                self.get_earned_spent(
-                    Some(trend_start_s),
-                    // Use the full calendar month end (not `effective_end`):
-                    // with a mid-month end, period-key generation drops the
-                    // final partial bucket and its data would be folded into
-                    // the previous month. The API only ever returns
-                    // transactions up to today, so the partial-month bucket
-                    // stays accurate.
-                    Some(fmt(&month_end)),
-                    Some("1M".to_string()),
-                    account_ids.clone(),
-                    exclusions,
-                ),
-            );
+        let (daily_r, prev_r, budgets_r, spent_r, limits_r, nw_r, txs_r, accts_r, trend_r) = tokio::join!(
+            self.get_earned_spent(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1D".to_string()),
+                account_ids.clone(),
+                excluded_account_ids.clone(),
+                exclusions,
+            ),
+            self.get_earned_spent(
+                Some(prev_start_s),
+                Some(prev_end_s),
+                Some("1M".to_string()),
+                account_ids.clone(),
+                excluded_account_ids.clone(),
+                exclusions,
+            ),
+            self.get_budgets(None, None),
+            self.get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions),
+            self.get_budget_limits(Some(start.clone()), Some(end.clone())),
+            self.get_net_worth(
+                Some(start.clone()),
+                Some(end.clone()),
+                Some("1D".to_string()),
+            ),
+            self.fetch_all_transactions(
+                &start,
+                &end,
+                account_ids.as_ref(),
+                None,
+                excluded_account_ids.as_deref(),
+            ),
+            self.get_accounts(None),
+            self.get_earned_spent(
+                Some(trend_start_s),
+                // Use the full calendar month end (not `effective_end`):
+                // with a mid-month end, period-key generation drops the
+                // final partial bucket and its data would be folded into
+                // the previous month. The API only ever returns
+                // transactions up to today, so the partial-month bucket
+                // stays accurate.
+                Some(fmt(&month_end)),
+                Some("1M".to_string()),
+                account_ids.clone(),
+                excluded_account_ids.clone(),
+                exclusions,
+            ),
+        );
 
         // Core transaction data is required: without it there are no
         // meaningful financials to show at all.
-        let daily = daily_r
-            .map_err(|e| format!("Failed to load monthly cash flow: {}", e))?;
-        let trend = trend_r
-            .map_err(|e| format!("Failed to load 12-month trend: {}", e))?;
-        let txs = txs_r
-            .map_err(|e| format!("Failed to load transactions: {}", e))?;
+        let daily = daily_r.map_err(|e| format!("Failed to load monthly cash flow: {}", e))?;
+        let trend = trend_r.map_err(|e| format!("Failed to load 12-month trend: {}", e))?;
+        let txs = txs_r.map_err(|e| format!("Failed to load transactions: {}", e))?;
 
         let mut warnings: Vec<String> = Vec::new();
 
@@ -3371,11 +3608,9 @@ impl FireflyClient {
         let (earned_series, spent_series) = Self::split_earned_spent_line(&daily);
         let earned_map: std::collections::HashMap<String, f64> =
             earned_series.into_iter().collect();
-        let spent_map: std::collections::HashMap<String, f64> =
-            spent_series.into_iter().collect();
+        let spent_map: std::collections::HashMap<String, f64> = spent_series.into_iter().collect();
 
-        let mut dates: std::collections::BTreeSet<String> =
-            earned_map.keys().cloned().collect();
+        let mut dates: std::collections::BTreeSet<String> = earned_map.keys().cloned().collect();
         dates.extend(spent_map.keys().cloned());
         let mut daily_dates = Vec::new();
         let mut daily_earned = Vec::new();
@@ -3427,8 +3662,7 @@ impl FireflyClient {
                 .and_then(|t| t.as_array())
             {
                 for j in arr {
-                    if !journal_counts_spent(j, &selected_ids)
-                        || journal_is_excluded(exclusions, j)
+                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
                     {
                         continue;
                     }
@@ -3607,8 +3841,7 @@ impl FireflyClient {
                 .and_then(|t| t.as_array())
             {
                 for j in arr {
-                    if !journal_counts_spent(j, &selected_ids)
-                        || journal_is_excluded(exclusions, j)
+                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
                     {
                         continue;
                     }
@@ -3648,7 +3881,11 @@ impl FireflyClient {
                 }
             }
         }
-        tops.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+        tops.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         tops.truncate(8);
 
         // ── 12-month trend ───────────────────────────────────────────────

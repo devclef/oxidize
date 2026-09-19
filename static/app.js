@@ -306,6 +306,12 @@ async function fetchChartData() {
     const comparisonStartDate = enableComparison ? document.getElementById('comparison-start-date').value : null;
     const comparisonEndDate = enableComparison ? document.getElementById('comparison-end-date').value : null;
 
+    // Saved This Month is a stat tile, not a time-series graph
+    if (widgetType === 'saved_this_month') {
+        await fetchSavedThisMonthTile(selectedIds);
+        return;
+    }
+
     try {
         const params = new URLSearchParams();
 
@@ -2065,6 +2071,85 @@ function renderCardPaydownPreview(ctx, data) {
             }
         }
     });
+}
+
+// ── Saved This Month stat tile ─────────────────────────────────────────
+// Fetches the current-vs-previous month savings summary and renders a
+// number tile (no chart) in the builder preview.
+async function fetchSavedThisMonthTile(selectedIds) {
+    const tileEl = document.getElementById('tile-preview');
+    const chartContainer = document.querySelector('.chart-wrapper');
+    const legendEl = document.getElementById('split-legend');
+
+    // Swap the preview area from the canvas to the tile
+    if (chartContainer) chartContainer.style.display = 'none';
+    if (legendEl) legendEl.style.display = 'none';
+    if (tileEl) {
+        tileEl.style.display = 'block';
+        tileEl.innerHTML = '<div class="loading">' + OxiUI.spinnerHtml('Loading savings…') + '</div>';
+    }
+
+    const params = new URLSearchParams();
+    selectedIds.forEach(id => params.append('accounts[]', id));
+    let url = '/api/saved-this-month';
+    if (params.toString()) url += `?${params.toString()}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Error: ${response.status} ${response.statusText}`);
+        const data = await response.json();
+        if (tileEl) tileEl.innerHTML = buildSavedTileHtml(data);
+    } catch (e) {
+        if (tileEl) tileEl.innerHTML = `<div class="info">Failed to load savings data: ${escapeHtmlAttr(e.message)}</div>`;
+    } finally {
+        const updateBtn = document.getElementById('update-chart-btn');
+        if (updateBtn) { updateBtn.disabled = false; updateBtn.textContent = 'Update Tile'; }
+    }
+}
+
+function formatMoney(value, symbol) {
+    const n = Number.isFinite(value) ? value : 0;
+    const sign = n < 0 ? '-' : '';
+    const abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return sign + (symbol || '') + abs;
+}
+
+function formatSavingsRange(start, end) {
+    const parse = (str) => { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d); };
+    try {
+        const a = parse(start), b = parse(end);
+        const mo = (dt) => dt.toLocaleString(undefined, { month: 'short' });
+        return `${mo(a)} ${a.getDate()} – ${mo(b)} ${b.getDate()}`;
+    } catch {
+        return '';
+    }
+}
+
+// Builds the markup for the "Saved This Month" tile. `data` is the JSON
+// returned by /api/saved-this-month.
+function buildSavedTileHtml(data) {
+    const cur = data.current_month || {};
+    const prev = data.previous_month || {};
+    const symbol = data.currency_symbol || '';
+    const saved = Number(cur.saved) || 0;
+    const diff = Number(data.difference) || 0;
+    const up = diff >= 0;
+    const range = formatSavingsRange(data.current_month_start, data.current_month_end);
+
+    return `
+        <div class="stat-tile">
+            <div class="stat-tile-value ${saved < 0 ? 'negative' : 'positive'}">${formatMoney(saved, symbol)}</div>
+            <div class="stat-tile-label">Saved in ${cur.label || 'this month'}</div>
+            ${range ? `<div class="stat-tile-sub">${range}</div>` : ''}
+            <div class="stat-tile-breakdown">
+                <div class="stat-tile-row"><span>Income</span><strong>${formatMoney(cur.earned || 0, symbol)}</strong></div>
+                <div class="stat-tile-row"><span>Expenses</span><strong>${formatMoney(cur.spent || 0, symbol)}</strong></div>
+            </div>
+            <div class="stat-tile-compare ${up ? 'up' : 'down'}">
+                <span class="stat-tile-delta">${up ? '▲' : '▼'} ${formatMoney(Math.abs(diff), symbol)}</span>
+                <span class="stat-tile-compare-note">vs ${prev.label || 'last month'} (${formatMoney(prev.saved || 0, symbol)})</span>
+            </div>
+        </div>`;
 }
 
 function renderChart(history, widgetType = 'balance', cardPaydownData = null) {
@@ -4243,6 +4328,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? 'Category Spend by Main Category'
                         : 'Category Subcategory Spend',
                     'card_paydown': 'Card Paydown',
+                    'saved_this_month': 'Saved This Month',
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -4285,7 +4371,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // Toggle advanced options visibility for card_paydown (some don't apply)
             const advancedSection = document.getElementById('advanced-section');
             if (advancedSection) {
-                advancedSection.style.display = widgetType === 'card_paydown' ? 'none' : '';
+                advancedSection.style.display =
+                    (widgetType === 'card_paydown' || widgetType === 'saved_this_month') ? 'none' : '';
+            }
+            // Saved This Month is a stat tile: hide the graph-specific controls
+            // (it is always the current calendar month, so no date range/style options).
+            if (widgetType === 'saved_this_month') {
+                const dateRangeGroup = document.getElementById('date-range-group');
+                if (dateRangeGroup) dateRangeGroup.style.display = 'none';
+                const displayGroup = document.getElementById('display-group');
+                if (displayGroup) displayGroup.style.display = 'none';
+            } else {
+                const dateRangeGroup = document.getElementById('date-range-group');
+                if (dateRangeGroup) dateRangeGroup.style.display = '';
+                const displayGroup = document.getElementById('display-group');
+                if (displayGroup) displayGroup.style.display = '';
+            }
+            const updateChartBtn = document.getElementById('update-chart-btn');
+            if (updateChartBtn) {
+                updateChartBtn.textContent = widgetType === 'saved_this_month' ? 'Update Tile' : 'Update Graph';
             }
              // Toggle budgets section visibility
             const budgetsSection = document.getElementById('budgets-section');
