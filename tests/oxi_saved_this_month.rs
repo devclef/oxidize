@@ -74,19 +74,24 @@ mod tests {
         };
 
         // saved must equal earned - spent for both months
-        assert!((payload.current_month.saved
-            - (payload.current_month.earned - payload.current_month.spent))
-            .abs()
-            < 1e-9);
-        assert!((payload.previous_month.saved
-            - (payload.previous_month.earned - payload.previous_month.spent))
-            .abs()
-            < 1e-9);
+        assert!(
+            (payload.current_month.saved
+                - (payload.current_month.earned - payload.current_month.spent))
+                .abs()
+                < 1e-9
+        );
+        assert!(
+            (payload.previous_month.saved
+                - (payload.previous_month.earned - payload.previous_month.spent))
+                .abs()
+                < 1e-9
+        );
         // difference must equal current.saved - previous.saved
-        assert!((payload.difference
-            - (payload.current_month.saved - payload.previous_month.saved))
-            .abs()
-            < 1e-9);
+        assert!(
+            (payload.difference - (payload.current_month.saved - payload.previous_month.saved))
+                .abs()
+                < 1e-9
+        );
 
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["current_month"]["saved"], 1800.0);
