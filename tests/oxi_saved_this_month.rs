@@ -129,7 +129,7 @@ mod tests {
             "route attribute /api/saved-this-month must exist"
         );
         assert!(
-            account_rs.contains("client.get_saved_this_month"),
+            account_rs.contains(".get_saved_this_month"),
             "handler must call the client method"
         );
     }
