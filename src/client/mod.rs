@@ -8,8 +8,8 @@ use crate::models::summary::{
 use crate::models::{
     AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
-    CategoryListResponse, ChartDataSet, ChartLine, Exclusions, MonthStats, ParentCategory,
-    SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
+    CategoryListResponse, CategoryRead, ChartDataSet, ChartLine, Exclusions, MonthStats,
+    ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -249,6 +249,11 @@ impl FireflyClient {
     pub fn clear_reimbursement_cache(&self) {
         self.cache.clear_reimbursement_summary();
         info!("Reimbursement summary cache cleared");
+    }
+
+    pub fn clear_categories_cache(&self) {
+        self.cache.clear_categories();
+        info!("Categories cache cleared");
     }
 
     /// Analyze credit card paydown activity for the given card accounts.
@@ -2652,15 +2657,22 @@ impl FireflyClient {
 
         for (chunk_start, chunk_end) in &chunks {
             let url = format!("{}/v1/transactions", self.config.firefly_url.as_str());
-            let mut offset = 0;
-            let page_size = 500;
+            let mut page = 1usize;
+            let page_size = 500usize;
+            // Safety cap: 2000 pages x 500 = 1M transactions per monthly
+            // chunk, far beyond any realistic user. Guards against a
+            // misbehaving upstream that keeps returning full pages.
+            const MAX_PAGES: usize = 2000;
 
             loop {
                 let mut params = vec![
                     ("start".to_string(), chunk_start.clone()),
                     ("end".to_string(), chunk_end.clone()),
-                    ("limit".to_string(), "500".to_string()),
-                    ("offset".to_string(), offset.to_string()),
+                    // Firefly III paginates with `limit` + 1-based `page`;
+                    // it has no `offset` parameter (sending one is ignored,
+                    // which would re-fetch page 1 on every loop).
+                    ("limit".to_string(), page_size.to_string()),
+                    ("page".to_string(), page.to_string()),
                 ];
                 if let Some(t) = type_filter {
                     params.push(("type".to_string(), t.to_string()));
@@ -2696,9 +2708,15 @@ impl FireflyClient {
                         all_transactions.insert(id.to_string(), tx.clone());
                     }
                 }
-                offset += page_size;
+                page += 1;
                 if data.len() < page_size {
                     break;
+                }
+                if page > MAX_PAGES {
+                    return Err(format!(
+                        "Failed to fetch all transactions for {}..{}: still receiving full pages after {} requests",
+                        chunk_start, chunk_end, MAX_PAGES
+                    ));
                 }
             }
         }
@@ -2906,6 +2924,12 @@ impl FireflyClient {
     }
 
     /// Fetch all categories from Firefly III, cached.
+    ///
+    /// Firefly III paginates list endpoints with `limit` + 1-based `page`
+    /// (default 50 per page), so a single un-paginated request only ever
+    /// returned the first 50 categories. Loop over pages until one comes
+    /// back short/empty so every category is fetched.
+    ///
     /// Returns a list of ParentCategory objects (categories with subcategories derived from ":" splitting).
     pub async fn get_categories(&self) -> Result<Vec<ParentCategory>, String> {
         // Check cache first
@@ -2914,27 +2938,52 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached categories: {}", e));
         }
 
-        let headers = self.get_headers();
         let url = format!("{}/v1/categories", self.config.firefly_url.as_str());
+        const PAGE_SIZE: usize = 100;
+        // Safety cap: 1000 pages x 100 = 100k categories, far beyond any
+        // realistic user. Guards against a misbehaving upstream that keeps
+        // returning full pages instead of ending with a short one.
+        const MAX_PAGES: usize = 1000;
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut categories: Vec<CategoryRead> = Vec::new();
+        let mut exhausted = false;
+        for page in 1..=MAX_PAGES {
+            let response = self
+                .client
+                .get(&url)
+                .headers(self.get_headers())
+                .query(&[
+                    ("limit".to_string(), PAGE_SIZE.to_string()),
+                    ("page".to_string(), page.to_string()),
+                ])
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            error!("API request failed with status: {}. Body: {}", status, body);
-            return Err(format!("API request failed with status: {}", status));
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("API request failed with status: {}. Body: {}", status, body);
+                return Err(format!("API request failed with status: {}", status));
+            }
+
+            let category_array: CategoryListResponse =
+                response.json().await.map_err(|e| e.to_string())?;
+            let batch = category_array.categories();
+            if batch.len() < PAGE_SIZE {
+                exhausted = true;
+            }
+            categories.extend(batch);
+            if exhausted {
+                break;
+            }
         }
-
-        let category_array: CategoryListResponse =
-            response.json().await.map_err(|e| e.to_string())?;
-        let categories = category_array.categories();
+        if !exhausted {
+            return Err(format!(
+                "Failed to fetch all categories: still receiving full pages after {} requests",
+                MAX_PAGES
+            ));
+        }
 
         // Group by parent category (split by ":")
         let mut parent_map: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =

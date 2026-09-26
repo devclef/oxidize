@@ -371,6 +371,153 @@ mod tests {
         assert!(err.contains("Invalid"), "unexpected error: {}", err);
     }
 
+    // ── Firefly pagination: the category list must not stop at one page ─
+
+    /// One category in the Firefly JSON:API shape.
+    fn category_item(id: i32, name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "type": "categories",
+            "id": id.to_string(),
+            "attributes": { "name": name }
+        })
+    }
+
+    fn category_list(items: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({ "data": items })
+    }
+
+    /// Firefly III paginates GET /v1/categories with `limit` + `page`
+    /// (default 50 per page). Before the fix, oxidize sent no pagination
+    /// params at all, so users with >50 categories only saw the first page
+    /// (the list "stopped at R"). This mocks two pages and asserts that
+    /// every category beyond the first page is fetched and grouped.
+    #[tokio::test]
+    async fn test_category_list_paginates_beyond_first_page() {
+        let mut server = mockito::Server::new_async().await;
+        let client = FireflyClient::new(make_test_config(server.url()));
+        client.clear_categories_cache();
+
+        // Page 1: a full 100 categories (the limit we request).
+        let page1: Vec<serde_json::Value> = (1..=100)
+            .map(|i| category_item(i, &format!("Cat{:03}", i)))
+            .collect();
+        // Page 2: 30 more, including one "Parent:Sub" name.
+        let page2: Vec<serde_json::Value> = (101..=130)
+            .map(|i| category_item(i, &format!("Cat{:03}", i)))
+            .chain(std::iter::once(category_item(131, "Work:Travel")))
+            .collect();
+
+        server
+            .mock("GET", "/v1/categories")
+            .match_query(mockito::Matcher::Regex("^limit=100&page=1$".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(category_list(page1).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/categories")
+            .match_query(mockito::Matcher::Regex("^limit=100&page=2$".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(category_list(page2).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let parents = client
+            .get_categories()
+            .await
+            .expect("paginated category fetch should succeed");
+
+        // 131 categories: 130 bare names + "Work:Travel" grouping under
+        // the "Work" parent -> 131 parent entries.
+        assert_eq!(parents.len(), 131, "expected 131 parent categories");
+        // The regression itself: names from page 2 must be present.
+        let names: std::collections::HashSet<&str> =
+            parents.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains("Cat130"), "page-2 category missing");
+        assert!(names.contains("Cat101"), "page-2 category missing");
+        assert!(names.contains("Cat001"), "page-1 category missing");
+        // Parent/sub grouping still works across pages.
+        let work = parents
+            .iter()
+            .find(|p| p.name == "Work")
+            .expect("'Work' parent should exist");
+        assert_eq!(work.subcategories, vec!["Travel".to_string()]);
+
+        client.clear_categories_cache();
+    }
+
+    /// A monthly chunk with more than one Firefly page of transactions
+    /// (limit=500) must be fully fetched via 1-based `page` params.
+    /// Before the fix oxidize sent `offset`, which Firefly ignores: page 1
+    /// would be re-fetched forever (hang) whenever a chunk had >500
+    /// transactions.
+    #[tokio::test]
+    async fn test_transaction_fetch_paginates_within_chunk() {
+        let mut server = mockito::Server::new_async().await;
+        let client = FireflyClient::new(make_test_config(server.url()));
+        client.clear_reimbursement_cache();
+
+        let single_month_txs = |ids: std::ops::Range<i32>| {
+            ids.map(|i| {
+                journal_tx(
+                    &format!("p2-{}", i),
+                    "withdrawal",
+                    "2026-03-10",
+                    -1.00,
+                    Some("Work"),
+                    None,
+                )
+            })
+            .collect::<Vec<_>>()
+        };
+
+        // Page 1: exactly 500 (a full page, so the client must ask for more)
+        let page1 = single_month_txs(1..501);
+        server
+            .mock("GET", "/v1/transactions")
+            .match_query(mockito::Matcher::Regex(
+                "^start=2026-03-01&end=2026-03-31&limit=500&page=1$".to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(tx_list(page1).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        // Page 2: 2 more, ending the fetch.
+        let page2 = single_month_txs(501..503);
+        server
+            .mock("GET", "/v1/transactions")
+            .match_query(mockito::Matcher::Regex(
+                "^start=2026-03-01&end=2026-03-31&limit=500&page=2$".to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(tx_list(page2).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let (cats, budgets) = expense_markers();
+        let summary = client
+            .get_reimbursement_summary("2026-03-01", "2026-03-31", &cats, &budgets, &[])
+            .await
+            .expect("summary with a multi-page chunk should succeed");
+
+        // All 502 work expenses counted, including the two from page 2.
+        assert!(
+            (summary.spent - 502.00).abs() < 1e-6,
+            "spent: {}",
+            summary.spent
+        );
+
+        client.clear_reimbursement_cache();
+    }
+
     // ── Route registration ──────────────────────────────────────────────
 
     #[test]
