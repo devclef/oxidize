@@ -13,6 +13,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Dashboard** - custom multi-widget dashboards with per-chart settings
 - **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
+- **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
 - **Account Groups** - named collections of accounts for reuse across widgets
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -74,6 +75,7 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | `/avg-cost` | Average cost per transaction |
 | `/budget-comparison` | Budget vs actual spending |
 | `/sankey` | Sankey flow visualization |
+| `/reimbursements` | Work expenses vs reimbursements, month by month |
 
 ## API Endpoints
 
@@ -133,6 +135,13 @@ dropped from the aggregation entirely.
 |--------|----------|-------------|
 | GET | `/api/sankey/flows` | Sankey flow data (supports exclusions) |
 
+### Reimbursements
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/reimbursements/summary` | Work expenses vs reimbursements for a period (`start`, `end`, `expense_categories[]`, `expense_budgets[]`, `reimbursement_categories[]`; category entries may be main or `Parent:Sub` names) |
+| POST | `/api/reimbursements/refresh` | Clear reimbursement summary cache |
+
 ### Widgets
 
 | Method | Endpoint | Description |
@@ -189,6 +198,7 @@ Oxidize
 │   │   ├── dashboard_api.rs     # Dashboard CRUD API
 │   │   ├── group.rs     # Group CRUD
 │   │   ├── index.rs     # Main page, manifest, favicon
+│   │   ├── reimbursement.rs  # Reimbursements page and API
 │   │   ├── sankey.rs    # Sankey page and flow data
 │   │   └── widget.rs    # Widget CRUD
 │   ├── models/          # Data types

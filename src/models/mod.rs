@@ -5,6 +5,7 @@ pub mod chart;
 pub mod dashboard;
 pub mod exclusions;
 pub mod group;
+pub mod reimbursement;
 pub mod summary;
 pub mod widget;
 
@@ -18,6 +19,10 @@ pub use chart::{ChartDataSet, ChartLine, MonthStats, SavedThisMonth};
 pub use dashboard::Dashboard;
 pub use exclusions::Exclusions;
 pub use group::Group;
+pub use reimbursement::{
+    is_reimbursement, is_work_expense, month_bucket_labels, pct_reimbursed,
+    ReimbursementBreakdownItem, ReimbursementMonth, ReimbursementSummary,
+};
 pub use summary::{
     BulkBudgetLimit, BulkBudgetLimitResponse, MonthBudget, MonthBudgetTotals, MonthCategory,
     MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense, MonthTotals, MonthTrend,

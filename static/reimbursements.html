@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oxidize - Reimbursements</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="manifest" href="/api/manifest">
+    <script src="/static/theme.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <span class="nav-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+            Oxidize
+        </span>
+        <a href="/">Widget Builder</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/summary">Monthly Summary</a>
+        <a href="/budget-comparison">Budget Comparison</a>
+        <a href="/avg-cost">Avg Cost</a>
+        <a href="/sankey">Sankey Flow</a>
+        <a href="/reimbursements" class="active">Reimbursements</a>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+            <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="display: none;">
+                <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zm5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s.39.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s.39.39 1.41 0l1.06-1.06z"/>
+            </svg>
+            <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+            </svg>
+        </button>
+    </nav>
+
+    <header class="page-header">
+        <div>
+            <h1>Reimbursements</h1>
+            <p class="page-subtitle">Work expenses vs what you got paid back, month by month.</p>
+        </div>
+    </header>
+
+    <div class="tool-container">
+        <!-- Marker configuration -->
+        <div class="panel" style="margin-bottom: var(--space-4);">
+            <h3>Markers &mdash; what counts as what</h3>
+            <p class="muted" style="margin-bottom: var(--space-3);">
+                <strong>Work expenses</strong> = spending in a selected category or budget.
+                <strong>Reimbursements</strong> = income in a selected category.
+                Selecting a main category covers all of its subcategories; pick a
+                subcategory row to match it exactly.
+            </p>
+
+            <div class="panel-actions" style="margin-bottom: var(--space-2);">
+                <span style="margin-right: auto;"><strong>Work expense categories</strong></span>
+                <button class="ghost-btn" data-target="expense_categories" data-action="select-all">Select all</button>
+                <button class="ghost-btn" data-target="expense_categories" data-action="clear">Clear</button>
+            </div>
+            <div class="check-list" id="expense-category-list">
+                <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading categories...</span></div>
+            </div>
+
+            <div class="panel-actions" style="margin-top: var(--space-4); margin-bottom: var(--space-2);">
+                <span style="margin-right: auto;"><strong>Work expense budgets</strong></span>
+                <button class="ghost-btn" data-target="expense_budgets" data-action="select-all">Select all</button>
+                <button class="ghost-btn" data-target="expense_budgets" data-action="clear">Clear</button>
+            </div>
+            <div class="check-list" id="expense-budget-list">
+                <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading budgets...</span></div>
+            </div>
+
+            <div class="panel-actions" style="margin-top: var(--space-4); margin-bottom: var(--space-2);">
+                <span style="margin-right: auto;"><strong>Reimbursement categories</strong></span>
+                <button class="ghost-btn" data-target="reimbursement_categories" data-action="select-all">Select all</button>
+                <button class="ghost-btn" data-target="reimbursement_categories" data-action="clear">Clear</button>
+            </div>
+            <div class="check-list" id="reimbursement-category-list">
+                <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading categories...</span></div>
+            </div>
+        </div>
+
+        <!-- Period -->
+        <div class="panel" style="margin-bottom: var(--space-4);">
+            <div class="panel-actions reimb-panel-actions">
+                <span style="margin-right: auto;"><strong>Period</strong></span>
+                <button class="ghost-btn range-preset" data-preset="this-month">This month</button>
+                <button class="ghost-btn range-preset" data-preset="last-month">Last month</button>
+                <button class="ghost-btn range-preset active" data-preset="3m">3 months</button>
+                <button class="ghost-btn range-preset" data-preset="6m">6 months</button>
+                <button class="ghost-btn range-preset" data-preset="12m">12 months</button>
+                <button class="ghost-btn range-preset" data-preset="ytd">YTD</button>
+                <input type="date" id="custom-start" class="date-input" title="Custom start date">
+                <input type="date" id="custom-end" class="date-input" title="Custom end date">
+            </div>
+        </div>
+
+        <div id="error-container" class="error" style="display: none;"></div>
+        <div id="setup-hint" class="empty-state">
+            <p>Select at least one work expense category/budget and one reimbursement category to see your numbers.</p>
+        </div>
+
+        <div id="reimb-content" style="display: none;">
+            <div class="projection-cards" id="kpi-cards"></div>
+
+            <div class="chart-card">
+                <h2>Work expenses vs Reimbursed by month</h2>
+                <div class="chart-area">
+                    <canvas id="reimbChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h2>Monthly detail</h2>
+                <div class="results-table-wrapper">
+                    <table class="results-table" id="monthly-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Month</th>
+                                <th scope="col">Work expenses</th>
+                                <th scope="col">Reimbursed</th>
+                                <th scope="col">Net</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthly-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="summary-two-col">
+                <div class="chart-card">
+                    <h2>Work expenses by category / budget</h2>
+                    <div id="expense-breakdown" class="breakdown-list"></div>
+                </div>
+                <div class="chart-card">
+                    <h2>Reimbursements by category</h2>
+                    <div id="reimb-breakdown" class="breakdown-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/ui.js"></script>
+    <script>
+    'use strict';
+
+    const STORAGE_KEY = 'oxidize.reimbursements';
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+
+    let categoriesData = [];   // ParentCategory[] from /api/categories/list
+    let budgetsData = [];      // [{id, name}] from /api/budgets/list
+    let state = {
+        expense_categories: [],
+        expense_budgets: [],
+        reimbursement_categories: [],
+        range: { preset: '3m', start: null, end: null },
+    };
+    let chart = null;
+    let summaryData = null;
+    let loading = false;
+
+    // ── Persistence ────────────────────────────────────────────────────
+
+    function loadState() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const saved = JSON.parse(raw);
+                if (Array.isArray(saved.expense_categories)) state.expense_categories = saved.expense_categories;
+                if (Array.isArray(saved.expense_budgets)) state.expense_budgets = saved.expense_budgets;
+                if (Array.isArray(saved.reimbursement_categories)) state.reimbursement_categories = saved.reimbursement_categories;
+                if (saved.range && saved.range.preset && saved.range.start && saved.range.end) {
+                    state.range = saved.range;
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load reimbursement settings:', e);
+        }
+    }
+
+    function saveState() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                expense_categories: state.expense_categories,
+                expense_budgets: state.expense_budgets,
+                reimbursement_categories: state.reimbursement_categories,
+                range: state.range,
+            }));
+        } catch (e) {
+            console.warn('Failed to save reimbursement settings:', e);
+        }
+    }
+
+    function hasMarkers() {
+        return state.expense_categories.length > 0
+            || state.expense_budgets.length > 0
+            || state.reimbursement_categories.length > 0;
+    }
+
+    // ── Date helpers (local time, YYYY-MM-DD) ──────────────────────────
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function fmtDate(d) {
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+
+    function monthLabelShort(ym) {
+        const [y, m] = ym.split('-').map(Number);
+        return MONTH_NAMES[m - 1].slice(0, 3) + ' ' + y;
+    }
+
+    function computeRange(preset) {
+        const today = new Date();
+        const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        switch (preset) {
+            case 'this-month':
+                return { start: fmtDate(firstOfMonth(now)), end: fmtDate(now) };
+            case 'last-month': {
+                const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                return { start: fmtDate(lm), end: fmtDate(new Date(now.getFullYear(), now.getMonth(), 0)) };
+            }
+            case '6m':
+                return { start: fmtDate(firstOfMonth(new Date(now.getFullYear(), now.getMonth() - 5, 1))), end: fmtDate(now) };
+            case '12m':
+                return { start: fmtDate(firstOfMonth(new Date(now.getFullYear(), now.getMonth() - 11, 1))), end: fmtDate(now) };
+            case 'ytd':
+                return { start: fmtDate(new Date(now.getFullYear(), 0, 1)), end: fmtDate(now) };
+            case '3m':
+            default:
+                return { start: fmtDate(firstOfMonth(new Date(now.getFullYear(), now.getMonth() - 2, 1))), end: fmtDate(now) };
+        }
+    }
+
+    // ── Markers pickers ────────────────────────────────────────────────
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderCategoryPicker(containerId, key) {
+        const el = document.getElementById(containerId);
+        if (!categoriesData || categoriesData.length === 0) {
+            el.innerHTML = '<div class="empty-state"><p>No categories found in Firefly III.</p></div>';
+            return;
+        }
+        el.innerHTML = categoriesData.map(c => {
+            const parentVal = escapeHtml(c.name);
+            const subs = (c.subcategories || []).map(sub => {
+                const full = escapeHtml(c.name + ':' + sub);
+                const checked = state[key].includes(c.name + ':' + sub) ? ' checked' : '';
+                return '<label class="check-item check-item-sub">' +
+                    '<input type="checkbox" class="marker-checkbox" data-list="' + key + '" value="' + full + '"' + checked + '>' +
+                    '<span>' + full + '</span></label>';
+            }).join('');
+            const parentChecked = state[key].includes(c.name) ? ' checked' : '';
+            return '<label class="check-item check-item-parent">' +
+                '<input type="checkbox" class="marker-checkbox" data-list="' + key + '" value="' + parentVal + '"' + parentChecked + '>' +
+                '<span>' + parentVal + '</span></label>' + subs;
+        }).join('');
+
+        el.querySelectorAll('.marker-checkbox').forEach(cb => {
+            cb.addEventListener('change', onMarkerChange);
+        });
+    }
+
+    function renderBudgetPicker(containerId) {
+        const el = document.getElementById(containerId);
+        if (!budgetsData || budgetsData.length === 0) {
+            el.innerHTML = '<div class="empty-state"><p>No budgets found in Firefly III.</p></div>';
+            return;
+        }
+        el.innerHTML = budgetsData.map(b => {
+            const checked = state.expense_budgets.includes(b.name) ? ' checked' : '';
+            return '<label class="check-item">' +
+                '<input type="checkbox" class="marker-checkbox" data-list="expense_budgets" value="' + escapeHtml(b.name) + '"' + checked + '>' +
+                '<span>' + escapeHtml(b.name) + '</span></label>';
+        }).join('');
+
+        el.querySelectorAll('.marker-checkbox').forEach(cb => {
+            cb.addEventListener('change', onMarkerChange);
+        });
+    }
+
+    function onMarkerChange(e) {
+        const list = e.target.dataset.list;
+        const value = e.target.value;
+        const set = new Set(state[list]);
+        if (e.target.checked) set.add(value);
+        else set.delete(value);
+        state[list] = Array.from(set).sort((a, b) => a.localeCompare(b));
+        saveState();
+        fetchData();
+    }
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-target][data-action]');
+        if (!btn) return;
+        const list = btn.dataset.target;
+        const checkboxes = document.querySelectorAll('.marker-checkbox[data-list="' + list + '"]');
+        checkboxes.forEach(cb => { cb.checked = btn.dataset.action === 'select-all'; });
+        const set = new Set();
+        checkboxes.forEach(cb => { if (cb.checked) set.add(cb.value); });
+        state[list] = Array.from(set).sort((a, b) => a.localeCompare(b));
+        saveState();
+        fetchData();
+    });
+
+    // ── Period controls ────────────────────────────────────────────────
+
+    function syncRangeControls() {
+        document.querySelectorAll('.range-preset').forEach(b => {
+            b.classList.toggle('active', b.dataset.preset === state.range.preset);
+        });
+        document.getElementById('custom-start').value = state.range.start || '';
+        document.getElementById('custom-end').value = state.range.end || '';
+    }
+
+    function applyPreset(preset, start, end) {
+        state.range = { preset, start, end };
+        saveState();
+        syncRangeControls();
+        fetchData();
+    }
+
+    // ── Data fetch ─────────────────────────────────────────────────────
+
+    async function fetchData() {
+        const errorContainer = document.getElementById('error-container');
+        const content = document.getElementById('reimb-content');
+        const hint = document.getElementById('setup-hint');
+
+        errorContainer.style.display = 'none';
+        errorContainer.textContent = '';
+
+        if (!hasMarkers()) {
+            content.style.display = 'none';
+            hint.style.display = 'block';
+            if (chart) { chart.destroy(); chart = null; }
+            return;
+        }
+        hint.style.display = 'none';
+
+        if (loading) return;
+        loading = true;
+
+        const area = document.querySelector('#reimb-content .chart-area');
+        const overlay = document.createElement('div');
+        overlay.className = 'chart-loading-overlay';
+        overlay.innerHTML = OxiUI.spinnerHtml('Loading reimbursement data...');
+        (area || content).appendChild(overlay);
+
+        try {
+            const params = new URLSearchParams();
+            params.set('start', state.range.start);
+            params.set('end', state.range.end);
+            state.expense_categories.forEach(c => params.append('expense_categories[]', c));
+            state.expense_budgets.forEach(b => params.append('expense_budgets[]', b));
+            state.reimbursement_categories.forEach(c => params.append('reimbursement_categories[]', c));
+
+            const res = await fetch('/api/reimbursements/summary?' + params.toString());
+            if (!res.ok) {
+                let message = 'HTTP ' + res.status;
+                try {
+                    const body = await res.json();
+                    if (body && body.message) message = body.message;
+                } catch (_) { /* keep default */ }
+                throw new Error(message);
+            }
+            summaryData = await res.json();
+            content.style.display = 'block';
+            renderSummary(summaryData);
+        } catch (e) {
+            content.style.display = 'none';
+            if (chart) { chart.destroy(); chart = null; }
+            if (res400Configure(e.message)) {
+                hint.style.display = 'block';
+            } else {
+                errorContainer.textContent = 'Could not load reimbursement data: ' + e.message;
+                errorContainer.style.display = 'block';
+            }
+        } finally {
+            overlay.remove();
+            loading = false;
+        }
+    }
+
+    function res400Configure(message) {
+        return /configure at least/i.test(message || '');
+    }
+
+    // ── Rendering ──────────────────────────────────────────────────────
+
+    function fmt(v) {
+        return OxiUI.formatCurrency(v);
+    }
+
+    function renderSummary(data) {
+        renderKpis(data);
+        renderChart(data);
+        renderMonthlyTable(data);
+        renderBreakdowns(data);
+    }
+
+    function renderKpis(data) {
+        const cards = document.getElementById('kpi-cards');
+        const netOutstanding = data.net < 0;
+        const pct = data.pct_reimbursed === null || data.pct_reimbursed === undefined
+            ? '—' : data.pct_reimbursed.toFixed(1) + '%';
+        const netClass = netOutstanding ? 'net-bad' : 'net-ok';
+        cards.innerHTML =
+            '<div class="proj-card"><h3>Work expenses</h3><p class="amount">' + fmt(data.spent) + '</p></div>' +
+            '<div class="proj-card"><h3>Reimbursed</h3><p class="amount">' + fmt(data.reimbursed) + '</p></div>' +
+            '<div class="proj-card"><h3>' + (netOutstanding ? 'Outstanding' : 'Net') + '</h3>' +
+            '<p class="amount ' + netClass + '">' + fmt(data.net) + '</p></div>' +
+            '<div class="proj-card"><h3>Reimbursed</h3><p class="amount">' + pct + '</p>' +
+            '<p class="sub">of work expenses</p></div>';
+    }
+
+    function renderChart(data) {
+        const canvas = document.getElementById('reimbChart');
+        if (chart) chart.destroy();
+
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const spentColor = isDark ? '#f87171' : '#dc2626';
+        const spentBg = isDark ? 'rgba(248, 113, 113, 0.55)' : 'rgba(220, 38, 38, 0.45)';
+        const earnedColor = isDark ? '#4ade80' : '#16a34a';
+        const earnedBg = isDark ? 'rgba(74, 222, 128, 0.55)' : 'rgba(22, 163, 74, 0.45)';
+        const colors = OxiUI.getChartColors();
+
+        chart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: data.months.map(m => monthLabelShort(m.label)),
+                datasets: [
+                    {
+                        label: 'Work expenses',
+                        data: data.months.map(m => m.spent),
+                        backgroundColor: spentBg,
+                        borderColor: spentColor,
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                    {
+                        label: 'Reimbursed',
+                        data: data.months.map(m => m.reimbursed),
+                        backgroundColor: earnedBg,
+                        borderColor: earnedColor,
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { ticks: { color: colors.textColor }, grid: { color: colors.gridColor } },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: colors.textColor, callback: (v) => OxiUI.formatCurrency(v, { compact: true }) },
+                        grid: { color: colors.gridColor },
+                    },
+                },
+                plugins: {
+                    legend: { labels: { color: colors.textColor } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y),
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    function renderMonthlyTable(data) {
+        const body = document.getElementById('monthly-body');
+        body.innerHTML = data.months.map(m => {
+            const active = m.spent > 0 || m.reimbursed > 0;
+            let status = '<span class="muted">—</span>';
+            if (active) {
+                if (m.net >= 0) {
+                    status = '<span class="status-settled">Settled</span>';
+                } else {
+                    status = '<span class="status-owed">Owed ' + fmt(-m.net) + '</span>';
+                }
+            }
+            const netClass = active ? (m.net >= 0 ? 'net-ok' : 'net-bad') : 'muted';
+            return '<tr>' +
+                '<td>' + monthLabelShort(m.label) + '</td>' +
+                '<td>' + (active ? fmt(m.spent) : '<span class="muted">—</span>') + '</td>' +
+                '<td>' + (active ? fmt(m.reimbursed) : '<span class="muted">—</span>') + '</td>' +
+                '<td class="' + netClass + '">' + (active ? fmt(m.net) : '—') + '</td>' +
+                '<td>' + status + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    function renderBreakdowns(data) {
+        const exp = document.getElementById('expense-breakdown');
+        if (!data.expense_breakdown || data.expense_breakdown.length === 0) {
+            exp.innerHTML = '<div class="empty-state"><p>No work expenses in this period.</p></div>';
+        } else {
+            exp.innerHTML = '<ul class="breakdown-list">' + data.expense_breakdown.map(item => {
+                const label = escapeHtml(item.category) +
+                    (item.budget ? ' <span class="muted">(' + escapeHtml(item.budget) + ')</span>' : '');
+                return '<li><span class="breakdown-label">' + label + '</span>' +
+                    '<span class="breakdown-value">' + fmt(item.amount) + '</span></li>';
+            }).join('') + '</ul>';
+        }
+
+        const reimb = document.getElementById('reimb-breakdown');
+        if (!data.reimbursement_breakdown || data.reimbursement_breakdown.length === 0) {
+            reimb.innerHTML = '<div class="empty-state"><p>No reimbursements in this period.</p></div>';
+        } else {
+            reimb.innerHTML = '<ul class="breakdown-list">' + data.reimbursement_breakdown.map(item => {
+                return '<li><span class="breakdown-label">' + escapeHtml(item.category) + '</span>' +
+                    '<span class="breakdown-value">' + fmt(item.amount) + '</span></li>';
+            }).join('') + '</ul>';
+        }
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js');
+        }
+
+        loadState();
+
+        // Default range when none was persisted
+        if (!state.range.start || !state.range.end) {
+            const r = computeRange(state.range.preset);
+            state.range.start = r.start;
+            state.range.end = r.end;
+        }
+        syncRangeControls();
+
+        document.querySelectorAll('.range-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const r = computeRange(btn.dataset.preset);
+                applyPreset(btn.dataset.preset, r.start, r.end);
+            });
+        });
+
+        const customStart = document.getElementById('custom-start');
+        const customEnd = document.getElementById('custom-end');
+        customStart.addEventListener('change', () => {
+            if (customStart.value && customEnd.value) {
+                applyPreset('custom', customStart.value, customEnd.value);
+            } else if (customStart.value) {
+                const r = computeRange(state.range.preset);
+                applyPreset('custom', customStart.value, r.end);
+            }
+        });
+        customEnd.addEventListener('change', () => {
+            if (customEnd.value && customStart.value) {
+                applyPreset('custom', customStart.value, customEnd.value);
+            } else if (customEnd.value) {
+                const r = computeRange(state.range.preset);
+                applyPreset('custom', r.start, customEnd.value);
+            }
+        });
+
+        Promise.all([
+            fetch('/api/categories/list').then(r => (r.ok ? r.json() : [])),
+            fetch('/api/budgets/list').then(r => (r.ok ? r.json() : [])),
+        ])
+            .then(([categories, budgets]) => {
+                categoriesData = categories || [];
+                budgetsData = budgets || [];
+                renderCategoryPicker('expense-category-list', 'expense_categories');
+                renderBudgetPicker('expense-budget-list');
+                renderCategoryPicker('reimbursement-category-list', 'reimbursement_categories');
+                fetchData();
+            })
+            .catch(e => {
+                document.getElementById('expense-category-list').innerHTML =
+                    '<div class="error">Failed to load categories: ' + escapeHtml(e.message) + '</div>';
+                document.getElementById('expense-budget-list').innerHTML =
+                    '<div class="error">Failed to load budgets: ' + escapeHtml(e.message) + '</div>';
+                document.getElementById('reimbursement-category-list').innerHTML =
+                    '<div class="error">Failed to load categories: ' + escapeHtml(e.message) + '</div>';
+            });
+    });
+
+    // Redraw chart with new theme colors
+    window.addEventListener('themeChanged', () => {
+        if (summaryData) renderChart(summaryData);
+    });
+    </script>
+</body>
+</html>

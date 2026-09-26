@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI assista
 
 ## Project Overview
 
-Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across six pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), and Monthly Summary (`/summary`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
+Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across seven pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), Monthly Summary (`/summary`), and Reimbursements (`/reimbursements`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
 
 ## Commands
 
@@ -102,6 +102,7 @@ src/
 │   ├── dashboard.rs         # GET /dashboard (serves dashboard.html with injected config)
 │   ├── dashboard_api.rs     # CRUD for /api/dashboards
 │   ├── index.rs             # GET / (serves index.html with injected config), /api/manifest, favicon
+│   ├── reimbursement.rs   # GET /reimbursements page + GET /api/reimbursements/summary + refresh
 │   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
 │   ├── summary.rs           # GET /summary page + GET /api/summary/month
 │   ├── group.rs             # CRUD for account groups
@@ -115,6 +116,7 @@ src/
 │   ├── dashboard.rs # Dashboard (named collection of widgets)
 │   ├── exclusions.rs # Exclusions (categories/budgets dropped from aggregation)
 │   ├── group.rs     # Group (id, name, account_ids)
+│   ├── reimbursement.rs # ReimbursementSummary types + work-expense/reimbursement matching + month buckets
 │   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
 │   ├── summary.rs   # MonthSummary response types + pure month/budget helpers
 │   └── widget.rs    # Widget, ChartOptions (with custom null-safe deserializer)
@@ -128,6 +130,7 @@ static/               # Frontend assets (served at /static/)
 ├── budget-comparison.html # Budget Comparison page (inline page script)
 ├── sankey.html            # Sankey Flow page (inline page script)
 ├── summary.html           # Monthly Summary page (inline page script; account include/exclude filter)
+├── reimbursements.html    # Reimbursements page (inline page script; marker + period config in localStorage)
 ├── summary-utils.js       # Pure helpers for the Monthly Summary page (month math, account filter)
 ├── app.js                 # Graph Builder page JS logic
 ├── dashboard.js           # Dashboard page JS logic
@@ -219,6 +222,7 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 | `get_subcategory_spend_chart(parent_categories, subcategories, start, end, period, account_ids, graph_mode, exclusions)` | Spending by subcategory (drops journals matching `exclusions`) |
 | `get_avg_cost(budget_names, mode, months, account_ids, month, year, exclusions)` | Average monthly cost per budget (`LastNMonths` or `PreviousYearSameMonth`; skips excluded budgets) |
 | `get_sankey_flows(account_ids, flow_type, start, end, categories, subcategories, budgets, exclusions)` | Sankey flow data (between accounts / by category / subcategory / budget; drops journals matching `exclusions`) |
+| `get_reimbursement_summary(start, end, expense_categories, expense_budgets, reimbursement_categories)` | Work expenses (spent journals matching category/budget markers) vs reimbursements (earned journals matching category markers), per-month buckets + breakdowns; amounts are positive magnitudes |
 | `get_card_paydown(...)` | Credit card paydown analysis (per-account balances and summary stats) |
 
 **Internal helper methods:**
@@ -391,6 +395,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/budget-comparison` | Budget Comparison page (with injected config) |
 | `GET` | `/sankey` | Sankey Flow page (with injected config) |
 | `GET` | `/summary` | Monthly Summary page (with injected config) |
+| `GET` | `/reimbursements` | Reimbursements page |
 
 ### Account Data (proxied from Firefly III)
 | Method | Path | Query Params | Description |
@@ -412,6 +417,8 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spending by subcategory |
 | `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]`, `exclude_categories[]`, `exclude_budgets[]` | Sankey flow data |
 | `GET` | `/api/summary/month` | `year`, `month`, `accounts[]` (only these), `exclude_accounts[]` (drop transactions touching these), `exclude_categories[]`, `exclude_budgets[]` | Monthly Summary data (totals, budgets, categories, daily series, 12-month trend, top expenses); future months -> 400 |
+| `GET` | `/api/reimbursements/summary` | `start`, `end`, `expense_categories[]`, `expense_budgets[]`, `reimbursement_categories[]` | Work expenses vs reimbursements: period totals (spent, reimbursed, net, pct), per-month buckets, category/budget breakdowns; markers required (400 without) |
+| `POST` | `/api/reimbursements/refresh` | — | Clear reimbursement summary cache |
 
 ### Cache Management
 | Method | Path | Description |

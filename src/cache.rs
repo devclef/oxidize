@@ -35,6 +35,7 @@ pub struct DataCache {
     budget_limits: RwLock<HashMap<String, CacheEntry<String>>>,
     card_paydown: RwLock<HashMap<String, CacheEntry<String>>>,
     saved_this_month: RwLock<HashMap<String, CacheEntry<String>>>,
+    reimbursement_summary: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -63,6 +64,7 @@ impl DataCache {
             budget_limits: RwLock::new(HashMap::new()),
             card_paydown: RwLock::new(HashMap::new()),
             saved_this_month: RwLock::new(HashMap::new()),
+            reimbursement_summary: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -456,6 +458,51 @@ impl DataCache {
         Self::set_tiered(&self.saved_this_month, &key, &data, self.ttl_seconds);
     }
 
+    // ── Reimbursement summary ──────────────────────────────────────────
+
+    fn reimbursement_summary_key(
+        start: &str,
+        end: &str,
+        expense_markers: &Exclusions,
+        reimbursement_markers: &Exclusions,
+    ) -> String {
+        // `e=` / `r=` prefixes keep expense markers and reimbursement
+        // markers distinct in the key (both use `c=`/`b=` internally).
+        format!(
+            "v{}:reimb:{}:{}:e={}:r={}",
+            CACHE_VERSION,
+            start,
+            end,
+            expense_markers.cache_key(),
+            reimbursement_markers.cache_key()
+        )
+    }
+
+    pub fn get_reimbursement_summary(
+        &self,
+        start: &str,
+        end: &str,
+        expense_markers: &Exclusions,
+        reimbursement_markers: &Exclusions,
+    ) -> Option<String> {
+        let key =
+            Self::reimbursement_summary_key(start, end, expense_markers, reimbursement_markers);
+        Self::get_tiered(&self.reimbursement_summary, &key)
+    }
+
+    pub fn set_reimbursement_summary(
+        &self,
+        start: &str,
+        end: &str,
+        expense_markers: &Exclusions,
+        reimbursement_markers: &Exclusions,
+        data: String,
+    ) {
+        let key =
+            Self::reimbursement_summary_key(start, end, expense_markers, reimbursement_markers);
+        Self::set_tiered(&self.reimbursement_summary, &key, &data, self.ttl_seconds);
+    }
+
     // ── Expenses by category ─────────────────────────────────────────
 
     fn expenses_category_key(
@@ -691,6 +738,7 @@ impl DataCache {
         self.clear_budget_limits();
         self.clear_card_paydown();
         self.clear_saved_this_month();
+        self.clear_reimbursement_summary();
     }
 
     pub fn clear_accounts(&self) {
@@ -736,6 +784,13 @@ impl DataCache {
         Self::clear_tiered(
             &self.saved_this_month,
             Some(&format!("v{}:saved_this_month:", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_reimbursement_summary(&self) {
+        Self::clear_tiered(
+            &self.reimbursement_summary,
+            Some(&format!("v{}:reimb:", CACHE_VERSION)),
         );
     }
 

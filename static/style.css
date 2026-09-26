@@ -3715,3 +3715,65 @@ button:focus-visible,
     font-size: var(--text-sm);
     color: var(--text-muted);
 }
+
+/* ── Reimbursements page ───────────────────────────────────────────── */
+.reimb-panel-actions input[type="date"] {
+    padding: 4px 8px;
+    font-size: var(--text-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.reimb-panel-actions input[type="date"]:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.check-item-parent { font-weight: 600; }
+
+.check-item-sub { padding-left: 28px; }
+
+.breakdown-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.breakdown-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--text-sm);
+}
+
+.breakdown-list li:last-child { border-bottom: none; }
+
+.breakdown-value {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.net-ok { color: var(--success-color); }
+
+.net-bad { color: var(--error-color); }
+
+.status-settled {
+    color: var(--success-color);
+    font-weight: 600;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}
+
+.status-owed {
+    color: var(--warning-color);
+    font-weight: 600;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}

@@ -69,6 +69,9 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::sankey::get_sankey_flows)
             .service(handlers::summary::summary_page)
             .service(handlers::summary::get_month_summary_api)
+            .service(handlers::reimbursement::reimbursements_page)
+            .service(handlers::reimbursement::get_reimbursements_summary_api)
+            .service(handlers::reimbursement::refresh_reimbursements)
             .service(actix_files::Files::new("/static", "./static"))
     })
     .bind((host, port))?

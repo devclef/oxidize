@@ -36,7 +36,7 @@ fn parse_tx_date(date_str: &str) -> Option<chrono::NaiveDateTime> {
 /// exclusion matching. Budgets must be non-empty; "Unbudgeted" journals
 /// are left to budget-name matching (i.e. they only match an explicit
 /// "Unbudgeted" exclusion entry, which is never offered in the UI).
-fn journal_exclusion_names(journal: &serde_json::Value) -> (Option<&str>, Option<&str>) {
+pub(crate) fn journal_exclusion_names(journal: &serde_json::Value) -> (Option<&str>, Option<&str>) {
     let category = journal.get("category_name").and_then(|c| c.as_str());
     let budget = journal
         .get("budget_name")
@@ -94,7 +94,7 @@ fn is_journal_spent(
 ///   is selected).
 /// - Transfers: earned only when money enters the selected set from outside.
 /// - Withdrawals: never earned.
-fn journal_counts_earned(
+pub(crate) fn journal_counts_earned(
     journal: &serde_json::Value,
     selected_ids: &std::collections::HashSet<String>,
 ) -> bool {
@@ -126,7 +126,7 @@ fn journal_counts_earned(
 ///   nothing is selected).
 /// - Transfers: spent only when money leaves the selected set for outside.
 /// - Deposits: never spent.
-fn journal_counts_spent(
+pub(crate) fn journal_counts_spent(
     journal: &serde_json::Value,
     selected_ids: &std::collections::HashSet<String>,
 ) -> bool {
@@ -244,6 +244,11 @@ impl FireflyClient {
     pub fn clear_budget_limit_cache(&self) {
         self.cache.clear_budget_limit();
         info!("Budget limit cache cleared");
+    }
+
+    pub fn clear_reimbursement_cache(&self) {
+        self.cache.clear_reimbursement_summary();
+        info!("Reimbursement summary cache cleared");
     }
 
     /// Analyze credit card paydown activity for the given card accounts.
@@ -1271,6 +1276,228 @@ impl FireflyClient {
         if let Ok(json) = serde_json::to_string(&result) {
             self.cache
                 .set_saved_this_month(&month_key, account_ids.as_ref(), exclusions, json);
+        }
+
+        Ok(result)
+    }
+
+    /// Compute the reimbursement summary for [start, end]: work expenses
+    /// (spent journals matching `expense_categories` / `expense_budgets`
+    /// markers) vs reimbursements (earned journals matching
+    /// `reimbursement_categories` markers), bucketed per calendar month.
+    ///
+    /// Amounts are positive magnitudes (journal amounts are signed in the
+    /// Firefly API; the withdrawal side is negative). All figures come from
+    /// the same transaction set, so the month buckets and the breakdowns
+    /// always sum to the headline totals.
+    pub async fn get_reimbursement_summary(
+        &self,
+        start: &str,
+        end: &str,
+        expense_categories: &[String],
+        expense_budgets: &[String],
+        reimbursement_categories: &[String],
+    ) -> Result<crate::models::ReimbursementSummary, String> {
+        use crate::models::reimbursement::{
+            is_reimbursement, is_work_expense, month_bucket_labels, pct_reimbursed,
+            ReimbursementBreakdownItem, ReimbursementMonth, ReimbursementSummary,
+        };
+        use crate::models::Exclusions;
+
+        let start_date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid start date: {}", e))?;
+        let end_date = NaiveDate::parse_from_str(end, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid end date: {}", e))?;
+        if end_date < start_date {
+            return Err("Invalid date range: end is before start".to_string());
+        }
+
+        let expense_markers =
+            Exclusions::new(expense_categories.to_vec(), expense_budgets.to_vec());
+        let reimbursement_markers = Exclusions::new(reimbursement_categories.to_vec(), Vec::new());
+
+        // Check cache first
+        if let Some(cached) = self.cache.get_reimbursement_summary(
+            start,
+            end,
+            &expense_markers,
+            &reimbursement_markers,
+        ) {
+            debug!("Cache hit for reimbursement summary");
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached reimbursement summary: {}", e));
+        }
+
+        let all_transactions = self
+            .fetch_all_transactions(start, end, None, None, None)
+            .await
+            .map_err(|e| format!("Failed to load transactions: {}", e))?;
+
+        let labels = month_bucket_labels(start_date, end_date);
+        let mut spent_by_month: std::collections::HashMap<String, f64> =
+            labels.iter().map(|l| (l.clone(), 0.0)).collect();
+        let mut reimbursed_by_month: std::collections::HashMap<String, f64> =
+            labels.iter().map(|l| (l.clone(), 0.0)).collect();
+
+        let mut expense_totals: std::collections::HashMap<(String, Option<String>), f64> =
+            std::collections::HashMap::new();
+        let mut reimbursement_totals: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+
+        let mut spent_total = 0.0f64;
+        let mut reimbursed_total = 0.0f64;
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &all_transactions {
+            if let Some(arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in arr {
+                    let (is_expense, is_reimb) = (
+                        is_work_expense(journal, &expense_markers),
+                        is_reimbursement(journal, &reimbursement_markers),
+                    );
+                    if !is_expense && !is_reimb {
+                        if currency_symbol.is_none() {
+                            currency_symbol = journal
+                                .get("currency_symbol")
+                                .and_then(|s| s.as_str())
+                                .map(String::from);
+                            currency_code = journal
+                                .get("currency_code")
+                                .and_then(|c| c.as_str())
+                                .map(String::from);
+                        }
+                        continue;
+                    }
+
+                    let amount = journal
+                        .get("amount")
+                        .and_then(|a| a.as_str())
+                        .and_then(|a| a.parse::<f64>().ok())
+                        .map(|a| a.abs())
+                        .unwrap_or(0.0);
+
+                    // "YYYY-MM" bucket from the journal date (ISO-8601).
+                    let bucket = journal
+                        .get("date")
+                        .and_then(|d| d.as_str())
+                        .and_then(|d| d.split('T').next())
+                        .and_then(|d| d.get(..7));
+
+                    let (category, budget) = journal_exclusion_names(journal);
+                    let category = category.filter(|c| !c.is_empty());
+                    let budget = budget.filter(|b| !b.is_empty());
+
+                    if is_expense {
+                        spent_total += amount;
+                        *expense_totals
+                            .entry((
+                                category.unwrap_or("Uncategorized").to_string(),
+                                budget.map(|b| b.to_string()),
+                            ))
+                            .or_insert(0.0) += amount;
+                        if let Some(b) = bucket {
+                            if let Some(v) = spent_by_month.get_mut(b) {
+                                *v += amount;
+                            }
+                        }
+                    }
+                    if is_reimb {
+                        reimbursed_total += amount;
+                        *reimbursement_totals
+                            .entry(category.unwrap_or("Uncategorized").to_string())
+                            .or_insert(0.0) += amount;
+                        if let Some(b) = bucket {
+                            if let Some(v) = reimbursed_by_month.get_mut(b) {
+                                *v += amount;
+                            }
+                        }
+                    }
+
+                    if currency_symbol.is_none() {
+                        currency_symbol = journal
+                            .get("currency_symbol")
+                            .and_then(|s| s.as_str())
+                            .map(String::from);
+                        currency_code = journal
+                            .get("currency_code")
+                            .and_then(|c| c.as_str())
+                            .map(String::from);
+                    }
+                }
+            }
+        }
+
+        let months = labels
+            .into_iter()
+            .map(|label| {
+                let m_spent = spent_by_month.get(&label).copied().unwrap_or(0.0);
+                let m_reimbursed = reimbursed_by_month.get(&label).copied().unwrap_or(0.0);
+                ReimbursementMonth {
+                    net: m_reimbursed - m_spent,
+                    label,
+                    spent: m_spent,
+                    reimbursed: m_reimbursed,
+                }
+            })
+            .collect();
+
+        let mut expense_breakdown: Vec<ReimbursementBreakdownItem> = expense_totals
+            .into_iter()
+            .map(|((category, budget), amount)| ReimbursementBreakdownItem {
+                category,
+                budget,
+                amount,
+            })
+            .collect();
+        expense_breakdown.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.category.cmp(&b.category))
+        });
+
+        let mut reimbursement_breakdown: Vec<ReimbursementBreakdownItem> = reimbursement_totals
+            .into_iter()
+            .map(|(category, amount)| ReimbursementBreakdownItem {
+                category,
+                budget: None,
+                amount,
+            })
+            .collect();
+        reimbursement_breakdown.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.category.cmp(&b.category))
+        });
+
+        let result = ReimbursementSummary {
+            start: start.to_string(),
+            end: end.to_string(),
+            spent: spent_total,
+            reimbursed: reimbursed_total,
+            net: reimbursed_total - spent_total,
+            pct_reimbursed: pct_reimbursed(reimbursed_total, spent_total),
+            months,
+            expense_breakdown,
+            reimbursement_breakdown,
+            currency_code,
+            currency_symbol,
+        };
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_reimbursement_summary(
+                start,
+                end,
+                &expense_markers,
+                &reimbursement_markers,
+                json,
+            );
         }
 
         Ok(result)

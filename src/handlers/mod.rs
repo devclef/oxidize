@@ -25,5 +25,6 @@ pub mod group;
 pub mod index;
 pub mod widget;
 
+pub mod reimbursement;
 pub mod sankey;
 pub mod summary;
