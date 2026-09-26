@@ -796,7 +796,26 @@ impl FireflyClient {
         }
 
         let account_array: AccountArray = response.json().await.map_err(|e| e.to_string())?;
-        let simple_accounts: Vec<SimpleAccount> = account_array
+        let simple_accounts = Self::map_account_array(account_array, &type_filter);
+
+        if let Ok(json) = serde_json::to_string(&simple_accounts) {
+            self.cache.set_accounts(type_filter, json);
+        }
+
+        Ok(simple_accounts)
+    }
+
+    /// Map a raw Firefly III account list to `SimpleAccount`s, applying the
+    /// optional type filter client-side. The filter is reapplied even when the
+    /// API was asked for a type, to ensure correct results when the API doesn't
+    /// honor the type filter (e.g., mock servers, some Firefly III versions).
+    /// The liability family is matched across Firefly III versions, where the
+    /// type string changed from "liability" to "liabilities".
+    fn map_account_array(
+        account_array: AccountArray,
+        type_filter: &Option<String>,
+    ) -> Vec<SimpleAccount> {
+        account_array
             .data
             .into_iter()
             .map(|a| {
@@ -817,10 +836,6 @@ impl FireflyClient {
                     updated_at: attrs.updated_at,
                 }
             })
-            // Filter client-side to ensure correct results even when the API
-            // doesn't honor the type filter (e.g., mock servers, some Firefly III versions).
-            // The liability family is matched across Firefly III versions, where
-            // the type string changed from "liability" to "liabilities".
             .filter(|a| match type_filter.as_deref() {
                 Some(t) => {
                     a.account_type == t
@@ -828,13 +843,85 @@ impl FireflyClient {
                 }
                 None => true,
             })
-            .collect();
+            .collect()
+    }
 
-        if let Ok(json) = serde_json::to_string(&simple_accounts) {
-            self.cache.set_accounts(type_filter, json);
+    /// Fetch every account from Firefly III, optionally restricted to one type.
+    ///
+    /// `get_accounts` only reads the first page, which is fine for the UI
+    /// picker but wrong for an export: Firefly III paginates list endpoints
+    /// with `limit` + 1-based `page` (default 50 per page, 100 max), so a
+    /// single request only ever returned the first page of accounts. Loop
+    /// over pages with `limit=100` until one comes back short/empty so every
+    /// account is fetched.
+    pub async fn get_all_accounts(
+        &self,
+        type_filter: Option<String>,
+    ) -> Result<Vec<SimpleAccount>, String> {
+        let type_filter = if type_filter.as_deref() == Some("all") {
+            None
+        } else {
+            type_filter
+        };
+
+        let url = format!("{}/v1/accounts", self.config.firefly_url.as_str());
+        const PAGE_SIZE: usize = 100;
+        // Safety cap: 1000 pages x 100 = 100k accounts, far beyond any
+        // realistic user. Guards against a misbehaving upstream that keeps
+        // returning full pages instead of ending with a short one.
+        const MAX_PAGES: usize = 1000;
+
+        let mut accounts: Vec<SimpleAccount> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut exhausted = false;
+        for page in 1..=MAX_PAGES {
+            let mut params: Vec<(&str, String)> =
+                vec![("limit", PAGE_SIZE.to_string()), ("page", page.to_string())];
+            if let Some(ref t) = type_filter {
+                params.push(("type", t.clone()));
+            }
+
+            let response = self
+                .client
+                .get(&url)
+                .headers(self.get_headers())
+                .query(&params)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("API request failed with status: {}. Body: {}", status, body);
+                return Err(format!("API request failed with status: {}", status));
+            }
+
+            let account_array: AccountArray = response.json().await.map_err(|e| e.to_string())?;
+            let batch = Self::map_account_array(account_array, &type_filter);
+            let batch_len = batch.len();
+            // Deduplicate by id: pages may overlap if accounts change between
+            // requests mid-pagination.
+            let fresh = batch
+                .into_iter()
+                .filter(|a| seen_ids.insert(a.id.clone()))
+                .collect::<Vec<_>>();
+            if batch_len < PAGE_SIZE {
+                exhausted = true;
+            }
+            accounts.extend(fresh);
+            if exhausted {
+                break;
+            }
+        }
+        if !exhausted {
+            return Err(format!(
+                "Failed to fetch all accounts: still receiving full pages after {} requests",
+                MAX_PAGES
+            ));
         }
 
-        Ok(simple_accounts)
+        Ok(accounts)
     }
 
     pub async fn get_balance_history(

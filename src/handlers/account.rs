@@ -60,7 +60,10 @@ pub async fn export_accounts_csv(
         Err(msg) => return HttpResponse::BadRequest().body(msg),
     };
 
-    let accounts = match client.get_accounts(filter.clone()).await {
+    // Paginate through every page: Firefly III's list endpoint is
+    // paginated, so a single request would silently truncate the export
+    // at the first page (50/100 accounts).
+    let accounts = match client.get_all_accounts(filter.clone()).await {
         Ok(accounts) => accounts,
         Err(e) => return HttpResponse::InternalServerError().body(e),
     };
