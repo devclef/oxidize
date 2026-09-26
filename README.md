@@ -15,6 +15,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
 - **Account Groups** - named collections of accounts for reuse across widgets
+- **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
 - **SQLite Persistence** - widgets and groups stored locally
@@ -84,6 +85,7 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/accounts` | List accounts (`?type=` filter) |
+| GET | `/api/accounts/export` | Export accounts as CSV download (`?type=` = asset, cash, liability, revenue, expense, or all types) |
 | GET | `/api/accounts/balance-history` | Balance chart data |
 
 ### Charts

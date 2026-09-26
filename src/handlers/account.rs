@@ -1,5 +1,8 @@
 use crate::client::FireflyClient;
+use crate::models::{accounts_to_csv, ALL_FIRELY_ACCOUNT_TYPES};
+use actix_web::http::header;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use chrono::Utc;
 use log::info;
 use serde::Deserialize;
 
@@ -18,6 +21,72 @@ pub async fn get_accounts(
         Ok(accounts) => HttpResponse::Ok().json(accounts),
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
+}
+
+/// Parse the optional `type` query parameter for the account CSV export.
+///
+/// Returns the filter to pass to `FireflyClient::get_accounts` (None = all
+/// accounts). Accepts any Firefly III account type regardless of the
+/// configured `ACCOUNT_TYPES` — the export is meant to pull data straight
+/// from Firefly III. Empty or "all" mean every account type.
+pub fn parse_export_type(raw: Option<&str>) -> Result<Option<String>, String> {
+    let trimmed = raw.unwrap_or("").trim().to_lowercase();
+    if trimmed.is_empty() || trimmed == "all" {
+        return Ok(None);
+    }
+    if ALL_FIRELY_ACCOUNT_TYPES.contains(&trimmed.as_str()) {
+        return Ok(Some(trimmed));
+    }
+    Err(format!(
+        "Invalid account type '{}'. Valid types: all, {}",
+        raw.unwrap_or(""),
+        ALL_FIRELY_ACCOUNT_TYPES.join(", ")
+    ))
+}
+
+/// GET endpoint to export accounts as CSV: `/api/accounts/export?type=asset`
+///
+/// `type` may be any Firefly III account type (asset, cash, liability,
+/// revenue, expense) or omitted/"all". The response is a CSV download that
+/// includes every account Firefly III reports for the chosen type, even
+/// types excluded from the configured `ACCOUNT_TYPES`.
+#[get("/api/accounts/export")]
+pub async fn export_accounts_csv(
+    client: web::Data<FireflyClient>,
+    query: web::Query<AccountQuery>,
+) -> impl Responder {
+    let filter = match parse_export_type(query.account_type.as_deref()) {
+        Ok(f) => f,
+        Err(msg) => return HttpResponse::BadRequest().body(msg),
+    };
+
+    let accounts = match client.get_accounts(filter.clone()).await {
+        Ok(accounts) => accounts,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let csv = accounts_to_csv(&accounts);
+    let type_label = filter.as_deref().unwrap_or("all");
+    let filename = format!(
+        "firefly-iii-accounts-{}-{}.csv",
+        type_label,
+        Utc::now().format("%Y-%m-%d")
+    );
+
+    info!(
+        "Exported {} account(s) as CSV (type={})",
+        accounts.len(),
+        type_label
+    );
+
+    HttpResponse::Ok()
+        .content_type("text/csv; charset=utf-8")
+        .insert_header((
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        ))
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .body(csv)
 }
 
 /// POST endpoint to refresh/clear the accounts cache
@@ -500,4 +569,40 @@ pub async fn refresh_card_paydown(client: web::Data<FireflyClient>) -> impl Resp
         "status": "success",
         "message": "Card paydown cache cleared"
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_export_type;
+
+    #[test]
+    fn test_parse_export_type_absent_means_all() {
+        assert_eq!(parse_export_type(None), Ok(None));
+        assert_eq!(parse_export_type(Some("")), Ok(None));
+        assert_eq!(parse_export_type(Some("all")), Ok(None));
+        assert_eq!(parse_export_type(Some("ALL")), Ok(None));
+    }
+
+    #[test]
+    fn test_parse_export_type_accepts_every_firefly_type() {
+        for t in ["asset", "cash", "liability", "revenue", "expense"] {
+            assert_eq!(
+                parse_export_type(Some(t)),
+                Ok(Some(t.to_string())),
+                "type '{}' must be accepted",
+                t
+            );
+        }
+        assert_eq!(
+            parse_export_type(Some(" Liability ")),
+            Ok(Some("liability".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_export_type_rejects_unknown() {
+        let err = parse_export_type(Some("vault")).unwrap_err();
+        assert!(err.contains("Invalid account type 'vault'"), "{}", err);
+        assert!(err.contains("asset"), "{}", err);
+    }
 }

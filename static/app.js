@@ -3085,6 +3085,80 @@ function closeGroupModal() {
     editingGroupId = null;
 }
 
+// ---------------------------------------------------------------------------
+// Account CSV export
+// ---------------------------------------------------------------------------
+
+// Every account type Firefly III can report. The export offers all of them
+// regardless of the configured ACCOUNT_TYPES (the page filter), because the
+// purpose of the export is to pull data straight from Firefly III.
+const EXPORTABLE_ACCOUNT_TYPES = (window.OXIDIZE_CONFIG && window.OXIDIZE_CONFIG.allAccountTypes && window.OXIDIZE_CONFIG.allAccountTypes.length)
+    ? window.OXIDIZE_CONFIG.allAccountTypes
+    : ['asset', 'cash', 'liability', 'revenue', 'expense'];
+
+// Build the CSV export URL for a given type selection. An empty value or
+// 'all' exports every account type.
+function buildAccountsExportUrl(typeValue) {
+    if (!typeValue || typeValue === 'all') {
+        return '/api/accounts/export';
+    }
+    return '/api/accounts/export?type=' + encodeURIComponent(typeValue);
+}
+
+// Pre-select the export type from the active account type pills when
+// exactly one specific type is selected; otherwise default to all.
+function defaultExportTypeForPills(pillsContainer) {
+    const active = Array.from(pillsContainer.querySelectorAll('.type-pill.active'));
+    const types = active
+        .map(p => p.dataset.type)
+        .filter(t => t && t !== 'all');
+    return types.length === 1 ? types[0] : 'all';
+}
+
+function populateExportTypeSelect(selectEl) {
+    selectEl.innerHTML = '';
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = 'All accounts';
+    selectEl.appendChild(allOption);
+    EXPORTABLE_ACCOUNT_TYPES.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+        selectEl.appendChild(option);
+    });
+}
+
+function openExportModal() {
+    const modal = document.getElementById('export-modal');
+    const selectEl = document.getElementById('export-account-type');
+    populateExportTypeSelect(selectEl);
+    const pillsContainer = document.getElementById('type-filter-pills');
+    selectEl.value = pillsContainer
+        ? defaultExportTypeForPills(pillsContainer)
+        : 'all';
+    modal.style.display = 'flex';
+}
+
+function closeExportModal() {
+    document.getElementById('export-modal').style.display = 'none';
+}
+
+function downloadAccountsCsv() {
+    const selectEl = document.getElementById('export-account-type');
+    const url = buildAccountsExportUrl(selectEl ? selectEl.value : 'all');
+    const anchorEl = document.createElement('a');
+    anchorEl.href = url;
+    // Leave `download` unset: same-origin request, the server's
+    // Content-Disposition provides the file name.
+    document.body.appendChild(anchorEl);
+    anchorEl.click();
+    anchorEl.remove();
+    if (window.OxiUI && window.OxiUI.toast) {
+        window.OxiUI.toast('Account CSV download started', 'success');
+    }
+}
+
 async function handleGroupSave() {
     const nameInput = document.getElementById('group-name-input');
     const accountsList = document.getElementById('group-accounts-list');
@@ -3918,6 +3992,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('group-modal-cancel').addEventListener('click', closeGroupModal);
     document.getElementById('group-modal-save').addEventListener('click', handleGroupSave);
+
+    // Account CSV export modal
+    document.getElementById('export-csv-btn').addEventListener('click', openExportModal);
+    document.getElementById('export-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'export-modal' || e.target.classList.contains('modal-close')) {
+            closeExportModal();
+        }
+    });
+    document.getElementById('export-modal-cancel').addEventListener('click', closeExportModal);
+    document.getElementById('export-modal-download').addEventListener('click', downloadAccountsCsv);
 
     // Handle chart mode change
     document.querySelectorAll('input[name="chart-mode"]').forEach(radio => {

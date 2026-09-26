@@ -9,7 +9,9 @@ pub mod reimbursement;
 pub mod summary;
 pub mod widget;
 
-pub use account::{AccountArray, SimpleAccount};
+pub use account::{
+    accounts_to_csv, csv_escape, AccountArray, SimpleAccount, ALL_FIRELY_ACCOUNT_TYPES,
+};
 pub use budget::{
     AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse, BudgetComparison,
     BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit, BudgetRead,

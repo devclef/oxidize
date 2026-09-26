@@ -799,12 +799,23 @@ impl FireflyClient {
         let simple_accounts: Vec<SimpleAccount> = account_array
             .data
             .into_iter()
-            .map(|a| SimpleAccount {
-                id: a.id,
-                name: a.attributes.name,
-                balance: a.attributes.current_balance,
-                currency: a.attributes.currency_symbol,
-                account_type: a.attributes.account_type,
+            .map(|a| {
+                let attrs = a.attributes;
+                SimpleAccount {
+                    id: a.id,
+                    name: attrs.name,
+                    balance: attrs.current_balance,
+                    currency: attrs.currency_symbol,
+                    account_type: attrs.account_type,
+                    iban: attrs.iban,
+                    account_number: attrs.account_number,
+                    currency_code: attrs.currency_code,
+                    include_net_worth: attrs.include_net_worth,
+                    liability_type: attrs.liability_type,
+                    notes: attrs.notes,
+                    created_at: attrs.created_at,
+                    updated_at: attrs.updated_at,
+                }
             })
             // Filter client-side to ensure correct results even when the API
             // doesn't honor the type filter (e.g., mock servers, some Firefly III versions).

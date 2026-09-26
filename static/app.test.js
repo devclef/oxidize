@@ -1276,3 +1276,85 @@ describe('Chart Theme Update', () => {
         expect(themeUpdateSteps(null)).toEqual([]);
     });
 });
+
+describe('Account CSV Export', () => {
+    // Inline copies of the pure helpers from app.js (app.js is a plain
+    // script, not an ES module).
+    function buildAccountsExportUrl(typeValue) {
+        if (!typeValue || typeValue === 'all') {
+            return '/api/accounts/export';
+        }
+        return '/api/accounts/export?type=' + encodeURIComponent(typeValue);
+    }
+
+    function defaultExportTypeForPills(pillsContainer) {
+        const active = Array.from(pillsContainer.querySelectorAll('.type-pill.active'));
+        const types = active
+            .map(p => p.dataset.type)
+            .filter(t => t && t !== 'all');
+        return types.length === 1 ? types[0] : 'all';
+    }
+
+    // app.test.js runs in a node environment, so build DOM fragments with
+    // jsdom (same approach as summary-accounts.test.js).
+    function makePillsContainer(entries) {
+        const { JSDOM } = require('jsdom');
+        const dom = new JSDOM('<!DOCTYPE html><body></body>');
+        const container = dom.window.document.createElement('div');
+        entries.forEach(([type, active]) => {
+            const pill = dom.window.document.createElement('button');
+            pill.className = active ? 'type-pill active' : 'type-pill';
+            pill.dataset.type = type;
+            container.appendChild(pill);
+        });
+        return container;
+    }
+
+    it('should target the export endpoint without a type for all accounts', () => {
+        expect(buildAccountsExportUrl('all')).toBe('/api/accounts/export');
+        expect(buildAccountsExportUrl('')).toBe('/api/accounts/export');
+        expect(buildAccountsExportUrl(null)).toBe('/api/accounts/export');
+        expect(buildAccountsExportUrl(undefined)).toBe('/api/accounts/export');
+    });
+
+    it('should append the selected account type as a query parameter', () => {
+        expect(buildAccountsExportUrl('asset')).toBe('/api/accounts/export?type=asset');
+        expect(buildAccountsExportUrl('liability')).toBe('/api/accounts/export?type=liability');
+        expect(buildAccountsExportUrl('revenue')).toBe('/api/accounts/export?type=revenue');
+    });
+
+    it('should default to all when no specific type pill is active', () => {
+        expect(defaultExportTypeForPills(makePillsContainer([['all', true]]))).toBe('all');
+        expect(defaultExportTypeForPills(makePillsContainer([['asset', false]]))).toBe('all');
+    });
+
+    it('should pre-select the single active type pill', () => {
+        expect(defaultExportTypeForPills(makePillsContainer([['asset', true]]))).toBe('asset');
+        expect(defaultExportTypeForPills(makePillsContainer([['expense', true]]))).toBe('expense');
+    });
+
+    it('should fall back to all when multiple type pills are active', () => {
+        expect(defaultExportTypeForPills(
+            makePillsContainer([['asset', true], ['cash', true]])
+        )).toBe('all');
+    });
+
+    it('should keep app.js in sync with the tested helpers', async () => {
+        const { readFileSync } = await import('node:fs');
+        const appSrc = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+        expect(appSrc).toContain('function buildAccountsExportUrl(typeValue)');
+        expect(appSrc).toContain("return '/api/accounts/export?type=' + encodeURIComponent(typeValue)");
+        expect(appSrc).toContain('function defaultExportTypeForPills(pillsContainer)');
+        expect(appSrc).toContain("getElementById('export-csv-btn')");
+        expect(appSrc).toContain("getElementById('export-modal')");
+    });
+
+    it('should render an export button and modal in index.html', async () => {
+        const { readFileSync } = await import('node:fs');
+        const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+        expect(html).toContain('id="export-csv-btn"');
+        expect(html).toContain('id="export-modal"');
+        expect(html).toContain('id="export-account-type"');
+        expect(html).toContain('id="export-modal-download"');
+    });
+});

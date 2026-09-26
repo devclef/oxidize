@@ -1884,6 +1884,30 @@ button:hover {
     box-shadow: 0 0 0 2px var(--accent-color)33;
 }
 
+.modal-body select {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    margin-top: var(--space-1);
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-sizing: border-box;
+}
+
+.modal-body select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-color)33;
+}
+
+.modal-hint {
+    margin: var(--space-3) 0 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -1919,6 +1943,29 @@ button:hover {
 }
 
 #group-modal-save:hover {
+    background: var(--accent-hover);
+}
+
+/* Account export modal (Graph Builder) */
+#export-modal-cancel {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+#export-modal-cancel:hover {
+    border-color: var(--text-muted);
+    color: var(--text-color);
+    background: var(--bg-secondary);
+}
+
+#export-modal-download {
+    background: var(--accent-color);
+    border: none;
+    color: #fff;
+}
+
+#export-modal-download:hover {
     background: var(--accent-hover);
 }
 

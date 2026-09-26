@@ -27,6 +27,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(firefly_client.clone())
             .app_data(web::Data::new(config.clone()))
             .service(handlers::account::get_accounts)
+            .service(handlers::account::export_accounts_csv)
             .service(handlers::account::get_balance_history)
             .service(handlers::account::refresh_accounts)
             .service(handlers::account::refresh_balance_history)

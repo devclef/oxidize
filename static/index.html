@@ -48,6 +48,7 @@
                 <button id="deselect-all-btn" class="ghost-btn">Deselect all</button>
                 <button id="toggle-accounts-btn" class="ghost-btn" style="display: none;" aria-expanded="true">Collapse</button>
                 <button id="fetch-accounts-btn">Fetch Accounts</button>
+                <button id="export-csv-btn" class="ghost-btn" title="Download all accounts of a chosen type as CSV from Firefly III">Export CSV</button>
             </div>
         </div>
 
@@ -387,6 +388,24 @@
             <div class="modal-footer">
                 <button id="group-modal-cancel">Cancel</button>
                 <button id="group-modal-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="export-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Export Accounts to CSV</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label for="export-account-type">Account type:</label>
+                <select id="export-account-type"></select>
+                <p class="modal-hint">Exports every account of the selected type straight from Firefly III, including types that are not in the dashboard's account type filter.</p>
+            </div>
+            <div class="modal-footer">
+                <button id="export-modal-cancel">Cancel</button>
+                <button id="export-modal-download">Download CSV</button>
             </div>
         </div>
     </div>

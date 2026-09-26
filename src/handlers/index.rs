@@ -11,6 +11,7 @@ pub async fn index(config: web::Data<Config>) -> HttpResponse {
     <script>
         window.OXIDIZE_CONFIG = {{
             accountTypes: {},
+            allAccountTypes: {},
             autoFetchAccounts: {},
             timeRanges: {},
             defaultTimeRange: "{}"
@@ -18,6 +19,8 @@ pub async fn index(config: web::Data<Config>) -> HttpResponse {
     </script>
     "#,
         serde_json::to_string(&config.account_types).unwrap_or_else(|_| "[]".to_string()),
+        serde_json::to_string(&crate::models::ALL_FIRELY_ACCOUNT_TYPES)
+            .unwrap_or_else(|_| "[]".to_string()),
         config.auto_fetch_accounts,
         serde_json::to_string(&config.time_ranges).unwrap_or_else(|_| "[]".to_string()),
         config.default_time_range

@@ -95,7 +95,7 @@ src/
 │   └── mod.rs        # FireflyClient: all Firefly III API interactions
 ├── handlers/
 │   ├── mod.rs               # Handler module declarations
-│   ├── account.rs           # /api/accounts, /api/balance-history, /api/earned-spent, budgets, card paydown, etc.
+│   ├── account.rs           # /api/accounts, /api/accounts/export (CSV), /api/balance-history, /api/earned-spent, budgets, card paydown, etc.
 │   ├── avg_cost.rs          # GET /avg-cost page + GET /api/budgets/avg-cost
 │   ├── budget_comparison.rs # GET /budget-comparison page
 │   ├── category.rs          # GET /api/categories/list, /api/categories/subcategory-spend
