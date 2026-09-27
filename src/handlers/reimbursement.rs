@@ -3,14 +3,29 @@
 use crate::client::FireflyClient;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 
-/// GET /reimbursements — the Reimbursements page.
+/// True when the Reimbursements feature is enabled in the settings.
+/// (Unreadable settings are treated as enabled: the default is on.)
+fn reimbursements_enabled() -> bool {
+    crate::storage::Storage::get_settings()
+        .map(|s| s.reimbursements_enabled)
+        .unwrap_or(true)
+}
+
+/// GET /reimbursements — the Reimbursements page. Returns 404 when the
+/// feature is disabled (toggle under /settings).
 #[get("/reimbursements")]
 pub async fn reimbursements_page() -> HttpResponse {
+    if !reimbursements_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Reimbursements is disabled. Enable it under Settings."
+        }));
+    }
+
     // Read HTML from filesystem at runtime, fall back to the compiled copy.
     let html = std::fs::read_to_string("static/reimbursements.html")
         .unwrap_or_else(|_| include_str!("../../static/reimbursements.html").to_string());
 
-    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    let html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -36,6 +51,12 @@ pub async fn get_reimbursements_summary_api(
     client: web::Data<FireflyClient>,
     req: HttpRequest,
 ) -> impl Responder {
+    if !reimbursements_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Reimbursements is disabled. Enable it under Settings."
+        }));
+    }
+
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();
@@ -97,6 +118,12 @@ pub async fn get_reimbursements_summary_api(
 /// POST /api/reimbursements/refresh — clear the reimbursement summary cache.
 #[post("/api/reimbursements/refresh")]
 pub async fn refresh_reimbursements(client: web::Data<FireflyClient>) -> impl Responder {
+    if !reimbursements_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Reimbursements is disabled. Enable it under Settings."
+        }));
+    }
+
     client.clear_reimbursement_cache();
     HttpResponse::Ok().json(serde_json::json!({
         "message": "Reimbursement summary cache cleared"

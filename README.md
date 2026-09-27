@@ -73,12 +73,12 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 |-------|-------------|
 | `/` | Main page - explore accounts and balance charts |
 | `/dashboard` | Custom dashboard with saved widgets |
-| `/avg-cost` | Average cost per transaction |
-| `/budget-comparison` | Budget vs actual spending |
-| `/sankey` | Sankey flow visualization |
-| `/reimbursements` | Work expenses vs reimbursements, month by month |
+| `/avg-cost` | Average cost per transaction (optional - enabled by default, toggle under Settings) |
+| `/budget-comparison` | Budget vs actual spending (optional - enabled by default, toggle under Settings) |
+| `/sankey` | Sankey flow visualization (optional - enabled by default, toggle under Settings) |
+| `/reimbursements` | Work expenses vs reimbursements, month by month (optional - enabled by default, toggle under Settings) |
 | `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
-| `/settings` | Runtime settings page (beta) - e.g. toggle the Monthly Summary |
+| `/settings` | Runtime settings page (beta) - toggle optional pages (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost) |
 
 ## API Endpoints
 
@@ -186,8 +186,12 @@ Settings panel); effective exclusions are the union of both.
 
 `monthly_summary_enabled` defaults to `false`: when disabled the `/summary`
 page and `/api/summary/month` return 404 and the nav link is hidden on all
-pages. The flag can be changed while the server is running and survives
-restarts.
+pages. `sankey_enabled`, `reimbursements_enabled`, `budget_comparison_enabled`
+and `avg_cost_enabled` default to `true`; when disabled the page (and the
+page's own API endpoints) return 404 and the nav link is hidden on all
+pages. `/api/sankey/flows` stays available while Sankey Flow is disabled
+because the dashboard's sankey widget shares it. All flags can be changed
+while the server is running and survive restarts.
 
 ### Misc
 

@@ -30,27 +30,47 @@ pub mod reimbursement;
 pub mod sankey;
 pub mod summary;
 
+/// Remove one nav link (plain and `class="active"` variants) from a
+/// page's HTML. Pure helper so it can be tested without a database.
+pub fn strip_nav_link(html: &str, href: &str, label: &str) -> String {
+    html.replace(
+        &format!(r#"<a href="{href}" class="active">{label}</a>"#),
+        "",
+    )
+    .replace(&format!(r#"<a href="{href}">{label}</a>"#), "")
+}
+
 /// Remove the "Monthly Summary" nav link from a page's HTML. Pure helper so
 /// it can be tested without a database.
 pub fn strip_summary_nav(html: &str) -> String {
-    html.replace(
-        "<a href=\"/summary\" class=\"active\">Monthly Summary</a>",
-        "",
-    )
-    .replace("<a href=\"/summary\">Monthly Summary</a>", "")
+    strip_nav_link(html, "/summary", "Monthly Summary")
 }
 
-/// Remove the "Monthly Summary" nav link from a page's HTML when that
-/// feature is disabled in the runtime settings. Returns the HTML unchanged
-/// when the feature is enabled (or settings cannot be read: in that case
-/// the summary page itself would 404 anyway).
-pub fn hide_summary_nav_if_disabled(html: &str) -> String {
-    let enabled = crate::storage::Storage::get_settings()
-        .map(|s| s.monthly_summary_enabled)
-        .unwrap_or(false);
-    if enabled {
-        html.to_string()
-    } else {
-        strip_summary_nav(html)
+/// Remove the nav links of all optional features that are disabled in the
+/// runtime settings. Links of enabled features are kept. When settings
+/// cannot be read, only links whose built-in default is off (Monthly
+/// Summary) are stripped — the other pages would be served anyway.
+pub fn hide_disabled_nav(html: &str) -> String {
+    match crate::storage::Storage::get_settings() {
+        Ok(s) => {
+            let mut out = html.to_string();
+            if !s.monthly_summary_enabled {
+                out = strip_nav_link(&out, "/summary", "Monthly Summary");
+            }
+            if !s.sankey_enabled {
+                out = strip_nav_link(&out, "/sankey", "Sankey Flow");
+            }
+            if !s.reimbursements_enabled {
+                out = strip_nav_link(&out, "/reimbursements", "Reimbursements");
+            }
+            if !s.budget_comparison_enabled {
+                out = strip_nav_link(&out, "/budget-comparison", "Budget Comparison");
+            }
+            if !s.avg_cost_enabled {
+                out = strip_nav_link(&out, "/avg-cost", "Avg Cost");
+            }
+            out
+        }
+        Err(_) => strip_summary_nav(html),
     }
 }

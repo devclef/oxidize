@@ -490,12 +490,27 @@ pub async fn get_budget_list(client: web::Data<FireflyClient>, req: HttpRequest)
     }
 }
 
-/// GET endpoint for budget comparison: current year vs previous year with projections
+/// True when the Budget Comparison feature is enabled in the settings.
+/// (Unreadable settings are treated as enabled: the default is on.)
+fn budget_comparison_enabled() -> bool {
+    crate::storage::Storage::get_settings()
+        .map(|s| s.budget_comparison_enabled)
+        .unwrap_or(true)
+}
+
+/// GET endpoint for budget comparison: current year vs previous year with
+/// projections. Returns 404 when the feature is disabled.
 #[get("/api/budgets/comparison")]
 pub async fn get_budget_comparison(
     client: web::Data<FireflyClient>,
     req: HttpRequest,
 ) -> impl Responder {
+    if !budget_comparison_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Budget Comparison is disabled. Enable it under Settings."
+        }));
+    }
+
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();

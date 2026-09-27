@@ -4,9 +4,24 @@ use crate::client::FireflyClient;
 use crate::config::Config;
 use crate::models::AvgCostMode;
 
-/// GET endpoint for the average cost page
+/// True when the Avg Cost feature is enabled in the settings.
+/// (Unreadable settings are treated as enabled: the default is on.)
+fn avg_cost_enabled() -> bool {
+    crate::storage::Storage::get_settings()
+        .map(|s| s.avg_cost_enabled)
+        .unwrap_or(true)
+}
+
+/// GET endpoint for the average cost page. Returns 404 when the feature is
+/// disabled (toggle under /settings).
 #[get("/avg-cost")]
 pub async fn avg_cost_page(config: web::Data<Config>) -> HttpResponse {
+    if !avg_cost_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Avg Cost is disabled. Enable it under Settings."
+        }));
+    }
+
     let html = std::fs::read_to_string("static/avg-cost.html")
         .unwrap_or_else(|_| include_str!("../../static/avg-cost.html").to_string());
 
@@ -23,7 +38,7 @@ pub async fn avg_cost_page(config: web::Data<Config>) -> HttpResponse {
 
     let html = html.replace("</head>", &format!("{} </head>", config_script));
 
-    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    let html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -33,6 +48,12 @@ pub async fn avg_cost_page(config: web::Data<Config>) -> HttpResponse {
 /// GET endpoint for average cost API data
 #[get("/api/budgets/avg-cost")]
 pub async fn get_avg_cost(client: web::Data<FireflyClient>, req: HttpRequest) -> HttpResponse {
+    if !avg_cost_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Avg Cost is disabled. Enable it under Settings."
+        }));
+    }
+
     let query_string = req.query_string();
     let params: Vec<(String, String)> =
         serde_urlencoded::from_str(query_string).unwrap_or_default();

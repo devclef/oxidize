@@ -4,9 +4,24 @@ use crate::client::FireflyClient;
 use crate::config::Config;
 use crate::models::SankeyFlowType;
 
-/// GET endpoint for the sankey page
+/// True when the Sankey Flow feature is enabled in the settings.
+/// (Unreadable settings are treated as enabled: the default is on.)
+fn sankey_enabled() -> bool {
+    crate::storage::Storage::get_settings()
+        .map(|s| s.sankey_enabled)
+        .unwrap_or(true)
+}
+
+/// GET endpoint for the sankey page. Returns 404 when the feature is
+/// disabled (toggle under /settings).
 #[get("/sankey")]
 pub async fn sankey_page(config: web::Data<Config>) -> HttpResponse {
+    if !sankey_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Sankey Flow is disabled. Enable it under Settings."
+        }));
+    }
+
     let html = std::fs::read_to_string("static/sankey.html")
         .unwrap_or_else(|_| include_str!("../../static/sankey.html").to_string());
 
@@ -23,14 +38,18 @@ pub async fn sankey_page(config: web::Data<Config>) -> HttpResponse {
 
     let html = html.replace("</head>", &format!("{} </head>", config_script));
 
-    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    let html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html)
 }
 
-/// GET endpoint for sankey flow data
+/// GET endpoint for sankey flow data.
+///
+/// Not gated by the sankey setting on purpose: the dashboard's sankey
+/// widget shares this endpoint, so it keeps working while the standalone
+/// page is hidden.
 #[get("/api/sankey/flows")]
 pub async fn get_sankey_flows(
     client: web::Data<FireflyClient>,

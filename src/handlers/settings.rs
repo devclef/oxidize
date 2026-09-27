@@ -13,7 +13,7 @@ pub async fn settings_page() -> HttpResponse {
         .unwrap_or_else(|_| include_str!("../../static/settings.html").to_string());
 
     // Hide the Monthly Summary nav link when the feature is disabled.
-    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    let html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

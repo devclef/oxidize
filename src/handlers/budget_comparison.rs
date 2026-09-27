@@ -2,9 +2,24 @@ use actix_web::{get, web, HttpResponse};
 
 use crate::config::Config;
 
-/// GET endpoint for the budget comparison page
+/// True when the Budget Comparison feature is enabled in the settings.
+/// (Unreadable settings are treated as enabled: the default is on.)
+fn budget_comparison_enabled() -> bool {
+    crate::storage::Storage::get_settings()
+        .map(|s| s.budget_comparison_enabled)
+        .unwrap_or(true)
+}
+
+/// GET endpoint for the budget comparison page. Returns 404 when the
+/// feature is disabled (toggle under /settings).
 #[get("/budget-comparison")]
 pub async fn budget_comparison(config: web::Data<Config>) -> HttpResponse {
+    if !budget_comparison_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Budget Comparison is disabled. Enable it under Settings."
+        }));
+    }
+
     // Read HTML from filesystem at runtime
     let html = std::fs::read_to_string("static/budget-comparison.html")
         .unwrap_or_else(|_| include_str!("../../static/budget-comparison.html").to_string());
@@ -22,7 +37,7 @@ pub async fn budget_comparison(config: web::Data<Config>) -> HttpResponse {
 
     let html = html.replace("</head>", &format!("{} </head>", config_script));
 
-    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    let html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

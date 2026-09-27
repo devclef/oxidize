@@ -23,7 +23,7 @@ pub async fn dashboard(config: actix_web::web::Data<crate::config::Config>) -> i
 
     html = html.replace("</head>", &format!("{} </head>", config_script));
 
-    html = crate::handlers::hide_summary_nav_if_disabled(&html);
+    html = crate::handlers::hide_disabled_nav(&html);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

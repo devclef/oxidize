@@ -56,15 +56,61 @@
 
         <div class="setting-row">
             <div class="setting-info">
-                <label class="setting-title" for="monthly-summary-toggle">Monthly Summary</label>
+                <label class="setting-title" for="sankey-toggle">Sankey Flow</label>
                 <p class="setting-desc">
-                    Show the Monthly Summary page. When disabled, the page and its
+                    Show the Sankey Flow page. When disabled, the page and its
+                    navigation link are hidden everywhere. Dashboard sankey
+                    widgets keep working.
+                </p>
+            </div>
+            <span class="switch" title="Toggle Sankey Flow">
+                <input type="checkbox" id="sankey-toggle" role="switch"
+                       aria-label="Show Sankey Flow page">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="reimbursements-toggle">Reimbursements</label>
+                <p class="setting-desc">
+                    Show the Reimbursements page. When disabled, the page and its
                     navigation link are hidden everywhere.
                 </p>
             </div>
-            <span class="switch" title="Toggle Monthly Summary">
-                <input type="checkbox" id="monthly-summary-toggle" role="switch"
-                       aria-label="Show Monthly Summary page">
+            <span class="switch" title="Toggle Reimbursements">
+                <input type="checkbox" id="reimbursements-toggle" role="switch"
+                       aria-label="Show Reimbursements page">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="budget-comparison-toggle">Budget Comparison</label>
+                <p class="setting-desc">
+                    Show the Budget Comparison page. When disabled, the page and
+                    its navigation link are hidden everywhere.
+                </p>
+            </div>
+            <span class="switch" title="Toggle Budget Comparison">
+                <input type="checkbox" id="budget-comparison-toggle" role="switch"
+                       aria-label="Show Budget Comparison page">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="avg-cost-toggle">Avg Cost</label>
+                <p class="setting-desc">
+                    Show the Avg Cost page. When disabled, the page and its
+                    navigation link are hidden everywhere.
+                </p>
+            </div>
+            <span class="switch" title="Toggle Avg Cost">
+                <input type="checkbox" id="avg-cost-toggle" role="switch"
+                       aria-label="Show Avg Cost page">
                 <span class="slider" aria-hidden="true"></span>
             </span>
         </div>
@@ -76,9 +122,14 @@
     <script>
     'use strict';
     (function () {
-        const toggle = document.getElementById('monthly-summary-toggle');
+        const fields = {
+            'monthly-summary-toggle': { key: 'monthly_summary_enabled', label: 'Monthly Summary' },
+            'sankey-toggle': { key: 'sankey_enabled', label: 'Sankey Flow' },
+            'reimbursements-toggle': { key: 'reimbursements_enabled', label: 'Reimbursements' },
+            'budget-comparison-toggle': { key: 'budget_comparison_enabled', label: 'Budget Comparison' },
+            'avg-cost-toggle': { key: 'avg_cost_enabled', label: 'Avg Cost' }
+        };
         const status = document.getElementById('settings-status');
-        let saving = false;
 
         function flash(msg, isError) {
             status.textContent = msg;
@@ -94,40 +145,48 @@
                     return r.json();
                 })
                 .then(s => {
-                    toggle.checked = !!s.monthly_summary_enabled;
+                    for (const [id, f] of Object.entries(fields)) {
+                        const el = document.getElementById(id);
+                        if (el) el.checked = !!s[f.key];
+                    }
                 })
                 .catch(() => {
                     flash('Could not load settings.', true);
                 });
         }
 
-        toggle.addEventListener('change', () => {
-            if (saving) return;
-            saving = true;
-            const prev = !toggle.checked;
-            fetch('/api/settings', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ monthly_summary_enabled: toggle.checked })
-            })
-                .then(r => {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.json();
+        for (const [id, f] of Object.entries(fields)) {
+            const toggle = document.getElementById(id);
+            if (!toggle) continue;
+
+            toggle.addEventListener('change', () => {
+                if (toggle.dataset.saving) return;
+                toggle.dataset.saving = '1';
+                const prev = !toggle.checked;
+                fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [f.key]: toggle.checked })
                 })
-                .then(() => {
-                    flash(toggle.checked
-                        ? 'Saved — Monthly Summary is now enabled. It appears in the navigation on the next page load.'
-                        : 'Saved — Monthly Summary is now hidden.');
-                    if (window.OxiUI) window.OxiUI.toast('Settings saved', 'success');
-                })
-                .catch(() => {
-                    // Roll back so the UI reflects reality.
-                    toggle.checked = prev;
-                    flash('Could not save settings. Change reverted.', true);
-                    if (window.OxiUI) window.OxiUI.toast('Could not save settings', 'error');
-                })
-                .finally(() => { saving = false; });
-        });
+                    .then(r => {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(() => {
+                        flash(toggle.checked
+                            ? 'Saved — ' + f.label + ' is now enabled. It appears in the navigation on the next page load.'
+                            : 'Saved — ' + f.label + ' is now hidden.');
+                        if (window.OxiUI) window.OxiUI.toast('Settings saved', 'success');
+                    })
+                    .catch(() => {
+                        // Roll back so the UI reflects reality.
+                        toggle.checked = prev;
+                        flash('Could not save settings. Change reverted.', true);
+                        if (window.OxiUI) window.OxiUI.toast('Could not save settings', 'error');
+                    })
+                    .finally(() => { delete toggle.dataset.saving; });
+            });
+        }
 
         loadSettings();
     })();
