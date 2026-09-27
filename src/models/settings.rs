@@ -47,7 +47,10 @@ impl Settings {
             ("monthly_summary_enabled", &mut s.monthly_summary_enabled),
             ("sankey_enabled", &mut s.sankey_enabled),
             ("reimbursements_enabled", &mut s.reimbursements_enabled),
-            ("budget_comparison_enabled", &mut s.budget_comparison_enabled),
+            (
+                "budget_comparison_enabled",
+                &mut s.budget_comparison_enabled,
+            ),
             ("avg_cost_enabled", &mut s.avg_cost_enabled),
         ] {
             if let Some(v) = rows.get(key) {

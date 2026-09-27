@@ -20,8 +20,8 @@ mod tests {
     use oxidize::handlers::reimbursement::{get_reimbursements_summary_api, reimbursements_page};
     use oxidize::handlers::sankey::{get_sankey_flows, sankey_page};
     use oxidize::handlers::settings::{get_settings_api, settings_page, update_settings_api};
-    use oxidize::handlers::{strip_nav_link, strip_summary_nav};
     use oxidize::handlers::summary::{get_month_summary_api, summary_page};
+    use oxidize::handlers::{strip_nav_link, strip_summary_nav};
     use oxidize::models::{Settings, SettingsUpdate};
     use oxidize::storage::Storage;
     use serde_json::json;
@@ -204,10 +204,16 @@ mod tests {
 
         // The "active" variant is stripped too.
         let active = "<a href=\"/reimbursements\" class=\"active\">Reimbursements</a>";
-        assert_eq!(strip_nav_link(active, "/reimbursements", "Reimbursements"), "");
+        assert_eq!(
+            strip_nav_link(active, "/reimbursements", "Reimbursements"),
+            ""
+        );
 
         // Unknown links are left untouched.
-        assert_eq!(strip_nav_link("<a href=\"/x\">Y</a>", "/x", "Other"), "<a href=\"/x\">Y</a>");
+        assert_eq!(
+            strip_nav_link("<a href=\"/x\">Y</a>", "/x", "Other"),
+            "<a href=\"/x\">Y</a>"
+        );
     }
 
     // ── Route registration ──────────────────────────────────────────────
@@ -279,11 +285,8 @@ mod tests {
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
         ] {
-            let resp = awt::call_service(
-                &service,
-                awt::TestRequest::get().uri(uri).to_request(),
-            )
-            .await;
+            let resp =
+                awt::call_service(&service, awt::TestRequest::get().uri(uri).to_request()).await;
             assert_eq!(resp.status(), 200, "{what} must be served by default");
         }
 
@@ -295,13 +298,22 @@ mod tests {
             !html.contains("Monthly Summary</a>"),
             "nav link must be hidden while disabled"
         );
-        assert!(html.contains("Sankey Flow</a>"), "sankey nav link visible by default");
-        assert!(html.contains("Reimbursements</a>"), "reimbursements nav link visible by default");
+        assert!(
+            html.contains("Sankey Flow</a>"),
+            "sankey nav link visible by default"
+        );
+        assert!(
+            html.contains("Reimbursements</a>"),
+            "reimbursements nav link visible by default"
+        );
         assert!(
             html.contains("Budget Comparison</a>"),
             "budget comparison nav link visible by default"
         );
-        assert!(html.contains("Avg Cost</a>"), "avg cost nav link visible by default");
+        assert!(
+            html.contains("Avg Cost</a>"),
+            "avg cost nav link visible by default"
+        );
         assert!(
             html.contains("Settings</a>"),
             "settings nav link must exist"
@@ -328,7 +340,10 @@ mod tests {
             html.contains("monthly-summary-toggle"),
             "settings page must offer a monthly summary toggle"
         );
-        assert!(html.contains("sankey-toggle"), "settings page must offer a sankey toggle");
+        assert!(
+            html.contains("sankey-toggle"),
+            "settings page must offer a sankey toggle"
+        );
         assert!(
             html.contains("reimbursements-toggle"),
             "settings page must offer a reimbursements toggle"
@@ -337,7 +352,10 @@ mod tests {
             html.contains("budget-comparison-toggle"),
             "settings page must offer a budget comparison toggle"
         );
-        assert!(html.contains("avg-cost-toggle"), "settings page must offer an avg cost toggle");
+        assert!(
+            html.contains("avg-cost-toggle"),
+            "settings page must offer an avg cost toggle"
+        );
 
         // 2) Enable the monthly summary via PATCH.
         let resp = awt::call_service(
@@ -422,11 +440,8 @@ mod tests {
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
         ] {
-            let resp = awt::call_service(
-                &service,
-                awt::TestRequest::get().uri(uri).to_request(),
-            )
-            .await;
+            let resp =
+                awt::call_service(&service, awt::TestRequest::get().uri(uri).to_request()).await;
             assert_eq!(resp.status(), 404, "{what} must 404 while disabled");
         }
 
@@ -465,11 +480,7 @@ mod tests {
                 .to_request(),
         )
         .await;
-        assert_eq!(
-            resp.status(),
-            404,
-            "avg cost API must 404 while disabled"
-        );
+        assert_eq!(resp.status(), 404, "avg cost API must 404 while disabled");
 
         let resp = awt::call_service(
             &service,
@@ -505,7 +516,10 @@ mod tests {
                 html.contains("Monthly Summary</a>"),
                 "enabled monthly summary link stays visible"
             );
-            assert!(html.contains("Settings</a>"), "settings nav link must exist");
+            assert!(
+                html.contains("Settings</a>"),
+                "settings nav link must exist"
+            );
         }
 
         // 6) Re-enable the four features: pages and APIs are served again.
@@ -534,11 +548,8 @@ mod tests {
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
         ] {
-            let resp = awt::call_service(
-                &service,
-                awt::TestRequest::get().uri(uri).to_request(),
-            )
-            .await;
+            let resp =
+                awt::call_service(&service, awt::TestRequest::get().uri(uri).to_request()).await;
             assert_eq!(
                 resp.status(),
                 200,
