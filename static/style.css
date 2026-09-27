@@ -3890,9 +3890,14 @@ button:focus-visible,
 }
 
 .switch input {
+    /* Full-size transparent overlay above the slider so clicks anywhere on
+       the switch hit the checkbox (the slider span is not a label). */
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    margin: 0;
     opacity: 0;
-    width: 0;
-    height: 0;
+    cursor: pointer;
 }
 
 .switch .slider {
