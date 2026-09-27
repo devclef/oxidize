@@ -77,6 +77,8 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | `/budget-comparison` | Budget vs actual spending |
 | `/sankey` | Sankey flow visualization |
 | `/reimbursements` | Work expenses vs reimbursements, month by month |
+| `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
+| `/settings` | Runtime settings page (beta) - e.g. toggle the Monthly Summary |
 
 ## API Endpoints
 
@@ -174,6 +176,18 @@ Settings panel); effective exclusions are the union of both.
 | POST | `/api/refresh` | Clear all caches |
 | POST | `/api/accounts/refresh` | Clear accounts cache |
 | POST | `/api/accounts/balance-history/refresh` | Clear balance history cache |
+
+### Settings (runtime, persisted in SQLite)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings` | Current settings (defaults applied for unsaved keys) |
+| PATCH | `/api/settings` | Update settings, e.g. `{"monthly_summary_enabled": true}`; returns the new state |
+
+`monthly_summary_enabled` defaults to `false`: when disabled the `/summary`
+page and `/api/summary/month` return 404 and the nav link is hidden on all
+pages. The flag can be changed while the server is running and survives
+restarts.
 
 ### Misc
 

@@ -6,6 +6,7 @@ pub mod dashboard;
 pub mod exclusions;
 pub mod group;
 pub mod reimbursement;
+pub mod settings;
 pub mod summary;
 pub mod widget;
 
@@ -25,6 +26,7 @@ pub use reimbursement::{
     is_reimbursement, is_work_expense, month_bucket_labels, pct_reimbursed,
     ReimbursementBreakdownItem, ReimbursementMonth, ReimbursementSummary,
 };
+pub use settings::{Settings, SettingsUpdate};
 pub use summary::{
     BulkBudgetLimit, BulkBudgetLimitResponse, MonthBudget, MonthBudgetTotals, MonthCategory,
     MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense, MonthTotals, MonthTrend,

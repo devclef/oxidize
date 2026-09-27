@@ -22,6 +22,8 @@ pub async fn budget_comparison(config: web::Data<Config>) -> HttpResponse {
 
     let html = html.replace("</head>", &format!("{} </head>", config_script));
 
+    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html.to_string())

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oxidize - Settings</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="manifest" href="/api/manifest">
+    <script src="/static/theme.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <span class="nav-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+            Oxidize
+        </span>
+        <a href="/">Widget Builder</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/summary">Monthly Summary</a>
+        <a href="/budget-comparison">Budget Comparison</a>
+        <a href="/avg-cost">Avg Cost</a>
+        <a href="/sankey">Sankey Flow</a>
+        <a href="/reimbursements">Reimbursements</a>
+        <a href="/settings" class="active">Settings</a>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="display: none;">
+            <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zm5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
+        </svg>
+        <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+        </svg>
+    </button>
+    </nav>
+
+    <header class="page-header">
+        <div>
+            <h1>Settings</h1>
+            <p class="page-subtitle">Control which features Oxidize shows. Changes apply immediately and survive restarts.</p>
+        </div>
+    </header>
+
+    <div class="beta-banner" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>
+            <strong>Beta</strong> — Settings are not completely functional yet.
+            Some options may still change or misbehave; please report anything odd.
+        </div>
+    </div>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Features</h3>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="monthly-summary-toggle">Monthly Summary</label>
+                <p class="setting-desc">
+                    Show the Monthly Summary page. When disabled, the page and its
+                    navigation link are hidden everywhere.
+                </p>
+            </div>
+            <span class="switch" title="Toggle Monthly Summary">
+                <input type="checkbox" id="monthly-summary-toggle" role="switch"
+                       aria-label="Show Monthly Summary page">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
+    </section>
+
+    <p id="settings-status" class="settings-status" role="status" aria-live="polite"></p>
+
+    <script src="/static/ui.js"></script>
+    <script>
+    'use strict';
+    (function () {
+        const toggle = document.getElementById('monthly-summary-toggle');
+        const status = document.getElementById('settings-status');
+        let saving = false;
+
+        function flash(msg, isError) {
+            status.textContent = msg;
+            status.classList.toggle('error', !!isError);
+            clearTimeout(flash._t);
+            flash._t = setTimeout(() => { status.textContent = ''; }, 4000);
+        }
+
+        function loadSettings() {
+            fetch('/api/settings')
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(s => {
+                    toggle.checked = !!s.monthly_summary_enabled;
+                })
+                .catch(() => {
+                    flash('Could not load settings.', true);
+                });
+        }
+
+        toggle.addEventListener('change', () => {
+            if (saving) return;
+            saving = true;
+            const prev = !toggle.checked;
+            fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ monthly_summary_enabled: toggle.checked })
+            })
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(() => {
+                    flash(toggle.checked
+                        ? 'Saved — Monthly Summary is now enabled. It appears in the navigation on the next page load.'
+                        : 'Saved — Monthly Summary is now hidden.');
+                    if (window.OxiUI) window.OxiUI.toast('Settings saved', 'success');
+                })
+                .catch(() => {
+                    // Roll back so the UI reflects reality.
+                    toggle.checked = prev;
+                    flash('Could not save settings. Change reverted.', true);
+                    if (window.OxiUI) window.OxiUI.toast('Could not save settings', 'error');
+                })
+                .finally(() => { saving = false; });
+        });
+
+        loadSettings();
+    })();
+    </script>
+</body>
+</html>

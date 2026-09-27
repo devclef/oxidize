@@ -10,6 +10,8 @@ pub async fn reimbursements_page() -> HttpResponse {
     let html = std::fs::read_to_string("static/reimbursements.html")
         .unwrap_or_else(|_| include_str!("../../static/reimbursements.html").to_string());
 
+    let html = crate::handlers::hide_summary_nav_if_disabled(&html);
+
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html)

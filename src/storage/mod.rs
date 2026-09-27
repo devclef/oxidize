@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 use crate::models::dashboard::Dashboard;
 use crate::models::group::Group;
+use crate::models::settings::Settings;
 use crate::models::widget::ChartOptions;
 use crate::models::Widget;
 
@@ -97,6 +98,17 @@ fn init_db(conn: &Connection) {
         [],
     )
     .expect("Failed to create dashboards table");
+
+    // Create settings table (runtime user preferences, key/value)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )
+    .expect("Failed to create settings table");
 
     // Migrations: Add columns if they don't exist
     let _ = conn.execute(
@@ -751,6 +763,66 @@ impl Storage {
 
             Ok(())
         })
+    }
+
+    // ── User settings (runtime, key/value) ──────────────────────────────
+
+    /// Read a single setting; `Ok(None)` if it was never saved.
+    pub fn get_setting(key: &str) -> Result<Option<String>, String> {
+        with_db(|conn| {
+            match conn.query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            ) {
+                Ok(v) => Ok(Some(v)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.to_string()),
+            }
+        })
+    }
+
+    /// Save a single setting (upsert).
+    pub fn set_setting(key: &str, value: &str) -> Result<(), String> {
+        let now = chrono::Utc::now().to_rfc3339();
+        with_db(|conn| {
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                params![key, value, &now],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    }
+
+    /// Load all settings, applying defaults for keys that were never saved.
+    pub fn get_settings() -> Result<Settings, String> {
+        let rows = with_db(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT key, value FROM settings")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut map = std::collections::HashMap::new();
+            for r in rows {
+                let (k, v) = r.map_err(|e| e.to_string())?;
+                map.insert(k, v);
+            }
+            Ok(map)
+        })?;
+        Ok(Settings::from_rows(&rows))
+    }
+
+    /// Persist the full settings object (upserts every key).
+    pub fn save_settings(settings: &Settings) -> Result<(), String> {
+        for (k, v) in settings.to_rows() {
+            Self::set_setting(&k, &v)?;
+        }
+        Ok(())
     }
 }
 
