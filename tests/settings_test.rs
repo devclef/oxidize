@@ -324,6 +324,10 @@ mod tests {
             !html.contains("Monthly Summary</a>"),
             "summary nav link must be hidden on the settings page while disabled"
         );
+        assert!(
+            html.contains("monthly-summary-toggle"),
+            "settings page must offer a monthly summary toggle"
+        );
         assert!(html.contains("sankey-toggle"), "settings page must offer a sankey toggle");
         assert!(
             html.contains("reimbursements-toggle"),
