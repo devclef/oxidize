@@ -1038,6 +1038,18 @@ function generateColors(count) {
     return colors;
 }
 
+// Show or hide the trend line(s) belonging to one dataset (matched via
+// trendOf) so they never outlive their source series in the legend.
+function setTrendlineHidden(widgetId, sourceIndex, hidden) {
+    const chart = widgetCharts[widgetId];
+    if (!chart) return;
+    chart.data.datasets.forEach((d) => {
+        if (d && d.isTrendline && d.trendOf === sourceIndex) {
+            d.hidden = hidden;
+        }
+    });
+}
+
 function selectAllDatasets(widgetId) {
     if (!widgetDatasetVisibility[widgetId]) {
         widgetDatasetVisibility[widgetId] = {};
@@ -1058,6 +1070,8 @@ function selectAllDatasets(widgetId) {
         items.forEach((item) => {
             const index = parseInt(item.dataset.accountIndex, 10);
             widgetCharts[widgetId].data.datasets[index].hidden = false;
+            // Keep the matching trend line in sync
+            setTrendlineHidden(widgetId, index, false);
         });
         widgetCharts[widgetId].update();
     }
@@ -1083,6 +1097,8 @@ function deselectAllDatasets(widgetId) {
         items.forEach((item) => {
             const index = parseInt(item.dataset.accountIndex, 10);
             widgetCharts[widgetId].data.datasets[index].hidden = true;
+            // Keep the matching trend line in sync
+            setTrendlineHidden(widgetId, index, true);
         });
         widgetCharts[widgetId].update();
     }
@@ -1169,11 +1185,7 @@ function renderSplitLegend(widgetId, accountInfo, datasets) {
             if (widgetCharts[widgetId]) {
                 widgetCharts[widgetId].data.datasets[index].hidden = !widgetDatasetVisibility[widgetId][index];
                 // Keep the matching trend line in sync
-                widgetCharts[widgetId].data.datasets.forEach(d => {
-                    if (d && d.isTrendline && d.trendOf === index) {
-                        d.hidden = !widgetDatasetVisibility[widgetId][index];
-                    }
-                });
+                setTrendlineHidden(widgetId, index, !widgetDatasetVisibility[widgetId][index]);
             }
             item.classList.toggle('active');
             item.classList.toggle('hidden');
@@ -3503,6 +3515,20 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             if (splitTrendlines.length > 0) {
                 splitDatasets.push(...splitTrendlines);
             }
+
+            // Apply the legend's saved selection state so a re-render
+            // (refresh, date change, settings edit) keeps deselected series
+            // hidden - including their trend lines.
+            const savedVisibility = widgetDatasetVisibility[widget.id] || {};
+            splitDatasets.forEach((dataset, index) => {
+                if (dataset.isTrendline) {
+                    if (dataset.trendOf != null && savedVisibility[dataset.trendOf] === false) {
+                        dataset.hidden = true;
+                    }
+                } else if (savedVisibility[index] === false) {
+                    dataset.hidden = true;
+                }
+            });
 
             // Stacking (#24): group series for stacked rendering
             const stackedDatasets = OxiUI.applyStacking(splitDatasets, opts2.stacked);
