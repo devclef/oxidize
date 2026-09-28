@@ -103,4 +103,67 @@ impl Config {
             default_time_range,
         }
     }
+
+    /// Layer runtime settings (saved on the /settings page) on top of this
+    /// env-based config. Unset settings fields (`None`) fall back to the
+    /// environment value. Invalid saved values also fall back, so a bad
+    /// entry can never break the server.
+    pub fn with_settings(&self, settings: &crate::models::settings::Settings) -> Config {
+        let firefly_url = match &settings.firefly_url {
+            Some(u) if !u.trim().is_empty() => {
+                FireflyUrl::validate(u.clone()).unwrap_or_else(|_| self.firefly_url.clone())
+            }
+            _ => self.firefly_url.clone(),
+        };
+        let firefly_token = settings
+            .firefly_token
+            .clone()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| self.firefly_token.clone());
+        let account_types = settings
+            .account_types
+            .clone()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| self.account_types.clone());
+        let cache_ttl = settings
+            .cache_ttl
+            .filter(|t| *t > 0)
+            .unwrap_or(self.cache_ttl);
+        let time_ranges = settings
+            .time_ranges
+            .clone()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| self.time_ranges.clone());
+        let default_time_range = settings
+            .default_time_range
+            .clone()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| self.default_time_range.clone());
+
+        Config {
+            firefly_url,
+            firefly_token,
+            host: self.host.clone(),
+            port: self.port,
+            account_types,
+            auto_fetch_accounts: settings
+                .auto_fetch_accounts
+                .unwrap_or(self.auto_fetch_accounts),
+            data_dir: self.data_dir.clone(),
+            cache_ttl,
+            time_ranges,
+            default_time_range,
+        }
+    }
+
+    /// The effective config: environment values plus the runtime settings
+    /// saved in the database (see the /settings page). Falls back to the
+    /// pure env-based config when the storage layer is not initialized
+    /// (unit tests that never touch the database).
+    pub fn effective(base: &Config) -> Config {
+        match crate::storage::Storage::get_settings_unchecked() {
+            Some(settings) => base.with_settings(&settings),
+            None => base.clone(),
+        }
+    }
 }

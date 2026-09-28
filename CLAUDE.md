@@ -180,7 +180,11 @@ user to hard-refresh.
 
 #### Configuration (`src/config.rs`)
 
-`Config` struct loaded entirely from environment variables (via `dotenv`):
+`Config` struct loaded from environment variables (via `dotenv`). The env
+values are **defaults**: the /settings page can override `firefly_url`,
+`firefly_token`, `account_types`, `auto_fetch_accounts`, `cache_ttl`,
+`time_ranges` and `default_time_range` at runtime (see "Runtime Settings"
+below). `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` still require a restart.
 
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
@@ -460,6 +464,11 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 
 ## Environment Variables
 
+Environment variables are the **defaults only** — the /settings page can
+override the Firefly connection, account types, auto-fetch, cache TTL and
+time ranges at runtime (saved values win; clearing a field reverts to the
+env value). `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
+
 ### Required
 | Variable | Description |
 |----------|-------------|
@@ -478,6 +487,32 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `CACHE_TTL` | `3600` | Chart cache TTL in seconds |
 | `TIME_RANGES` | `7d,30d,3m,6m,1y,ytd` | Relative time range presets |
 | `DEFAULT_TIME_RANGE` | `30d` | Pre-selected time range preset |
+
+## Runtime Settings (Settings Page)
+
+The /settings page (backed by the SQLite `settings` key/value table) holds
+user preferences that apply **at runtime**, without a restart:
+
+- **Feature toggles** — `monthly_summary_enabled` (off by default),
+  `sankey_enabled`, `reimbursements_enabled`, `budget_comparison_enabled`,
+  `avg_cost_enabled` (on by default). Disabled pages and APIs 404 and their
+  nav links are stripped from every page.
+- **Env-moved settings** (mirror the env vars above; `None` = use the env
+  value): `firefly_url`, `firefly_token`, `account_types`,
+  `auto_fetch_accounts`, `cache_ttl`, `time_ranges`, `default_time_range`.
+  A saved value overrides the env var; saving an empty value clears the
+  override. `Config::effective(&config)` (src/config.rs) resolves the
+  effective config — it is what the Firefly client (per-request URL/token),
+  the DataCache (per-write TTL) and the page handlers (injected
+  `window.OXIDIZE_CONFIG`) all use.
+
+### API
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/settings` | Settings page |
+| `GET` | `/api/settings` | Effective settings (saved values layered over env defaults) + `account_type_options` + read-only `server` info (host:port, data_dir, log_level) |
+| `PATCH` | `/api/settings` | Update one or more settings (JSON). Empty string / empty list / `0` clears a value back to the env default. Validates URL scheme, known account types, TTL range, and that the default time range is inside the time ranges. Clears the data cache when the Firefly connection changes. |
+| `POST` | `/api/settings/test-firefly` | Test a URL/token pair against `GET {url}/v1/accounts?limit=1` (settings page "Test connection" button). Returns `{ok, message}`. |
 
 ## Dependencies
 

@@ -216,6 +216,153 @@ mod tests {
         );
     }
 
+    // ── Env-moved settings: rows, overrides, validation ────────────────
+
+    fn rows_with(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_env_moved_fields_rows_roundtrip() {
+        let s = Settings {
+            firefly_url: Some("https://firefly.example.com/api".to_string()),
+            firefly_token: Some("tok".to_string()),
+            account_types: Some(vec!["asset".to_string(), "cash".to_string()]),
+            auto_fetch_accounts: Some(true),
+            cache_ttl: Some(120),
+            time_ranges: Some(vec!["7d".to_string(), "14d".to_string()]),
+            default_time_range: Some("14d".to_string()),
+            ..Default::default()
+        };
+
+        let parsed = Settings::from_rows(&s.to_rows());
+        assert_eq!(
+            parsed.firefly_url.as_deref(),
+            Some("https://firefly.example.com/api")
+        );
+        assert_eq!(parsed.firefly_token.as_deref(), Some("tok"));
+        assert_eq!(
+            parsed.account_types.as_deref(),
+            Some(vec!["asset".to_string(), "cash".to_string()]).as_deref()
+        );
+        assert_eq!(parsed.auto_fetch_accounts, Some(true));
+        assert_eq!(parsed.cache_ttl, Some(120));
+        assert_eq!(
+            parsed.time_ranges.as_deref(),
+            Some(vec!["7d".to_string(), "14d".to_string()]).as_deref()
+        );
+        assert_eq!(parsed.default_time_range.as_deref(), Some("14d"));
+
+        // Unset fields store empty strings and parse back to None (i.e.
+        // "use the server environment value").
+        let parsed = Settings::from_rows(&Settings::default().to_rows());
+        assert_eq!(parsed.firefly_url, None);
+        assert_eq!(parsed.firefly_token, None);
+        assert_eq!(parsed.account_types, None);
+        assert_eq!(parsed.auto_fetch_accounts, None);
+        assert_eq!(parsed.cache_ttl, None);
+        assert_eq!(parsed.time_ranges, None);
+        assert_eq!(parsed.default_time_range, None);
+
+        // auto_fetch_accounts stores an explicit false (not "unset").
+        let rows = rows_with(&[("auto_fetch_accounts", "false")]);
+        assert_eq!(Settings::from_rows(&rows).auto_fetch_accounts, Some(false));
+    }
+
+    #[test]
+    fn test_with_settings_layers_overrides_onto_env() {
+        let config = make_test_config();
+        let s = Settings {
+            firefly_url: Some("https://firefly.example.com/api".to_string()),
+            auto_fetch_accounts: Some(true),
+            cache_ttl: Some(120),
+            ..Default::default()
+        };
+
+        let eff = config.with_settings(&s);
+        assert_eq!(eff.firefly_url.as_str(), "https://firefly.example.com/api");
+        assert!(eff.auto_fetch_accounts);
+        assert_eq!(eff.cache_ttl, 120);
+        // Unset fields keep the env values.
+        assert_eq!(eff.firefly_token, "test_token");
+        assert_eq!(eff.account_types, vec!["asset".to_string()]);
+        assert_eq!(eff.time_ranges, vec!["30d".to_string()]);
+        assert_eq!(eff.default_time_range, "30d");
+
+        // An invalid saved URL never breaks the server: it falls back.
+        let bad = Settings {
+            firefly_url: Some("not a url".to_string()),
+            ..Default::default()
+        };
+        let eff = make_test_config().with_settings(&bad);
+        assert_eq!(eff.firefly_url.as_str(), "http://127.0.0.1:1");
+    }
+
+    #[test]
+    fn test_update_validation_rejects_bad_values() {
+        let config = make_test_config(); // url http://127.0.0.1:1, ranges [30d], default 30d
+        let current = Settings::default();
+
+        // Invalid Firefly URL.
+        let bad = SettingsUpdate {
+            firefly_url: Some("ftp://example.com".to_string()),
+            ..Default::default()
+        };
+        assert!(bad.validate(&current, &config).is_err());
+
+        // Empty URL is a valid "clear" operation.
+        let clear = SettingsUpdate {
+            firefly_url: Some("".to_string()),
+            ..Default::default()
+        };
+        assert!(clear.validate(&current, &config).is_ok());
+
+        // Unknown account type.
+        let bad = SettingsUpdate {
+            account_types: Some(vec!["asset".to_string(), "cryptocurrency".to_string()]),
+            ..Default::default()
+        };
+        assert!(bad.validate(&current, &config).is_err());
+
+        // Out-of-range TTL (0 = "keep env default" is allowed).
+        let bad = SettingsUpdate {
+            cache_ttl: Some(40_000_000),
+            ..Default::default()
+        };
+        assert!(bad.validate(&current, &config).is_err());
+        let ok = SettingsUpdate {
+            cache_ttl: Some(0),
+            ..Default::default()
+        };
+        assert!(ok.validate(&current, &config).is_ok());
+
+        // Default range must be one of the ranges.
+        let bad = SettingsUpdate {
+            default_time_range: Some("7d".to_string()),
+            ..Default::default()
+        };
+        assert!(bad.validate(&current, &config).is_err());
+
+        // Changing the range list away from the current default is rejected
+        // until a new default is picked.
+        let bad = SettingsUpdate {
+            time_ranges: Some(vec!["7d".to_string(), "14d".to_string()]),
+            ..Default::default()
+        };
+        assert!(bad.validate(&current, &config).is_err());
+
+        // ...but providing the new default in the same update works.
+        let ok = SettingsUpdate {
+            time_ranges: Some(vec!["7d".to_string(), "14d".to_string()]),
+            default_time_range: Some("14d".to_string()),
+            ..Default::default()
+        };
+        assert!(ok.validate(&current, &config).is_ok());
+    }
+
     // ── Route registration ──────────────────────────────────────────────
 
     #[test]
@@ -564,6 +711,148 @@ mod tests {
         assert!(html.contains("Reimbursements</a>"));
         assert!(html.contains("Budget Comparison</a>"));
         assert!(html.contains("Avg Cost</a>"));
+
+        // 7) Env-moved settings: the Firefly connection can be overridden
+        //    from the settings page and reverts to the env value when
+        //    cleared.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(
+                    json!({
+                        "firefly_url": "https://firefly.example.com/api",
+                        "firefly_token": "page_token"
+                    })
+                    .to_string(),
+                )
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = awt::read_body_json(resp).await;
+        assert_eq!(
+            body["firefly_url"],
+            json!("https://firefly.example.com/api")
+        );
+        assert_eq!(body["firefly_token"], json!("page_token"));
+
+        // The response also carries the form metadata.
+        assert!(body["account_type_options"].as_array().unwrap().len() == 5);
+        assert_eq!(body["server"]["host"], json!("127.0.0.1"));
+        assert_eq!(body["server"]["port"], json!(8080));
+
+        // Invalid URLs and unknown account types are rejected.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "firefly_url": "not a url" }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 400, "invalid Firefly URL must be rejected");
+
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "account_types": ["asset", "cryptocurrency"] }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 400, "unknown account types must be rejected");
+
+        // Time ranges + default: the default must stay inside the list.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "time_ranges": ["7d", "14d"] }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            400,
+            "dropping the current default range without a new default must fail"
+        );
+
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(
+                    json!({ "time_ranges": ["7d", "14d"], "default_time_range": "14d" })
+                        .to_string(),
+                )
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = awt::read_body_json(resp).await;
+        assert_eq!(body["default_time_range"], json!("14d"));
+
+        // Cache TTL: 0 clears the override (falls back to the env value,
+        // 300 in make_test_config); huge values are rejected.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "cache_ttl": 40000000 }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            400,
+            "cache TTL above the cap must be rejected"
+        );
+
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "cache_ttl": 0 }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = awt::read_body_json(resp).await;
+        assert_eq!(body["cache_ttl"], json!(300));
+
+        // Clearing the Firefly fields reverts to the env defaults.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::patch()
+                .uri("/api/settings")
+                .insert_header(("content-type", "application/json"))
+                .set_payload(json!({ "firefly_url": "", "firefly_token": "" }).to_string())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = awt::read_body_json(resp).await;
+        assert_eq!(body["firefly_url"], json!("http://127.0.0.1:1"));
+        assert_eq!(body["firefly_token"], json!("test_token"));
+
+        // The effective config (what the client + pages actually use)
+        // reflects the saved override.
+        let override_settings = Settings {
+            firefly_url: Some("https://firefly.example.com/api".to_string()),
+            ..Default::default()
+        };
+        assert!(Storage::save_settings(&override_settings).is_ok());
+        let eff = Config::effective(&make_test_config());
+        assert_eq!(eff.firefly_url.as_str(), "https://firefly.example.com/api");
+        assert_eq!(eff.firefly_token, "test_token");
 
         // Leave the shared temp database in the default state.
         let _ = Storage::save_settings(&Settings::default());

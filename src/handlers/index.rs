@@ -2,6 +2,9 @@ use crate::config::Config;
 use actix_web::{get, web, HttpResponse};
 
 pub async fn index(config: web::Data<Config>) -> HttpResponse {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     let html = std::fs::read_to_string("./static/index.html")
         .unwrap_or_else(|_| "<h1>Error loading page</h1>".to_string());
 

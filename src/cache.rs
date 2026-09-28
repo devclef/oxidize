@@ -78,6 +78,16 @@ impl DataCache {
         CacheEntry { data, expires_at }
     }
 
+    /// The TTL in effect: the `cache_ttl` saved on the /settings page
+    /// overrides the value from startup. Resolved on every write so a
+    /// settings change applies to the next cached entry without a restart.
+    fn current_ttl(&self) -> u64 {
+        crate::storage::Storage::get_settings_unchecked()
+            .and_then(|s| s.cache_ttl)
+            .filter(|t| *t > 0)
+            .unwrap_or(self.ttl_seconds)
+    }
+
     // ── Generic helpers ──────────────────────────────────────────────
 
     /// Try in-memory cache; on miss, try persistent cache and promote to memory.
@@ -152,7 +162,7 @@ impl DataCache {
 
     pub fn set_accounts(&self, type_filter: Option<String>, data: String) {
         let key = Self::account_key(type_filter.as_deref());
-        Self::set_tiered(&self.accounts, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.accounts, &key, &data, self.current_ttl());
     }
 
     // ── Balance history ──────────────────────────────────────────────
@@ -206,7 +216,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
         );
-        Self::set_tiered(&self.balance_history, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.balance_history, &key, &data, self.current_ttl());
     }
 
     // ── Budgets ──────────────────────────────────────────────────────
@@ -228,7 +238,7 @@ impl DataCache {
 
     pub fn set_budgets(&self, start_date: Option<String>, end_date: Option<String>, data: String) {
         let key = Self::budget_key(start_date.as_deref(), end_date.as_deref());
-        Self::set_tiered(&self.budgets, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.budgets, &key, &data, self.current_ttl());
     }
 
     // ── Budget spent ─────────────────────────────────────────────────
@@ -267,7 +277,7 @@ impl DataCache {
         data: String,
     ) {
         let key = Self::budget_spent_key(start_date.as_deref(), end_date.as_deref(), exclusions);
-        Self::set_tiered(&self.budget_spent, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.budget_spent, &key, &data, self.current_ttl());
     }
 
     // ── Budget spent history (time-series) ──────────────────────────
@@ -331,7 +341,7 @@ impl DataCache {
             account_ids.as_deref(),
             exclusions,
         );
-        Self::set_tiered(&self.budget_spent_history, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.budget_spent_history, &key, &data, self.current_ttl());
     }
 
     // ── Earned / Spent ───────────────────────────────────────────────
@@ -414,7 +424,7 @@ impl DataCache {
             excluded_account_ids.as_deref(),
             exclusions,
         );
-        Self::set_tiered(&self.earned_spent, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.earned_spent, &key, &data, self.current_ttl());
     }
 
     // ── Saved this month ───────────────────────────────────────────────
@@ -455,7 +465,7 @@ impl DataCache {
         data: String,
     ) {
         let key = Self::saved_this_month_key(month, account_ids.map(|v| v.as_slice()), exclusions);
-        Self::set_tiered(&self.saved_this_month, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.saved_this_month, &key, &data, self.current_ttl());
     }
 
     // ── Reimbursement summary ──────────────────────────────────────────
@@ -500,7 +510,7 @@ impl DataCache {
     ) {
         let key =
             Self::reimbursement_summary_key(start, end, expense_markers, reimbursement_markers);
-        Self::set_tiered(&self.reimbursement_summary, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.reimbursement_summary, &key, &data, self.current_ttl());
     }
 
     // ── Expenses by category ─────────────────────────────────────────
@@ -572,7 +582,7 @@ impl DataCache {
             graph_mode.as_deref(),
             exclusions,
         );
-        Self::set_tiered(&self.expenses_by_category, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.expenses_by_category, &key, &data, self.current_ttl());
     }
 
     // ── Net worth ────────────────────────────────────────────────────
@@ -614,7 +624,7 @@ impl DataCache {
             end_date.as_deref(),
             period.as_deref(),
         );
-        Self::set_tiered(&self.net_worth, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.net_worth, &key, &data, self.current_ttl());
     }
 
     // ── Subcategory spend ────────────────────────────────────────────
@@ -702,7 +712,7 @@ impl DataCache {
             graph_mode.as_deref(),
             exclusions,
         );
-        Self::set_tiered(&self.subcategory_spend, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.subcategory_spend, &key, &data, self.current_ttl());
     }
 
     // ── Categories ───────────────────────────────────────────────────
@@ -718,7 +728,7 @@ impl DataCache {
 
     pub fn set_categories(&self, data: String) {
         let key = Self::categories_key();
-        Self::set_tiered(&self.categories, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.categories, &key, &data, self.current_ttl());
     }
 
     // ── Clear operations ─────────────────────────────────────────────
@@ -855,7 +865,7 @@ impl DataCache {
         data: String,
     ) {
         let key = Self::budget_limit_key(budget_id, start_date.as_deref(), end_date.as_deref());
-        Self::set_tiered(&self.budget_limit, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.budget_limit, &key, &data, self.current_ttl());
     }
 
     pub fn clear_budget_limit(&self) {
@@ -889,7 +899,7 @@ impl DataCache {
         data: String,
     ) {
         let key = Self::budget_limits_key(start_date.as_deref(), end_date.as_deref());
-        Self::set_tiered(&self.budget_limits, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.budget_limits, &key, &data, self.current_ttl());
     }
 
     pub fn clear_budget_limits(&self) {
@@ -937,7 +947,7 @@ impl DataCache {
         data: String,
     ) {
         let key = Self::card_paydown_key(account_ids, start_date.as_deref(), end_date.as_deref());
-        Self::set_tiered(&self.card_paydown, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.card_paydown, &key, &data, self.current_ttl());
     }
 
     pub fn clear_card_paydown(&self) {
@@ -1008,7 +1018,7 @@ impl DataCache {
             Some(&end_date),
             exclusions,
         );
-        Self::set_tiered(&self.accounts, &key, &data, self.ttl_seconds);
+        Self::set_tiered(&self.accounts, &key, &data, self.current_ttl());
     }
 
     /// Test-only accessor for the earned/spent cache key.

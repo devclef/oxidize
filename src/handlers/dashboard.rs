@@ -2,6 +2,9 @@ use actix_web::{get, HttpResponse, Responder};
 
 #[get("/dashboard")]
 pub async fn dashboard(config: actix_web::web::Data<crate::config::Config>) -> impl Responder {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     let mut html = include_str!("../../static/dashboard.html").to_string();
 
     let config_script = format!(

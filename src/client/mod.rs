@@ -191,6 +191,61 @@ impl FireflyClient {
         }
     }
 
+    /// The Firefly III base URL in effect: the value saved on the
+    /// /settings page overrides the env var from startup.
+    fn base_url(&self) -> String {
+        Config::effective(&self.config)
+            .firefly_url
+            .as_str()
+            .to_string()
+    }
+
+    /// The access token in effect: the value saved on the /settings page
+    /// overrides the env var from startup.
+    fn token(&self) -> String {
+        Config::effective(&self.config).firefly_token
+    }
+
+    /// Check whether Firefly III at `url` answers and accepts `token`.
+    /// Used by the settings page "Test connection" button.
+    pub async fn test_connection(url: &str, token: &str) -> Result<(), String> {
+        let request = reqwest::Client::builder()
+            .user_agent("Oxidize/0.1.0")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?
+            .get(format!("{}/v1/accounts?limit=1", url));
+
+        let response = if token.is_empty() {
+            request.send().await
+        } else {
+            request
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                )
+                .send()
+                .await
+        };
+
+        let response =
+            response.map_err(|e| format!("Could not reach Firefly III at {}: {}", url, e))?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else {
+            let hint = match status.as_u16() {
+                401 => " — the access token was rejected, check it in Firefly III",
+                403 => " — the token may lack permissions",
+                _ => "",
+            };
+            Err(format!(
+                "Firefly III answered with status {}{}",
+                status, hint
+            ))
+        }
+    }
+
     pub fn clear_cache(&self) {
         self.cache.clear_all();
         info!("Cache cleared");
@@ -683,7 +738,7 @@ impl FireflyClient {
                 "balances_card_only": debug_card_balances,
                 "balance_fetch_url": format!(
                     "{}/v1/chart/account/overview?start={}&end={}&period=1M{}",
-                    self.config.firefly_url.as_str(),
+                    self.base_url(),
                     balance_start_str,
                     end,
                     account_ids.iter().map(|id| format!("&accounts[]={}", id)).collect::<String>()
@@ -719,10 +774,7 @@ impl FireflyClient {
             query_params.push(("accounts[]".to_string(), id.clone()));
         }
 
-        let url = format!(
-            "{}/v1/chart/account/overview",
-            self.config.firefly_url.as_str()
-        );
+        let url = format!("{}/v1/chart/account/overview", self.base_url());
         let response = self
             .client
             .get(&url)
@@ -775,7 +827,7 @@ impl FireflyClient {
         }
 
         let headers = self.get_headers();
-        let mut url = format!("{}/v1/accounts", self.config.firefly_url.as_str());
+        let mut url = format!("{}/v1/accounts", self.base_url());
         if let Some(ref t) = type_filter {
             url = format!("{}?type={}", url, t);
         }
@@ -864,7 +916,7 @@ impl FireflyClient {
             type_filter
         };
 
-        let url = format!("{}/v1/accounts", self.config.firefly_url.as_str());
+        let url = format!("{}/v1/accounts", self.base_url());
         const PAGE_SIZE: usize = 100;
         // Safety cap: 1000 pages x 100 = 100k accounts, far beyond any
         // realistic user. Guards against a misbehaving upstream that keeps
@@ -975,10 +1027,7 @@ impl FireflyClient {
             query_params.push(("preselected".to_string(), "assets".to_string()));
         }
 
-        let url = format!(
-            "{}/v1/chart/account/overview",
-            self.config.firefly_url.as_str()
-        );
+        let url = format!("{}/v1/chart/account/overview", self.base_url());
         let response = self
             .client
             .get(&url)
@@ -1798,10 +1847,7 @@ impl FireflyClient {
         });
         let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
 
-        let url = format!(
-            "{}/v1/chart/account/overview",
-            self.config.firefly_url.as_str()
-        );
+        let url = format!("{}/v1/chart/account/overview", self.base_url());
 
         let asset_query = vec![
             ("start".to_string(), start.clone()),
@@ -1915,7 +1961,7 @@ impl FireflyClient {
         }
         debug!("Cache miss for budgets: {} to {}", start, end);
 
-        let url = format!("{}/v1/budgets", self.config.firefly_url.as_str());
+        let url = format!("{}/v1/budgets", self.base_url());
         let query = vec![
             ("start".to_string(), start.clone()),
             ("end".to_string(), end.clone()),
@@ -1963,10 +2009,7 @@ impl FireflyClient {
         }
         debug!("Cache miss for budget_spent: {} to {}", start, end);
 
-        let url = format!(
-            "{}/v1/chart/budget/overview",
-            self.config.firefly_url.as_str()
-        );
+        let url = format!("{}/v1/chart/budget/overview", self.base_url());
         let query = vec![
             ("start".to_string(), start.clone()),
             ("end".to_string(), end.clone()),
@@ -2278,7 +2321,7 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached budget limit: {}", e));
         }
 
-        let url = format!("{}/v1/budget/limit", self.config.firefly_url.as_str());
+        let url = format!("{}/v1/budget/limit", self.base_url());
         let query = vec![
             ("start".to_string(), start.clone()),
             ("end".to_string(), end.clone()),
@@ -2362,7 +2405,7 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached budget limits: {}", e));
         }
 
-        let url = format!("{}/v1/budget-limits", self.config.firefly_url.as_str());
+        let url = format!("{}/v1/budget-limits", self.base_url());
         let query = vec![
             ("start".to_string(), start.clone()),
             ("end".to_string(), end.clone()),
@@ -2689,10 +2732,11 @@ impl FireflyClient {
     }
     fn get_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        if !self.config.firefly_token.is_empty() {
+        let token = self.token();
+        if !token.is_empty() {
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", self.config.firefly_token)).unwrap(),
+                HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
             );
         }
         headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.api+json"));
@@ -2754,7 +2798,7 @@ impl FireflyClient {
         let mut all_transactions = std::collections::HashMap::new();
 
         for (chunk_start, chunk_end) in &chunks {
-            let url = format!("{}/v1/transactions", self.config.firefly_url.as_str());
+            let url = format!("{}/v1/transactions", self.base_url());
             let mut page = 1usize;
             let page_size = 500usize;
             // Safety cap: 2000 pages x 500 = 1M transactions per monthly
@@ -3036,7 +3080,7 @@ impl FireflyClient {
                 .map_err(|e| format!("Failed to deserialize cached categories: {}", e));
         }
 
-        let url = format!("{}/v1/categories", self.config.firefly_url.as_str());
+        let url = format!("{}/v1/categories", self.base_url());
         const PAGE_SIZE: usize = 100;
         // Safety cap: 1000 pages x 100 = 100k categories, far beyond any
         // realistic user. Guards against a misbehaving upstream that keeps

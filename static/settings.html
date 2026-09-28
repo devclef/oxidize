@@ -37,7 +37,7 @@
     <header class="page-header">
         <div>
             <h1>Settings</h1>
-            <p class="page-subtitle">Control which features Oxidize shows. Changes apply immediately and survive restarts.</p>
+            <p class="page-subtitle">Control which features Oxidize shows and how it connects to Firefly III. Changes apply immediately and survive restarts.</p>
         </div>
     </header>
 
@@ -48,6 +48,158 @@
             Some options may still change or misbehave; please report anything odd.
         </div>
     </div>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Firefly III</h3>
+            <button id="firefly-save" class="ghost-btn">Save</button>
+        </div>
+
+        <div class="setting-field">
+            <label class="setting-title" for="firefly-url">Base URL</label>
+            <p class="setting-desc">
+                Overrides <code>FIREFLY_III_URL</code>. This is the API base
+                (e.g. <code>https://firefly.example.com/api</code>). Clear the
+                field to fall back to the server environment value.
+            </p>
+            <input type="text" id="firefly-url" class="setting-input"
+                   placeholder="https://firefly.example.com/api"
+                   autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="setting-field">
+            <label class="setting-title" for="firefly-token">Access token</label>
+            <p class="setting-desc">
+                Overrides <code>FIREFLY_III_ACCESS_TOKEN</code>. Use a personal
+                access token from Firefly III. Clear the field to fall back to
+                the server environment value.
+            </p>
+            <input type="password" id="firefly-token" class="setting-input"
+                   placeholder="JWT access token" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="setting-actions">
+            <button id="firefly-test" class="ghost-btn">Test connection</button>
+        </div>
+        <p id="firefly-status" class="setting-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Accounts</h3>
+            <button id="accounts-save" class="ghost-btn">Save</button>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <span class="setting-title">Account types in the filter</span>
+                <p class="setting-desc">
+                    Which Firefly account types are offered in the account type
+                    filter. Overrides <code>ACCOUNT_TYPES</code>.
+                </p>
+            </div>
+            <div class="setting-checks" id="account-type-checks" aria-label="Account types"></div>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="auto-fetch-toggle">Auto-fetch accounts</label>
+                <p class="setting-desc">
+                    Automatically fetch the account list when a page loads.
+                    Overrides <code>AUTO_FETCH_ACCOUNTS</code>.
+                </p>
+            </div>
+            <span class="switch" title="Toggle auto-fetch accounts">
+                <input type="checkbox" id="auto-fetch-toggle" role="switch"
+                       aria-label="Auto-fetch accounts on page load">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
+        <p id="accounts-status" class="setting-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Caching</h3>
+            <button id="cache-save" class="ghost-btn">Save</button>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="cache-ttl">Chart cache TTL</label>
+                <p class="setting-desc">
+                    How long chart data fetched from Firefly III is cached, in
+                    seconds. Overrides <code>CACHE_TTL</code>.
+                </p>
+            </div>
+            <input type="number" id="cache-ttl" class="setting-input setting-input-sm"
+                   min="1" max="31536000" step="60" inputmode="numeric">
+        </div>
+        <p id="cache-status" class="setting-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Time ranges</h3>
+            <button id="timeranges-save" class="ghost-btn">Save</button>
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="time-ranges">Available presets</label>
+                <p class="setting-desc">
+                    Comma-separated relative time ranges offered in the date
+                    filter (e.g. <code>7d, 30d, 3m, 6m, 1y, ytd</code>).
+                    Overrides <code>TIME_RANGES</code>.
+                </p>
+            </div>
+            <input type="text" id="time-ranges" class="setting-input setting-input-sm"
+                   placeholder="7d, 30d, 3m, 6m, 1y, ytd" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="default-time-range">Pre-selected range</label>
+                <p class="setting-desc">
+                    Which preset the date filter starts with. Overrides
+                    <code>DEFAULT_TIME_RANGE</code>.
+                </p>
+            </div>
+            <select id="default-time-range" class="setting-input setting-input-sm"></select>
+        </div>
+        <p id="timeranges-status" class="setting-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="section-card">
+        <div class="section-header">
+            <h3 class="section-title">Server</h3>
+        </div>
+        <p class="setting-desc">
+            These values come from the process environment (the <code>.env</code>
+            file or container env vars) and need a restart to change.
+        </p>
+        <div class="setting-row">
+            <div class="setting-info">
+                <span class="setting-title">Bind address</span>
+                <p class="setting-desc">Overrides <code>HOST</code> / <code>PORT</code>.</p>
+            </div>
+            <code id="server-host" class="readonly-value"></code>
+        </div>
+        <div class="setting-row">
+            <div class="setting-info">
+                <span class="setting-title">Data directory</span>
+                <p class="setting-desc">Where the Oxidize database lives (<code>DATA_DIR</code>).</p>
+            </div>
+            <code id="server-datadir" class="readonly-value"></code>
+        </div>
+        <div class="setting-row">
+            <div class="setting-info">
+                <span class="setting-title">Log level</span>
+                <p class="setting-desc"><code>RUST_LOG</code>, applied at startup.</p>
+            </div>
+            <code id="server-loglevel" class="readonly-value"></code>
+        </div>
+    </section>
 
     <section class="section-card">
         <div class="section-header">
@@ -146,11 +298,104 @@
         };
         const status = document.getElementById('settings-status');
 
+        const els = {
+            fireflyUrl: document.getElementById('firefly-url'),
+            fireflyToken: document.getElementById('firefly-token'),
+            fireflySave: document.getElementById('firefly-save'),
+            fireflyTest: document.getElementById('firefly-test'),
+            fireflyStatus: document.getElementById('firefly-status'),
+            accountChecks: document.getElementById('account-type-checks'),
+            autoFetch: document.getElementById('auto-fetch-toggle'),
+            accountsSave: document.getElementById('accounts-save'),
+            accountsStatus: document.getElementById('accounts-status'),
+            cacheTtl: document.getElementById('cache-ttl'),
+            cacheSave: document.getElementById('cache-save'),
+            cacheStatus: document.getElementById('cache-status'),
+            timeRanges: document.getElementById('time-ranges'),
+            defaultRange: document.getElementById('default-time-range'),
+            timerangesSave: document.getElementById('timeranges-save'),
+            timerangesStatus: document.getElementById('timeranges-status'),
+            serverHost: document.getElementById('server-host'),
+            serverDatadir: document.getElementById('server-datadir'),
+            serverLoglevel: document.getElementById('server-loglevel')
+        };
+
         function flash(msg, isError) {
             status.textContent = msg;
             status.classList.toggle('error', !!isError);
             clearTimeout(flash._t);
             flash._t = setTimeout(() => { status.textContent = ''; }, 4000);
+        }
+
+        function flashIn(el, msg, isError) {
+            el.textContent = msg;
+            el.classList.toggle('error', !!isError);
+            el.classList.toggle('ok', !!msg && !isError);
+            clearTimeout(el._t);
+            if (msg) el._t = setTimeout(() => { el.textContent = ''; }, 5000);
+        }
+
+        function toast(msg, kind) {
+            if (window.OxiUI) window.OxiUI.toast(msg, kind);
+        }
+
+        function parseRanges(str) {
+            return String(str || '').split(',').map(s => s.trim()).filter(Boolean);
+        }
+
+        function patchSettings(body, statusEl, okMsg) {
+            return fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+                .then(r => {
+                    if (!r.ok) {
+                        return r.json()
+                            .then(j => { throw new Error((j && j.message) || ('HTTP ' + r.status)); })
+                            .catch(e => { if (e instanceof SyntaxError) throw new Error('HTTP ' + r.status); throw e; });
+                    }
+                    return r.json();
+                })
+                .then(() => {
+                    flashIn(statusEl, okMsg, false);
+                    toast('Settings saved', 'success');
+                })
+                .catch(err => {
+                    flashIn(statusEl, err.message || 'Could not save settings.', true);
+                    toast('Could not save settings', 'error');
+                });
+        }
+
+        function renderAccountTypeChecks(options) {
+            els.accountChecks.innerHTML = '';
+            for (const type of options) {
+                const label = document.createElement('label');
+                label.className = 'setting-check';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.value = type;
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(type.charAt(0).toUpperCase() + type.slice(1)));
+                els.accountChecks.appendChild(label);
+            }
+        }
+
+        function checkedAccountTypes() {
+            return [...els.accountChecks.querySelectorAll('input:checked')].map(i => i.value);
+        }
+
+        function rebuildDefaultSelect(preferred) {
+            const ranges = parseRanges(els.timeRanges.value);
+            const previous = preferred !== undefined ? preferred : els.defaultRange.value;
+            els.defaultRange.innerHTML = '';
+            for (const r of ranges) {
+                const opt = document.createElement('option');
+                opt.value = r;
+                opt.textContent = r;
+                els.defaultRange.appendChild(opt);
+            }
+            els.defaultRange.value = ranges.includes(previous) ? previous : (ranges[0] || '');
         }
 
         function loadSettings() {
@@ -163,6 +408,22 @@
                     for (const [id, f] of Object.entries(fields)) {
                         const el = document.getElementById(id);
                         if (el) el.checked = !!s[f.key];
+                    }
+                    els.fireflyUrl.value = s.firefly_url || '';
+                    els.fireflyToken.value = s.firefly_token || '';
+                    renderAccountTypeChecks(s.account_type_options || []);
+                    const enabledTypes = s.account_types || [];
+                    for (const input of els.accountChecks.querySelectorAll('input')) {
+                        input.checked = enabledTypes.includes(input.value);
+                    }
+                    els.autoFetch.checked = !!s.auto_fetch_accounts;
+                    els.cacheTtl.value = s.cache_ttl || '';
+                    els.timeRanges.value = (s.time_ranges || []).join(', ');
+                    rebuildDefaultSelect(s.default_time_range || '');
+                    if (s.server) {
+                        els.serverHost.textContent = s.server.host + ':' + s.server.port;
+                        els.serverDatadir.textContent = s.server.data_dir;
+                        els.serverLoglevel.textContent = s.server.log_level;
                     }
                 })
                 .catch(() => {
@@ -191,17 +452,96 @@
                         flash(toggle.checked
                             ? 'Saved — ' + f.label + ' is now enabled. It appears in the navigation on the next page load.'
                             : 'Saved — ' + f.label + ' is now hidden.');
-                        if (window.OxiUI) window.OxiUI.toast('Settings saved', 'success');
+                        toast('Settings saved', 'success');
                     })
                     .catch(() => {
                         // Roll back so the UI reflects reality.
                         toggle.checked = prev;
                         flash('Could not save settings. Change reverted.', true);
-                        if (window.OxiUI) window.OxiUI.toast('Could not save settings', 'error');
+                        toast('Could not save settings', 'error');
                     })
                     .finally(() => { delete toggle.dataset.saving; });
             });
         }
+
+        els.fireflySave.addEventListener('click', () => {
+            patchSettings(
+                {
+                    firefly_url: els.fireflyUrl.value.trim(),
+                    firefly_token: els.fireflyToken.value.trim()
+                },
+                els.fireflyStatus,
+                'Saved — new connection settings are in effect (cached data was cleared).'
+            );
+        });
+
+        els.fireflyTest.addEventListener('click', () => {
+            flashIn(els.fireflyStatus, 'Testing connection…');
+            fetch('/api/settings/test-firefly', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: els.fireflyUrl.value.trim(),
+                    token: els.fireflyToken.value.trim()
+                })
+            })
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(j => {
+                    flashIn(els.fireflyStatus, j.message || (j.ok ? 'Connection successful.' : 'Connection failed.'), !j.ok);
+                    toast(j.ok ? 'Connection works' : 'Connection failed', j.ok ? 'success' : 'error');
+                })
+                .catch(err => {
+                    flashIn(els.fireflyStatus, err.message || 'Could not test the connection.', true);
+                    toast('Could not test the connection', 'error');
+                });
+        });
+
+        els.accountsSave.addEventListener('click', () => {
+            patchSettings(
+                {
+                    account_types: checkedAccountTypes(),
+                    auto_fetch_accounts: els.autoFetch.checked
+                },
+                els.accountsStatus,
+                'Saved — account filter settings are in effect.'
+            );
+        });
+
+        els.cacheSave.addEventListener('click', () => {
+            const ttl = parseInt(els.cacheTtl.value, 10);
+            if (Number.isNaN(ttl) || ttl < 1) {
+                flashIn(els.cacheStatus, 'Enter a TTL in seconds (at least 1).', true);
+                return;
+            }
+            patchSettings(
+                { cache_ttl: ttl },
+                els.cacheStatus,
+                'Saved — new cache TTL applies to the next cached entry.'
+            );
+        });
+
+        els.timeRanges.addEventListener('input', () => rebuildDefaultSelect());
+
+        els.timerangesSave.addEventListener('click', () => {
+            const ranges = parseRanges(els.timeRanges.value);
+            if (ranges.length === 0) {
+                flashIn(els.timerangesStatus, 'Enter at least one time range (e.g. 7d, 30d, 1y).', true);
+                return;
+            }
+            const def = els.defaultRange.value || ranges[0];
+            if (!ranges.includes(def)) {
+                flashIn(els.timerangesStatus, 'The pre-selected range must be one of the listed ranges.', true);
+                return;
+            }
+            patchSettings(
+                { time_ranges: ranges, default_time_range: def },
+                els.timerangesStatus,
+                'Saved — time range presets are in effect.'
+            );
+        });
 
         loadSettings();
     })();

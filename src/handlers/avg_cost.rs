@@ -16,6 +16,9 @@ fn avg_cost_enabled() -> bool {
 /// disabled (toggle under /settings).
 #[get("/avg-cost")]
 pub async fn avg_cost_page(config: web::Data<Config>) -> HttpResponse {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     if !avg_cost_enabled() {
         return HttpResponse::NotFound().json(serde_json::json!({
             "message": "Avg Cost is disabled. Enable it under Settings."

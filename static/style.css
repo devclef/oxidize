@@ -3949,6 +3949,103 @@ button:focus-visible,
     color: var(--error-color);
 }
 
+/* Settings form fields (Firefly connection, caching, time ranges) */
+.setting-field {
+    padding: 16px 4px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.setting-field .setting-title {
+    cursor: default;
+}
+
+.setting-field .setting-desc {
+    margin-bottom: 10px;
+}
+
+.setting-input {
+    width: 100%;
+    max-width: 520px;
+    padding: 8px 12px;
+    font-size: var(--text-sm);
+    font-family: inherit;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-color);
+    color: var(--text-color);
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.setting-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.setting-input-sm {
+    max-width: 260px;
+    flex-shrink: 0;
+}
+
+.setting-checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px 16px;
+    max-width: 420px;
+}
+
+.setting-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-sm);
+    color: var(--text-color);
+    cursor: pointer;
+    user-select: none;
+}
+
+.setting-check input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+}
+
+.setting-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 4px 0;
+    flex-wrap: wrap;
+}
+
+.setting-status {
+    min-height: 1.2em;
+    margin: 10px 4px 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.setting-status.ok {
+    color: var(--accent-text);
+}
+
+.setting-status.error {
+    color: var(--error-color);
+}
+
+.readonly-value {
+    font-size: var(--text-sm);
+    color: var(--text-color);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 2px 10px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
 @media (max-width: 640px) {
     .setting-row {
         flex-direction: column;

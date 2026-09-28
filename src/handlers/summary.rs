@@ -22,6 +22,9 @@ fn summary_enabled() -> bool {
 /// is disabled.
 #[get("/summary")]
 pub async fn summary_page(config: web::Data<Config>) -> HttpResponse {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     if !summary_enabled() {
         return HttpResponse::NotFound()
             .json(serde_json::json!({ "message": "Monthly Summary is disabled. Enable it under Settings." }));

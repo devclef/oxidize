@@ -14,6 +14,9 @@ fn budget_comparison_enabled() -> bool {
 /// feature is disabled (toggle under /settings).
 #[get("/budget-comparison")]
 pub async fn budget_comparison(config: web::Data<Config>) -> HttpResponse {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     if !budget_comparison_enabled() {
         return HttpResponse::NotFound().json(serde_json::json!({
             "message": "Budget Comparison is disabled. Enable it under Settings."

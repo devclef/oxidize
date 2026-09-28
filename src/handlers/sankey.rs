@@ -16,6 +16,9 @@ fn sankey_enabled() -> bool {
 /// disabled (toggle under /settings).
 #[get("/sankey")]
 pub async fn sankey_page(config: web::Data<Config>) -> HttpResponse {
+    // Env vars are only the defaults: apply runtime settings from the
+    // /settings page (Firefly connection, account types, cache TTL, time ranges).
+    let config = crate::config::Config::effective(&config);
     if !sankey_enabled() {
         return HttpResponse::NotFound().json(serde_json::json!({
             "message": "Sankey Flow is disabled. Enable it under Settings."

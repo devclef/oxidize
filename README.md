@@ -56,6 +56,11 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 
 ## Configuration
 
+Environment variables are the **defaults** — the [Settings page](#pages) can
+override the Firefly connection, account types, auto-fetch, cache TTL and
+time ranges at runtime. Saved values win; clearing a field reverts to the
+env value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FIREFLY_III_URL` | `https://demo.firefly-iii.org` | Firefly III base URL (not the `/api` path) |
@@ -78,7 +83,7 @@ docker run -p 8080:8080 --env-file .env -v oxidize-data:/app/data oxidize
 | `/sankey` | Sankey flow visualization (optional - enabled by default, toggle under Settings) |
 | `/reimbursements` | Work expenses vs reimbursements, month by month (optional - enabled by default, toggle under Settings) |
 | `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
-| `/settings` | Runtime settings page (beta) - toggle optional pages (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost) |
+| `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost) |
 
 ## API Endpoints
 
@@ -181,8 +186,9 @@ Settings panel); effective exclusions are the union of both.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/settings` | Current settings (defaults applied for unsaved keys) |
-| PATCH | `/api/settings` | Update settings, e.g. `{"monthly_summary_enabled": true}`; returns the new state |
+| GET | `/api/settings` | Effective settings (saved values layered over the env defaults) + form metadata |
+| PATCH | `/api/settings` | Update settings, e.g. `{"monthly_summary_enabled": true}` or `{"firefly_url": "https://firefly.example.com/api"}`; empty string/list or `0` clears a value back to the env default; returns the new state |
+| POST | `/api/settings/test-firefly` | Test a URL/token pair against Firefly III (used by the "Test connection" button) |
 
 `monthly_summary_enabled` defaults to `false`: when disabled the `/summary`
 page and `/api/summary/month` return 404 and the nav link is hidden on all

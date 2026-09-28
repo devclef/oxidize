@@ -71,6 +71,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::settings::settings_page)
             .service(handlers::settings::get_settings_api)
             .service(handlers::settings::update_settings_api)
+            .service(handlers::settings::test_firefly_api)
             .service(handlers::summary::summary_page)
             .service(handlers::summary::get_month_summary_api)
             .service(handlers::reimbursement::reimbursements_page)

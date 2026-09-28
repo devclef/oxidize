@@ -32,6 +32,7 @@ describe('settings page switch markup', () => {
             'reimbursements-toggle',
             'budget-comparison-toggle',
             'avg-cost-toggle',
+            'auto-fetch-toggle',
         ];
 
         const switches = doc.querySelectorAll('.switch');
@@ -81,6 +82,13 @@ describe('settings page switch markup', () => {
             'reimbursements_enabled',
             'budget_comparison_enabled',
             'avg_cost_enabled',
+            'firefly_url',
+            'firefly_token',
+            'account_types',
+            'auto_fetch_accounts',
+            'cache_ttl',
+            'time_ranges',
+            'default_time_range',
         ];
         const script = [...doc.querySelectorAll('script')]
             .map((s) => s.textContent)
@@ -88,5 +96,43 @@ describe('settings page switch markup', () => {
         for (const key of keys) {
             expect(script, `inline script must reference ${key}`).toContain(key);
         }
+        // The test-connection button must hit the dedicated endpoint.
+        expect(script).toContain('/api/settings/test-firefly');
+    });
+
+    it('renders the env-moved settings as form fields', () => {
+        // Firefly connection (FIREFLY_III_URL / FIREFLY_III_ACCESS_TOKEN)
+        const url = doc.getElementById('firefly-url');
+        expect(url, '#firefly-url must exist').not.toBeNull();
+        expect(url.getAttribute('type')).toBe('text');
+        const token = doc.getElementById('firefly-token');
+        expect(token, '#firefly-token must exist').not.toBeNull();
+        expect(token.getAttribute('type')).toBe('password');
+        expect(doc.getElementById('firefly-test'), '#firefly-test must exist').not.toBeNull();
+
+        // Accounts (ACCOUNT_TYPES checkbox group + AUTO_FETCH_ACCOUNTS switch)
+        expect(
+            doc.getElementById('account-type-checks'),
+            '#account-type-checks must exist',
+        ).not.toBeNull();
+        const autoFetch = doc.getElementById('auto-fetch-toggle');
+        expect(autoFetch, '#auto-fetch-toggle must exist').not.toBeNull();
+
+        // Caching (CACHE_TTL)
+        const ttl = doc.getElementById('cache-ttl');
+        expect(ttl, '#cache-ttl must exist').not.toBeNull();
+        expect(ttl.getAttribute('type')).toBe('number');
+
+        // Time ranges (TIME_RANGES / DEFAULT_TIME_RANGE)
+        const ranges = doc.getElementById('time-ranges');
+        expect(ranges, '#time-ranges must exist').not.toBeNull();
+        const defRange = doc.getElementById('default-time-range');
+        expect(defRange, '#default-time-range must exist').not.toBeNull();
+        expect(defRange.tagName).toBe('SELECT');
+
+        // Server facts are shown read-only (HOST/PORT, DATA_DIR, RUST_LOG)
+        expect(doc.getElementById('server-host'), '#server-host must exist').not.toBeNull();
+        expect(doc.getElementById('server-datadir'), '#server-datadir must exist').not.toBeNull();
+        expect(doc.getElementById('server-loglevel'), '#server-loglevel must exist').not.toBeNull();
     });
 });

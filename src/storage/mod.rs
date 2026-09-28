@@ -817,6 +817,27 @@ impl Storage {
         Ok(Settings::from_rows(&rows))
     }
 
+    /// Like `get_settings`, but returns `None` instead of failing when the
+    /// data directory was never initialized (tests that don't touch the
+    /// database).
+    pub fn get_settings_unchecked() -> Option<Settings> {
+        let rows = with_db_optional(|conn| {
+            let mut stmt = conn.prepare("SELECT key, value FROM settings").ok()?;
+            let mapped = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .ok()?;
+            let mut map = std::collections::HashMap::new();
+            for r in mapped {
+                let (k, v) = r.ok()?;
+                map.insert(k, v);
+            }
+            Some(map)
+        })??;
+        Some(Settings::from_rows(&rows))
+    }
+
     /// Persist the full settings object (upserts every key).
     pub fn save_settings(settings: &Settings) -> Result<(), String> {
         for (k, v) in settings.to_rows() {
