@@ -715,6 +715,16 @@ mod tests {
 
         // Current month transactions: 100 spent + 3000 earned on day 1 (always <= today).
         let d1 = format!("{}-{:02}-01", y, m);
+        // Net-worth chart entries: day-1 baseline plus today's value. On the
+        // 1st of the month d1 == today_s, and a JSON object literal would
+        // silently collapse the duplicate key (last wins), so build the map
+        // explicitly: on day 1 the series has a single data point.
+        let mut asset_entries = serde_json::Map::new();
+        asset_entries.insert(d1.clone(), json!(10000.0));
+        asset_entries.insert(today_s.clone(), json!(10100.0));
+        let mut liability_entries = serde_json::Map::new();
+        liability_entries.insert(d1.clone(), json!(-2000.0));
+        liability_entries.insert(today_s.clone(), json!(-2000.0));
         let current_txs = tx_list(vec![
             deposit_tx("c-sal", &d1, 3000.0, "Salary", "Income:Salary", "20", "1"),
             withdrawal_tx(
@@ -839,7 +849,7 @@ mod tests {
                     "label": "Assets",
                     "currency_symbol": "$",
                     "currency_code": "USD",
-                    "entries": { d1.clone(): 10000.0, today_s.clone(): 10100.0 }
+                    "entries": asset_entries
                 }])
                 .to_string(),
             )
@@ -858,7 +868,7 @@ mod tests {
                     "label": "Liabilities",
                     "currency_symbol": "$",
                     "currency_code": "USD",
-                    "entries": { d1.clone(): -2000.0, today_s.clone(): -2000.0 }
+                    "entries": liability_entries
                 }])
                 .to_string(),
             )
@@ -899,9 +909,12 @@ mod tests {
         assert!(t.earned_delta_pct.is_none());
         assert!(t.spent_delta_pct.is_none());
 
-        // Net worth: 10100 + (-2000) = 8100, delta 100.
+        // Net worth: 10100 + (-2000) = 8100. Delta is 100 across the two
+        // data points, but 0 on the 1st of the month, when day 1 and today
+        // collapse into a single point (first == last).
+        let expected_nw_delta = if days_elapsed == 1 { 0.0 } else { 100.0 };
         assert!((t.net_worth.unwrap() - 8100.0).abs() < 1e-6);
-        assert!((t.net_worth_delta.unwrap() - 100.0).abs() < 1e-6);
+        assert!((t.net_worth_delta.unwrap() - expected_nw_delta).abs() < 1e-6);
 
         // Budget: 100 spent of 100 limit, projected by daily pace.
         assert_eq!(summary.budgets.len(), 1);
