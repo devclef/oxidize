@@ -1,0 +1,16 @@
+# cargo audit configuration
+#
+# Documented advisory ignores. Each entry needs a reason and a revisit
+# condition; remove as soon as the underlying dependency is upgradable.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0258 (h2 unbounded empty DATA frames, low-severity DoS):
+    # only h2 >= 0.4.16 is patched; h2 0.3.27 is pulled in by actix-http,
+    # and the latest actix-http (3.18.12) / actix-web (4.15.0) still depend
+    # on h2 ^0.3.27, so no update path exists yet. The h2 0.4.x copy
+    # (reqwest/hyper) is already patched to 0.4.19. Server exposure is the
+    # HTTP/2 path of our local dashboard. Revisit when actix-web/actix-http
+    # moves to h2 0.4 and re-verify with `cargo audit`.
+    "RUSTSEC-2026-0258",
+]
