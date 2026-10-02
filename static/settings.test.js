@@ -32,6 +32,7 @@ describe('settings page switch markup', () => {
             'reimbursements-toggle',
             'budget-comparison-toggle',
             'avg-cost-toggle',
+            'labels-toggle',
             'auto-fetch-toggle',
         ];
 
@@ -82,6 +83,7 @@ describe('settings page switch markup', () => {
             'reimbursements_enabled',
             'budget_comparison_enabled',
             'avg_cost_enabled',
+            'labels_enabled',
             'firefly_url',
             'firefly_token',
             'account_types',

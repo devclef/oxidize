@@ -11,6 +11,7 @@ use crate::models::{
     CategoryListResponse, CategoryRead, ChartDataSet, ChartLine, Exclusions, MonthStats,
     ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
 };
+use crate::models::label::{Label, LabelBudgetComposition, LabelCategoryPart};
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -3351,6 +3352,347 @@ impl FireflyClient {
         }
 
         Ok(chart)
+    }
+
+
+    /// Time-series spending per user-defined label (see models/label.rs).
+    /// One dataset per label (plus an optional "Unlabeled"), one point per
+    /// period bucket. Uses the same transaction pipeline as the category
+    /// spend charts.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_label_spend_chart(
+        &self,
+        labels: Vec<Label>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+        budget_names: Vec<String>,
+        account_ids: Option<Vec<String>>,
+        include_unlabeled: bool,
+        exclusions: &Exclusions,
+    ) -> Result<ChartLine, String> {
+        use crate::models::label::classify;
+
+        let labels_json = serde_json::to_string(&labels).unwrap_or_default();
+        if let Some(cached_json) = self.cache.get_label_spend(
+            &labels_json,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            period.as_deref(),
+            &budget_names,
+            account_ids.as_deref(),
+            exclusions,
+            include_unlabeled,
+        ) {
+            debug!("Cache hit for label spend");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached label spend: {}", e));
+        }
+
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+        let budget_set: std::collections::HashSet<String> = budget_names.iter().cloned().collect();
+
+        // Per period bucket: (full category name, amount) pairs
+        let mut buckets: std::collections::BTreeMap<String, Vec<(Option<String>, f64)>> =
+            std::collections::BTreeMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            if !is_journal_spent(journal, &selected_ids) {
+                continue;
+            }
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+            if !budget_set.is_empty() {
+                let budget_name = journal
+                    .get("budget_name")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("");
+                if !budget_set.contains(budget_name) {
+                    continue;
+                }
+            }
+            let (Some(amount_str), Some(date)) = (
+                journal.get("amount").and_then(|a| a.as_str()),
+                journal.get("date").and_then(|d| d.as_str()),
+            ) else {
+                continue;
+            };
+            let Ok(amount) = amount_str.parse::<f64>() else {
+                continue;
+            };
+            let full_category = journal
+                .get("category_name")
+                .and_then(|c| c.as_str())
+                .filter(|c| !c.trim().is_empty())
+                .map(str::to_string);
+            let period_key = Self::get_period_key(date, &period_val, Some(&end));
+            buckets.entry(period_key).or_default().push((full_category, amount));
+
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|c| c.as_str())
+                    .map(String::from);
+            }
+        }
+
+        // Classify each bucket against all labels at once.
+        let mut per_label: std::collections::BTreeMap<String, std::collections::HashMap<String, f64>> =
+            std::collections::BTreeMap::new();
+        let mut unlabeled: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        for (period_key, items) in &buckets {
+            let classified = classify(items, &labels);
+            for (name, amount) in &classified.by_label {
+                per_label
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(period_key.clone(), *amount);
+            }
+            if classified.unlabeled > 0.0 {
+                unlabeled.insert(period_key.clone(), classified.unlabeled);
+            }
+        }
+
+        let mut datasets: Vec<ChartDataSet> = labels
+            .iter()
+            .filter(|l| per_label.get(&l.name).map(|e| !e.is_empty()).unwrap_or(false))
+            .map(|l| ChartDataSet {
+                label: l.name.clone(),
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(per_label.get(&l.name).cloned().unwrap_or_default())
+                    .unwrap(),
+            })
+            .collect();
+        if include_unlabeled && !unlabeled.is_empty() {
+            datasets.push(ChartDataSet {
+                label: "Unlabeled".to_string(),
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(&unlabeled).unwrap(),
+            });
+        }
+
+        let mut chart: Vec<ChartDataSet> = datasets;
+        chart.sort_by(|a, b| {
+            let sum_a = Self::sum_entries(&a.entries);
+            let sum_b = Self::sum_entries(&b.entries);
+            sum_b
+                .partial_cmp(&sum_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_label_spend(
+                &labels_json,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                period.as_deref(),
+                &budget_names,
+                account_ids.as_deref(),
+                exclusions,
+                include_unlabeled,
+                json,
+            );
+        }
+
+        Ok(chart)
+    }
+
+    /// How a single budget's spend is composed of user-defined labels
+    /// (see models/label.rs). Only journals assigned to `budget` in the
+    /// period are considered.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_label_budget_composition(
+        &self,
+        labels: Vec<Label>,
+        budget: String,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<LabelBudgetComposition, String> {
+        use crate::models::label::{classify, composition_parts, matching_label_names};
+
+        let labels_json = serde_json::to_string(&labels).unwrap_or_default();
+        if let Some(cached_json) = self.cache.get_label_composition(
+            &labels_json,
+            &budget,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            account_ids.as_deref(),
+            exclusions,
+        ) {
+            debug!("Cache hit for label budget composition");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached label composition: {}", e));
+        }
+
+        // Default to the current calendar month.
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-01").to_string());
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        let mut items: Vec<(Option<String>, f64)> = Vec::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &all_transactions {
+            let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            else {
+                continue;
+            };
+            for journal in trans_arr {
+                if !is_journal_spent(journal, &selected_ids) {
+                    continue;
+                }
+                if journal_is_excluded(exclusions, journal) {
+                    continue;
+                }
+                let journal_budget = journal
+                    .get("budget_name")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("");
+                if journal_budget != budget {
+                    continue;
+                }
+                let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) else {
+                    continue;
+                };
+                let Ok(amount) = amount_str.parse::<f64>() else {
+                    continue;
+                };
+                let full_category = journal
+                    .get("category_name")
+                    .and_then(|c| c.as_str())
+                    .filter(|c| !c.trim().is_empty())
+                    .map(str::to_string);
+                items.push((full_category, amount));
+
+                if currency_symbol.is_none() {
+                    currency_symbol = journal
+                        .get("currency_symbol")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                    currency_code = journal
+                        .get("currency_code")
+                        .and_then(|c| c.as_str())
+                        .map(String::from);
+                }
+            }
+        }
+
+        let classified = classify(&items, &labels);
+        let parts = composition_parts(&labels, &classified.by_label, classified.total, classified.unlabeled);
+
+        // Per-category breakdown (full category name as stored on the journal).
+        let mut by_category: std::collections::BTreeMap<String, f64> =
+            std::collections::BTreeMap::new();
+        for (category, amount) in &items {
+            let name = category.as_deref().unwrap_or("Uncategorized").to_string();
+            *by_category.entry(name).or_insert(0.0) += amount;
+        }
+        let labeled_total = if classified.total > classified.unlabeled {
+            classified.total - classified.unlabeled
+        } else {
+            0.0
+        };
+        let by_category: Vec<LabelCategoryPart> = by_category
+            .into_iter()
+            .map(|(name, amount)| LabelCategoryPart {
+                labels: matching_label_names(&name, &labels),
+                category: name,
+                amount,
+                pct: if classified.total > 0.0 {
+                    amount / classified.total * 100.0
+                } else {
+                    0.0
+                },
+            })
+            .collect();
+        let mut by_category = by_category;
+        by_category.sort_by(|a, b| {
+            b.amount
+                .partial_cmp(&a.amount)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let result = LabelBudgetComposition {
+            budget: budget.clone(),
+            start: start.clone(),
+            end: end.clone(),
+            total: classified.total,
+            labeled: labeled_total,
+            parts,
+            by_category,
+            currency_code,
+            currency_symbol,
+        };
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_label_composition(
+                &labels_json,
+                &budget,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                account_ids.as_deref(),
+                exclusions,
+                json,
+            );
+        }
+
+        Ok(result)
     }
 
     /// Calculate average cost per budget with configurable mode and account filtering.

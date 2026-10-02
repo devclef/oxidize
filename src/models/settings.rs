@@ -37,6 +37,8 @@ pub struct Settings {
     pub budget_comparison_enabled: bool,
     /// Whether the Avg Cost page is available. Default: enabled.
     pub avg_cost_enabled: bool,
+    /// Whether the Spending Labels page is available. Default: enabled.
+    pub labels_enabled: bool,
     /// Firefly III base URL. `None` = use the `FIREFLY_III_URL` env value.
     pub firefly_url: Option<String>,
     /// Firefly III access token. `None` = use `FIREFLY_III_ACCESS_TOKEN`.
@@ -95,6 +97,7 @@ impl Default for Settings {
             reimbursements_enabled: true,
             budget_comparison_enabled: true,
             avg_cost_enabled: true,
+            labels_enabled: true,
             firefly_url: None,
             firefly_token: None,
             account_types: None,
@@ -121,6 +124,7 @@ impl Settings {
                 &mut s.budget_comparison_enabled,
             ),
             ("avg_cost_enabled", &mut s.avg_cost_enabled),
+            ("labels_enabled", &mut s.labels_enabled),
         ] {
             if let Some(v) = rows.get(key) {
                 *field = v == "true" || v == "1";
@@ -165,6 +169,7 @@ impl Settings {
             ("reimbursements_enabled", self.reimbursements_enabled),
             ("budget_comparison_enabled", self.budget_comparison_enabled),
             ("avg_cost_enabled", self.avg_cost_enabled),
+            ("labels_enabled", self.labels_enabled),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -216,6 +221,7 @@ impl Settings {
             reimbursements_enabled: self.reimbursements_enabled,
             budget_comparison_enabled: self.budget_comparison_enabled,
             avg_cost_enabled: self.avg_cost_enabled,
+            labels_enabled: self.labels_enabled,
             firefly_url: Some(
                 self.firefly_url
                     .clone()
@@ -263,6 +269,7 @@ pub struct SettingsUpdate {
     pub reimbursements_enabled: Option<bool>,
     pub budget_comparison_enabled: Option<bool>,
     pub avg_cost_enabled: Option<bool>,
+    pub labels_enabled: Option<bool>,
     pub firefly_url: Option<String>,
     pub firefly_token: Option<String>,
     pub account_types: Option<Vec<String>>,
@@ -359,6 +366,9 @@ impl SettingsUpdate {
         }
         if let Some(v) = self.avg_cost_enabled {
             current.avg_cost_enabled = v;
+        }
+        if let Some(v) = self.labels_enabled {
+            current.labels_enabled = v;
         }
 
         if let Some(v) = self.firefly_url {

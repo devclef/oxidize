@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI assista
 
 ## Project Overview
 
-Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across seven pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), Monthly Summary (`/summary`), and Reimbursements (`/reimbursements`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
+Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across eight pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), Monthly Summary (`/summary`), Reimbursements (`/reimbursements`), and Spending Labels (`/labels`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
 
 ## Commands
 
@@ -83,6 +83,29 @@ budget matches before aggregation, so excluded amounts never reach the chart.
 A category entry matches by main-category name (all subcategories) or by full
 `Parent:Sub` name. Exclusions are part of the chart cache keys.
 
+### Spending Labels
+
+Users can define their own *labels* — named lenses over Firefly III
+categories, e.g. "wants" vs "needs" (see `plans/spending-labels.md`). A
+label's entries are category names with the **same matching semantics as
+exclusions**: `"Groceries"` covers the whole category, `"Dining:Bars"`
+covers only that subcategory. Labels are perspectives, not partitions: a
+category may sit in several labels (counted in each), and spend matching
+no label is reported as "Unlabeled".
+
+Labels persist in Oxidize's own SQLite DB (`labels` table, like groups) —
+Firefly III is never modified. Reports (`src/handlers/label.rs`):
+
+- `GET /api/labels/budget-composition?budget=..&start=..&end=..` — per-label
+  shares of one budget's spend + per-category breakdown.
+- `GET /api/labels/spend?start=..&end=..&period=1M[&budgets[]=..]` — standard
+  `ChartLine` time series, one dataset per label (+ optional Unlabeled).
+
+Both run the same transaction pipeline as the category spend charts
+(`fetch_all_transactions` + `is_journal_spent` + exclusion filtering) and
+cache in the in-memory TTL cache keyed on the label definitions. Optional
+feature: `labels_enabled` setting (default on; toggle under /settings).
+
 ### Source Code Layout
 
 ```
@@ -102,6 +125,7 @@ src/
 │   ├── dashboard.rs         # GET /dashboard (serves dashboard.html with injected config)
 │   ├── dashboard_api.rs     # CRUD for /api/dashboards
 │   ├── index.rs             # GET / (serves index.html with injected config), /api/manifest, favicon
+│   ├── label.rs             # GET /labels page + /api/labels CRUD + /api/labels/budget-composition + /api/labels/spend
 │   ├── reimbursement.rs   # GET /reimbursements page + GET /api/reimbursements/summary + refresh
 │   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
 │   ├── summary.rs           # GET /summary page + GET /api/summary/month
@@ -116,6 +140,7 @@ src/
 │   ├── dashboard.rs # Dashboard (named collection of widgets)
 │   ├── exclusions.rs # Exclusions (categories/budgets dropped from aggregation)
 │   ├── group.rs     # Group (id, name, account_ids)
+│   ├── label.rs     # Label (user-defined category lens) + classify() + budget composition types
 │   ├── reimbursement.rs # ReimbursementSummary types + work-expense/reimbursement matching + month buckets
 │   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
 │   ├── summary.rs   # MonthSummary response types + pure month/budget helpers

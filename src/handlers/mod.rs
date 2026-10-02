@@ -24,6 +24,7 @@ pub mod dashboard;
 pub mod dashboard_api;
 pub mod group;
 pub mod index;
+pub mod label;
 pub mod widget;
 
 pub mod reimbursement;
@@ -68,6 +69,9 @@ pub fn hide_disabled_nav(html: &str) -> String {
             }
             if !s.avg_cost_enabled {
                 out = strip_nav_link(&out, "/avg-cost", "Avg Cost");
+            }
+            if !s.labels_enabled {
+                out = strip_nav_link(&out, "/labels", "Spending Labels");
             }
             out
         }

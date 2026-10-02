@@ -23,6 +23,7 @@
         <a href="/avg-cost">Avg Cost</a>
         <a href="/sankey">Sankey Flow</a>
         <a href="/reimbursements">Reimbursements</a>
+        <a href="/labels">Spending Labels</a>
         <a href="/settings" class="active">Settings</a>
         <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
         <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="display: none;">
@@ -281,6 +282,23 @@
                 <span class="slider" aria-hidden="true"></span>
             </span>
         </div>
+
+        <div class="setting-row">
+            <div class="setting-info">
+                <label class="setting-title" for="labels-toggle">Spending Labels</label>
+                <p class="setting-desc">
+                    Show the Spending Labels page where you classify
+                    categories into your own lenses (e.g. wants vs needs)
+                    and report on them. When disabled, the page and its
+                    navigation link are hidden everywhere.
+                </p>
+            </div>
+            <span class="switch" title="Toggle Spending Labels">
+                <input type="checkbox" id="labels-toggle" role="switch"
+                       aria-label="Show Spending Labels page">
+                <span class="slider" aria-hidden="true"></span>
+            </span>
+        </div>
     </section>
 
     <p id="settings-status" class="settings-status" role="status" aria-live="polite"></p>
@@ -294,7 +312,8 @@
             'sankey-toggle': { key: 'sankey_enabled', label: 'Sankey Flow' },
             'reimbursements-toggle': { key: 'reimbursements_enabled', label: 'Reimbursements' },
             'budget-comparison-toggle': { key: 'budget_comparison_enabled', label: 'Budget Comparison' },
-            'avg-cost-toggle': { key: 'avg_cost_enabled', label: 'Avg Cost' }
+            'avg-cost-toggle': { key: 'avg_cost_enabled', label: 'Avg Cost' },
+            'labels-toggle': { key: 'labels_enabled', label: 'Spending Labels' }
         };
         const status = document.getElementById('settings-status');
 

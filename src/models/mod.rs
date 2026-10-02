@@ -5,6 +5,7 @@ pub mod chart;
 pub mod dashboard;
 pub mod exclusions;
 pub mod group;
+pub mod label;
 pub mod reimbursement;
 pub mod settings;
 pub mod summary;
@@ -22,6 +23,10 @@ pub use chart::{ChartDataSet, ChartLine, MonthStats, SavedThisMonth};
 pub use dashboard::Dashboard;
 pub use exclusions::Exclusions;
 pub use group::Group;
+pub use label::{
+    classify, composition_parts, entry_matches, matching_label_names, ClassifiedSpend,
+    Label, LabelBudgetComposition, LabelCategoryPart, LabelPart,
+};
 pub use reimbursement::{
     is_reimbursement, is_work_expense, month_bucket_labels, pct_reimbursed,
     ReimbursementBreakdownItem, ReimbursementMonth, ReimbursementSummary,

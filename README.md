@@ -14,7 +14,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
-- **Account Groups** - named collections of accounts for reuse across widgets
+- **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels and track per-label spending over time
 - **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -83,7 +83,8 @@ env value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
 | `/sankey` | Sankey flow visualization (optional - enabled by default, toggle under Settings) |
 | `/reimbursements` | Work expenses vs reimbursements, month by month (optional - enabled by default, toggle under Settings) |
 | `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
-| `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost) |
+| `/labels` | Spending Labels: define your own category lenses and report on budget composition and spend trends along them (optional - enabled by default, toggle under Settings) |
+| `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost, Spending Labels) |
 
 ## API Endpoints
 
@@ -173,6 +174,20 @@ Settings panel); effective exclusions are the union of both.
 | POST | `/api/groups` | Create group |
 | PUT | `/api/groups/{id}` | Update group |
 | DELETE | `/api/groups/{id}` | Delete group |
+
+### Spending Labels
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/labels` | List all labels |
+| POST | `/api/labels` | Create label (name + category entries: parent names or full `Parent:Sub` names) |
+| PUT | `/api/labels/{id}` | Update label |
+| DELETE | `/api/labels/{id}` | Delete label |
+| GET | `/api/labels/budget-composition` | How one budget's spend is composed of the labels (`budget` required; `start`, `end`, `accounts[]`, supports exclusions) |
+| GET | `/api/labels/spend` | Time series of spend per label (standard chart shape; `start`, `end`, `period`, `budgets[]`, `accounts[]`, `include_unlabeled`, supports exclusions) |
+
+Labels are perspectives, not partitions: a category may belong to several
+labels, and spend matching none is reported as "Unlabeled".
 
 ### Cache
 

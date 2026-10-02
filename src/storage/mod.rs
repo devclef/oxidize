@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 use crate::models::dashboard::Dashboard;
 use crate::models::group::Group;
+use crate::models::label::Label;
 use crate::models::settings::Settings;
 use crate::models::widget::ChartOptions;
 use crate::models::Widget;
@@ -86,6 +87,27 @@ fn init_db(conn: &Connection) {
         [],
     )
     .expect("Failed to create groups table");
+
+    // Create labels table (user-defined category classifications)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS labels (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            color TEXT,
+            entries TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )
+    .expect("Failed to create labels table");
+
+    // Migration: enforce unique label names (no-op when already unique)
+    let _ = conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_name ON labels (name)",
+        [],
+    );
 
     // Create dashboards table
     conn.execute(
@@ -612,6 +634,176 @@ impl Storage {
 
             if rows == 0 {
                 return Err(format!("Group with id {} not found", id));
+            }
+
+            Ok(())
+        })
+    }
+
+    // Label CRUD operations
+
+    pub fn get_all_labels() -> Result<Vec<Label>, String> {
+        with_db(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, name, description, color, entries, created_at, updated_at
+                     FROM labels ORDER BY created_at DESC",
+                )
+                .map_err(|e| e.to_string())?;
+
+            let labels = stmt
+                .query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let description: String = row.get(2)?;
+                    let color: Option<String> = row.get(3)?;
+                    let entries_json: String = row.get(4)?;
+                    let created_at: Option<String> = row.get(5)?;
+                    let updated_at: Option<String> = row.get(6)?;
+
+                    let entries: Vec<String> =
+                        serde_json::from_str(&entries_json).unwrap_or_default();
+
+                    Ok(Label {
+                        id,
+                        name,
+                        description,
+                        color,
+                        entries,
+                        created_at,
+                        updated_at,
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r: Result<Label, _>| r.ok())
+                .collect();
+
+            Ok(labels)
+        })
+    }
+
+    /// Case-sensitive exact-name lookup (used for duplicate checks).
+    pub fn find_label_by_name(name: &str) -> Result<Option<Label>, String> {
+        with_db(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT id, name, description, color, entries, created_at, updated_at
+                          FROM labels WHERE name = ?1")
+                .map_err(|e| e.to_string())?;
+
+            let row = stmt
+                .query_map(params![name], |row| {
+                    let id: String = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let description: String = row.get(2)?;
+                    let color: Option<String> = row.get(3)?;
+                    let entries_json: String = row.get(4)?;
+                    let created_at: Option<String> = row.get(5)?;
+                    let updated_at: Option<String> = row.get(6)?;
+
+                    let entries: Vec<String> =
+                        serde_json::from_str(&entries_json).unwrap_or_default();
+
+                    Ok(Label {
+                        id,
+                        name,
+                        description,
+                        color,
+                        entries,
+                        created_at,
+                        updated_at,
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .next()
+                .map(|r| r.map_err(|e| e.to_string()))
+                .transpose()?;
+
+            Ok(row)
+        })
+    }
+
+    pub fn create_label(label: &Label) -> Result<(), String> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let entries_json = serde_json::to_string(&label.entries).map_err(|e| e.to_string())?;
+
+        with_db(|conn| {
+            let existing: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM labels WHERE name = ?1",
+                    params![&label.name],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if existing > 0 {
+                return Err(format!("A label named '{}' already exists", label.name));
+            }
+
+            conn.execute(
+                "INSERT INTO labels (id, name, description, color, entries, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    &label.id,
+                    &label.name,
+                    &label.description,
+                    &label.color,
+                    &entries_json,
+                    &now,
+                    &now
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            Ok(())
+        })
+    }
+
+    pub fn update_label(label: &Label) -> Result<(), String> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let entries_json = serde_json::to_string(&label.entries).map_err(|e| e.to_string())?;
+
+        with_db(|conn| {
+            // Reject if another label already uses this name.
+            let other: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM labels WHERE name = ?1 AND id != ?2",
+                    params![&label.name, &label.id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if other > 0 {
+                return Err(format!("A label named '{}' already exists", label.name));
+            }
+
+            let rows = conn
+                .execute(
+                    "UPDATE labels SET name = ?1, description = ?2, color = ?3, entries = ?4, updated_at = ?5 WHERE id = ?6",
+                    params![
+                        &label.name,
+                        &label.description,
+                        &label.color,
+                        &entries_json,
+                        &now,
+                        &label.id
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+
+            if rows == 0 {
+                return Err(format!("Label with id {} not found", label.id));
+            }
+
+            Ok(())
+        })
+    }
+
+    pub fn delete_label(id: &str) -> Result<(), String> {
+        with_db(|conn| {
+            let rows = conn
+                .execute("DELETE FROM labels WHERE id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+
+            if rows == 0 {
+                return Err(format!("Label with id {} not found", id));
             }
 
             Ok(())

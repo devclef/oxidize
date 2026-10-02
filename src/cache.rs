@@ -36,6 +36,8 @@ pub struct DataCache {
     card_paydown: RwLock<HashMap<String, CacheEntry<String>>>,
     saved_this_month: RwLock<HashMap<String, CacheEntry<String>>>,
     reimbursement_summary: RwLock<HashMap<String, CacheEntry<String>>>,
+    label_spend: RwLock<HashMap<String, CacheEntry<String>>>,
+    label_composition: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -65,6 +67,8 @@ impl DataCache {
             card_paydown: RwLock::new(HashMap::new()),
             saved_this_month: RwLock::new(HashMap::new()),
             reimbursement_summary: RwLock::new(HashMap::new()),
+            label_spend: RwLock::new(HashMap::new()),
+            label_composition: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -733,6 +737,176 @@ impl DataCache {
 
     // ── Clear operations ─────────────────────────────────────────────
 
+    // ── Label reports ────────────────────────────────────────────────
+
+    #[allow(clippy::too_many_arguments)]
+    fn label_spend_key(
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unlabeled: bool,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let period = period.unwrap_or("default");
+        let budgets = budget_names.join(",");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:label_spend:{}:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            labels_json,
+            start,
+            end,
+            period,
+            budgets,
+            accounts,
+            include_unlabeled,
+            exclusions.cache_key()
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_label_spend(
+        &self,
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unlabeled: bool,
+    ) -> Option<String> {
+        let key = Self::label_spend_key(
+            labels_json,
+            start_date,
+            end_date,
+            period,
+            budget_names,
+            account_ids,
+            exclusions,
+            include_unlabeled,
+        );
+        Self::get_tiered(&self.label_spend, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_label_spend(
+        &self,
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unlabeled: bool,
+        data: String,
+    ) {
+        let key = Self::label_spend_key(
+            labels_json,
+            start_date,
+            end_date,
+            period,
+            budget_names,
+            account_ids,
+            exclusions,
+            include_unlabeled,
+        );
+        Self::set_tiered(&self.label_spend, &key, &data, self.current_ttl());
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn label_composition_key(
+        labels_json: &str,
+        budget: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:label_comp:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            labels_json,
+            budget,
+            start,
+            end,
+            accounts,
+            exclusions.cache_key()
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_label_composition(
+        &self,
+        labels_json: &str,
+        budget: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::label_composition_key(
+            labels_json,
+            budget,
+            start_date,
+            end_date,
+            account_ids,
+            exclusions,
+        );
+        Self::get_tiered(&self.label_composition, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_label_composition(
+        &self,
+        labels_json: &str,
+        budget: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::label_composition_key(
+            labels_json,
+            budget,
+            start_date,
+            end_date,
+            account_ids,
+            exclusions,
+        );
+        Self::set_tiered(&self.label_composition, &key, &data, self.current_ttl());
+    }
+
+    pub fn clear_label_spend(&self) {
+        Self::clear_tiered(
+            &self.label_spend,
+            Some(&format!("v{}:label_spend:", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_label_composition(&self) {
+        Self::clear_tiered(
+            &self.label_composition,
+            Some(&format!("v{}:label_comp:", CACHE_VERSION)),
+        );
+    }
+
     pub fn clear_all(&self) {
         self.clear_accounts();
         self.clear_balance_history();
@@ -749,6 +923,8 @@ impl DataCache {
         self.clear_card_paydown();
         self.clear_saved_this_month();
         self.clear_reimbursement_summary();
+        self.clear_label_spend();
+        self.clear_label_composition();
     }
 
     pub fn clear_accounts(&self) {
