@@ -187,7 +187,10 @@ Settings panel); effective exclusions are the union of both.
 | GET | `/api/labels/spend` | Time series of spend per label (standard chart shape; `start`, `end`, `period`, `budgets[]`, `accounts[]`, `include_unlabeled`, supports exclusions) |
 
 Labels are perspectives, not partitions: a category may belong to several
-labels, and spend matching none is reported as "Unlabeled".
+labels, and spend matching none is reported as "Unlabeled". The per-category
+breakdown under a budget composition is editable — click a row to change
+which labels cover that category/subcategory, or create a new label on the
+fly.
 
 ### Cache
 

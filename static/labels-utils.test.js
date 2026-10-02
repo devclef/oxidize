@@ -159,3 +159,172 @@ describe('formatAmount', () => {
         expect(window.Labels.formatAmount(undefined, '$')).toBe('—');
     });
 });
+
+describe('entryMatches', () => {
+    it('matches exact names', () => {
+        expect(window.Labels.entryMatches('Groceries', 'Groceries')).toBe(true);
+        expect(window.Labels.entryMatches('Dining:Bars', 'Dining:Bars')).toBe(true);
+    });
+
+    it('matches a parent entry against all of its subcategories', () => {
+        expect(window.Labels.entryMatches('Dining', 'Dining:Bars')).toBe(true);
+        expect(window.Labels.entryMatches('Dining', 'Dining:Takeout')).toBe(true);
+    });
+
+    it('does not match sibling prefixes or longer names', () => {
+        expect(window.Labels.entryMatches('Dining', 'DiningRoom')).toBe(false);
+        expect(window.Labels.entryMatches('Dining:Bars', 'Dining:Bars&Grill')).toBe(false);
+        expect(window.Labels.entryMatches('Dining:Bars', 'Dining')).toBe(false);
+    });
+
+    it('rejects empty values', () => {
+        expect(window.Labels.entryMatches('', 'Dining')).toBe(false);
+        expect(window.Labels.entryMatches('Dining', '')).toBe(false);
+        expect(window.Labels.entryMatches(null, 'Dining')).toBe(false);
+    });
+});
+
+describe('coverageOf', () => {
+    it('reports exact coverage', () => {
+        const cov = window.Labels.coverageOf(['Dining:Bars', 'Toys'], 'Dining:Bars');
+        expect(cov).toEqual({ exact: true, whole: null });
+    });
+
+    it('reports whole-category coverage', () => {
+        const cov = window.Labels.coverageOf(['Dining', 'Toys'], 'Dining:Bars');
+        expect(cov).toEqual({ exact: false, whole: 'Dining' });
+    });
+
+    it('reports both when both entries exist', () => {
+        const cov = window.Labels.coverageOf(['Dining', 'Dining:Bars'], 'Dining:Bars');
+        expect(cov).toEqual({ exact: true, whole: 'Dining' });
+    });
+
+    it('reports no coverage', () => {
+        const cov = window.Labels.coverageOf(['Dining:Bars'], 'Dining:Takeout');
+        expect(cov).toEqual({ exact: false, whole: null });
+    });
+});
+
+describe('addCategoryToEntries', () => {
+    it('adds the most specific entry when the category is uncovered', () => {
+        const r = window.Labels.addCategoryToEntries(['Groceries'], 'Dining:Bars');
+        expect(r).toEqual({ entries: ['Groceries', 'Dining:Bars'], changed: true });
+    });
+
+    it('is a no-op when covered exactly', () => {
+        const r = window.Labels.addCategoryToEntries(['Dining:Bars'], 'Dining:Bars');
+        expect(r.changed).toBe(false);
+        expect(r.entries).toEqual(['Dining:Bars']);
+    });
+
+    it('is a no-op when covered by a whole-category entry', () => {
+        const r = window.Labels.addCategoryToEntries(['Dining'], 'Dining:Bars');
+        expect(r.changed).toBe(false);
+        expect(r.entries).toEqual(['Dining']);
+    });
+
+    it('does not mutate the input', () => {
+        const input = ['Groceries'];
+        window.Labels.addCategoryToEntries(input, 'Dining');
+        expect(input).toEqual(['Groceries']);
+    });
+});
+
+describe('removeCategoryFromEntries', () => {
+    const diningSubs = ['Bars', 'Takeout', 'Restaurants'];
+    const subsOf = (parent) =>
+        parent === 'Dining' ? diningSubs
+        : parent === 'Gym' ? ['Other']
+        : null;
+
+    it('removes the exact entry', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Dining:Bars', 'Toys'], 'Dining:Bars', subsOf);
+        expect(r.entries).toEqual(['Toys']);
+        expect(r.split).toBeNull();
+    });
+
+    it('returns not-covered when nothing covers the category', () => {
+        const r = window.Labels.removeCategoryFromEntries(['Toys'], 'Dining:Bars', subsOf);
+        expect(r).toEqual({ error: 'not-covered' });
+    });
+
+    it('splits a whole-category entry into its other subcategories', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Dining', 'Toys'], 'Dining:Bars', subsOf);
+        expect(r.entries).toEqual(['Dining:Takeout', 'Dining:Restaurants', 'Toys']);
+        expect(r.split).toEqual({ entry: 'Dining', siblings: ['Takeout', 'Restaurants'] });
+    });
+
+    it('removes the whole-category entry when the sub is its only one', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Gym', 'Toys'], 'Gym:Other', subsOf);
+        expect(r.entries).toEqual(['Toys']);
+        expect(r.split).toEqual({ entry: 'Gym', siblings: [] });
+    });
+
+    it('still drops the category when the sub is missing from the sub list', () => {
+        // Firefly list lacks the sub: replacing "Dining" with all listed
+        // subs no longer covers "Dining:New".
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Dining'], 'Dining:New', subsOf);
+        expect(r.entries).toEqual(['Dining:Bars', 'Dining:Takeout', 'Dining:Restaurants']);
+    });
+
+    it('fails with cannot-split when the sub list is unknown', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Mystery'], 'Mystery:Bars', subsOf);
+        expect(r).toEqual({ error: 'cannot-split', entry: 'Mystery' });
+    });
+
+    it('removes the exact entry and splits the whole entry when both exist', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Dining', 'Dining:Bars'], 'Dining:Bars', subsOf);
+        expect(r.entries).toEqual(['Dining:Takeout', 'Dining:Restaurants']);
+        expect(r.split).toEqual({ entry: 'Dining', siblings: ['Takeout', 'Restaurants'] });
+    });
+
+    it('deduplicates when a sibling is already an entry', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Dining', 'Dining:Takeout'], 'Dining:Bars', subsOf);
+        expect(r.entries).toEqual(['Dining:Takeout', 'Dining:Restaurants']);
+    });
+
+    it('leaves top-level categories with only an exact-entry removal', () => {
+        const r = window.Labels.removeCategoryFromEntries(
+            ['Groceries', 'Toys'], 'Groceries', subsOf);
+        expect(r.entries).toEqual(['Toys']);
+        expect(r.split).toBeNull();
+    });
+});
+
+describe('labels page: per-category label editor wiring', () => {
+    const html = readFileSync(path.resolve(process.cwd(), 'static/labels.html'), 'utf8');
+
+    it('makes breakdown rows clickable and opens the editor', () => {
+        expect(html).toContain('openCategoryEditor(c)');
+        expect(html).toContain('tr.className = \'cat-row\'');
+        expect(html).toContain('tr.setAttribute(\'role\', \'button\')');
+    });
+
+    it('has the editor dialog with checklist, create row and apply', () => {
+        expect(html).toContain('id="cat-editor-overlay"');
+        expect(html).toContain('id="cat-editor-list"');
+        expect(html).toContain('id="cat-editor-new-name"');
+        expect(html).toContain('id="cat-editor-new-btn"');
+        expect(html).toContain('id="cat-editor-apply"');
+    });
+
+    it('drives assignment changes through the pure entry helpers', () => {
+        expect(html).toContain('L.coverageOf(');
+        expect(html).toContain('L.addCategoryToEntries(');
+        expect(html).toContain('L.removeCategoryFromEntries(');
+    });
+
+    it('keeps the labels-utils.js script tag version in sync with REVISION', () => {
+        const m = html.match(/labels-utils\.js\?v=([\d.\-]+)/);
+        expect(m).not.toBeNull();
+        expect(m[1]).toBe(window.Labels.REVISION);
+    });
+});

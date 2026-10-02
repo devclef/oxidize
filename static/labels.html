@@ -85,6 +85,28 @@
         .comp-summary { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: 12px; }
         .comp-summary strong { color: var(--text-color); }
         .cat-labels { display: flex; flex-wrap: wrap; gap: 4px; }
+        .summary-hint { color: var(--text-muted); font-weight: 400; font-size: var(--text-xs); }
+        #comp-cat-body tr.cat-row { cursor: pointer; }
+        #comp-cat-body tr.cat-row:hover td { background: rgba(59, 130, 246, 0.08); }
+        #comp-cat-body tr.cat-row:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+        .cat-row-manage { color: var(--text-muted); font-size: var(--text-xs); margin-left: 6px; }
+        .cat-editor-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .cat-editor-row:last-child { border-bottom: none; }
+        .cat-editor-row input[type="checkbox"] { margin-top: 4px; accent-color: var(--accent-color); flex-shrink: 0; }
+        .cat-editor-row-main { flex: 1; min-width: 0; }
+        .cat-editor-row-name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .cat-editor-row-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+        .cat-editor-row-note.warn { color: var(--warning-color); }
+        .cat-editor-divider { border: none; border-top: 1px solid var(--border-color); margin: 12px 0; }
+        .cat-editor-new-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+        .cat-editor-new-row .form-input { flex: 1; min-width: 150px; width: auto; }
+        .cat-editor-error { color: var(--error-color); font-size: var(--text-xs); margin-top: 8px; min-height: 1em; }
         @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -206,7 +228,7 @@
                     </table>
                 </div>
                 <details id="comp-cat-details" style="margin-top: 16px;">
-                    <summary style="cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: var(--text-sm);">Per-category breakdown</summary>
+                    <summary style="cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: var(--text-sm);">Per-category breakdown <span class="summary-hint">— click a row to manage its labels</span></summary>
                     <div class="results-table-wrapper" style="margin-top: 8px;">
                         <table class="results-table">
                             <thead>
@@ -255,13 +277,39 @@
         </section>
     </div>
 
+    <!-- ── Per-category label editor dialog ───────────────────────────── -->
+    <div class="modal-overlay" id="cat-editor-overlay" style="display: none;" role="presentation">
+        <div class="modal dialog" role="dialog" aria-modal="true" aria-labelledby="cat-editor-title">
+            <div class="modal-header">
+                <h3 id="cat-editor-title" class="dialog-title"></h3>
+                <button class="modal-close" id="cat-editor-close" type="button" aria-label="Close dialog">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="dialog-message" id="cat-editor-message"></p>
+                <div id="cat-editor-list" role="group" aria-label="Labels for this category"></div>
+                <hr class="cat-editor-divider">
+                <label class="form-label" for="cat-editor-new-name">Create a new label (it starts with this category)</label>
+                <div class="cat-editor-new-row">
+                    <input class="form-input" id="cat-editor-new-name" type="text" placeholder="e.g. rent" maxlength="60" autocomplete="off">
+                    <input class="color-input" id="cat-editor-new-color" type="color" value="#8b5cf6" title="Label color" aria-label="New label color">
+                    <button class="ghost-btn" id="cat-editor-new-btn" type="button">Create</button>
+                </div>
+                <div id="cat-editor-error" class="cat-editor-error" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cat-editor-cancel" type="button">Cancel</button>
+                <button class="btn btn-primary" id="cat-editor-apply" type="button">Apply changes</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/ui.js"></script>
-    <script src="/static/labels-utils.js?v=2026-10-02.1"></script>
+    <script src="/static/labels-utils.js?v=2026-10-02.2"></script>
     <script>
     'use strict';
     (function () {
         const L = window.Labels;
-        if (!L || L.REVISION !== '2026-10-02.1') {
+        if (!L || L.REVISION !== '2026-10-02.2') {
             console.error('labels.html: labels-utils.js version mismatch', L && L.REVISION);
         }
 
@@ -609,10 +657,32 @@
 
                 const catBody = $('comp-cat-body');
                 catBody.innerHTML = '';
+                const details = $('comp-cat-details');
+                const detailsWasOpen = details.open;
                 (data.by_category || []).forEach((c) => {
                     const tr = document.createElement('tr');
+                    tr.className = 'cat-row';
+                    tr.title = 'Click to manage labels for ' + c.category;
+                    tr.tabIndex = 0;
+                    tr.setAttribute('role', 'button');
+                    tr.setAttribute('aria-label', 'Manage labels for ' + c.category);
+                    const openThisEditor = () => openCategoryEditor(c);
+                    tr.addEventListener('click', openThisEditor);
+                    tr.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openThisEditor();
+                        }
+                    });
                     const tdCat = document.createElement('td');
                     tdCat.textContent = c.category;
+                    const manage = document.createElement('span');
+                    manage.className = 'cat-row-manage';
+                    manage.textContent = '\u270e';
+                    manage.title = 'Manage labels';
+                    manage.setAttribute('aria-hidden', 'true');
+                    tdCat.appendChild(document.createTextNode(' '));
+                    tdCat.appendChild(manage);
                     const tdAmount = document.createElement('td');
                     tdAmount.textContent = fmt(c.amount);
                     const tdPct = document.createElement('td');
@@ -643,7 +713,7 @@
                     tr.appendChild(tdLabels);
                     catBody.appendChild(tr);
                 });
-                $('comp-cat-details').open = false;
+                details.open = detailsWasOpen;
             } catch (e) {
                 showError(e.message);
             }
@@ -651,6 +721,280 @@
 
         $('comp-budget').addEventListener('change', loadComposition);
         $('comp-period').addEventListener('change', loadComposition);
+
+        // ── Per-category label editor (breakdown rows) ────────────────
+        // Clicking a per-category breakdown row opens a dialog to
+        // assign/remove labels for that exact category (whole or
+        // subcategory) and to create a new label on the fly. Labels stay
+        // lenses: a category may keep several of them.
+
+        const catEditor = {
+            part: null,          // by_category row being edited
+            desired: new Set(),  // label names that should cover the category
+            lastFocused: null,
+            busy: false
+        };
+
+        function parentSubs(parent) {
+            const c = state.categories.find((x) => x.name === parent);
+            return c ? c.subcategories : null;
+        }
+
+        /**
+         * Per-row note for the current checkbox state. Returns null (no
+         * note) or { text, warn?, blocked? }; blocked means unchecking is
+         * impossible here (whole-category entry whose siblings are unknown).
+         */
+        function catEditorRowNote(label, cov) {
+            const want = catEditor.desired.has(label.name);
+            const covered = cov.exact || !!cov.whole;
+            if (covered === want) return null; // no change will happen
+            if (want) return { text: 'Will be added to this label.' };
+            // Unchecking a covering label:
+            if (!cov.whole) return { text: 'Will be removed from this label.' };
+            const cat = catEditor.part.category;
+            const subs = parentSubs(cov.whole);
+            if (!subs) {
+                return {
+                    text: 'Covers the whole "' + cov.whole + '" category and its other subcategories are unknown — unchecking is disabled here; edit the label above instead.',
+                    warn: true,
+                    blocked: true
+                };
+            }
+            const idx = cat.indexOf(':');
+            const sub = idx === -1 ? null : cat.slice(idx + 1);
+            const siblings = subs.filter((x) => x !== sub);
+            const lead = cov.exact ? 'Removes the "' + cat + '" entry and ' : '';
+            if (siblings.length) {
+                return {
+                    text: lead + 'narrows the whole "' + cov.whole + '" entry to ' + siblings.join(', ') + ', keeping the rest of the category.',
+                    warn: true
+                };
+            }
+            return {
+                text: lead + 'removes the whole "' + cov.whole + '" entry (this is its only subcategory).',
+                warn: true
+            };
+        }
+
+        function updateCatEditorRow(cb, noteEl, label, cov) {
+            const info = catEditorRowNote(label, cov);
+            noteEl.textContent = info ? info.text : '';
+            noteEl.classList.toggle('warn', !!(info && info.warn));
+            cb.disabled = !!(info && info.blocked);
+            cb.title = cb.disabled ? 'This label covers a whole category that can\u2019t be narrowed here' : '';
+        }
+
+        function renderCatEditorList() {
+            const list = $('cat-editor-list');
+            list.innerHTML = '';
+            const cat = catEditor.part.category;
+
+            if (!state.labels.length) {
+                const p = document.createElement('p');
+                p.className = 'modal-note';
+                p.textContent = 'No labels yet — create one below and it will cover this category.';
+                list.appendChild(p);
+                return;
+            }
+
+            state.labels.forEach((label) => {
+                const cov = L.coverageOf(label.entries, cat);
+
+                const row = document.createElement('div');
+                row.className = 'cat-editor-row';
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.id = 'cat-editor-cb-' + label.id;
+                cb.checked = catEditor.desired.has(label.name);
+
+                const main = document.createElement('div');
+                main.className = 'cat-editor-row-main';
+
+                const name = document.createElement('div');
+                name.className = 'cat-editor-row-name';
+                const swatch = document.createElement('span');
+                swatch.className = 'label-swatch';
+                swatch.style.background = label.color || 'var(--border-color)';
+                name.appendChild(swatch);
+                name.appendChild(document.createTextNode(label.name));
+                main.appendChild(name);
+
+                const noteEl = document.createElement('div');
+                noteEl.className = 'cat-editor-row-note';
+                main.appendChild(noteEl);
+
+                cb.addEventListener('change', () => {
+                    if (cb.checked) catEditor.desired.add(label.name);
+                    else catEditor.desired.delete(label.name);
+                    updateCatEditorRow(cb, noteEl, label, cov);
+                });
+
+                updateCatEditorRow(cb, noteEl, label, cov);
+
+                row.appendChild(cb);
+                row.appendChild(main);
+                list.appendChild(row);
+            });
+        }
+
+        function openCategoryEditor(part) {
+            catEditor.part = part;
+            catEditor.lastFocused = document.activeElement;
+            catEditor.desired = new Set(part.labels || []);
+            catEditor.busy = false;
+            $('cat-editor-title').textContent = 'Labels for ' + part.category;
+            $('cat-editor-message').textContent =
+                'Pick which labels this category belongs to. Labels are lenses — a category can have several, and spend matching none is reported as “Unlabeled”.';
+            $('cat-editor-error').textContent = '';
+            $('cat-editor-new-name').value = '';
+            $('cat-editor-apply').disabled = false;
+            renderCatEditorList();
+            $('cat-editor-overlay').style.display = 'flex';
+            setTimeout(() => {
+                const first = document.querySelector('#cat-editor-list input[type="checkbox"]');
+                (first || $('cat-editor-new-name')).focus();
+            }, 0);
+        }
+
+        function closeCategoryEditor() {
+            if ($('cat-editor-overlay').style.display === 'none') return;
+            $('cat-editor-overlay').style.display = 'none';
+            catEditor.part = null;
+            catEditor.desired = new Set();
+            catEditor.busy = false;
+            $('cat-editor-apply').disabled = false;
+            $('cat-editor-error').textContent = '';
+            if (catEditor.lastFocused && typeof catEditor.lastFocused.focus === 'function') {
+                catEditor.lastFocused.focus();
+            }
+            catEditor.lastFocused = null;
+        }
+
+        async function createCatEditorLabel() {
+            const name = $('cat-editor-new-name').value.trim();
+            const errEl = $('cat-editor-error');
+            errEl.textContent = '';
+            if (!name) {
+                errEl.textContent = 'Name the new label first.';
+                return;
+            }
+            if (state.labels.some((l) => l.name === name)) {
+                errEl.textContent = 'A label named "' + name + '" already exists.';
+                return;
+            }
+            const payload = {
+                id: window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'label-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+                name: name,
+                description: '',
+                color: $('cat-editor-new-color').value,
+                entries: [catEditor.part.category],
+                created_at: null,
+                updated_at: null
+            };
+            const r = await asyncSend('POST', '/api/labels', payload);
+            if (!r.ok) {
+                errEl.textContent = await r.text() || 'Create failed';
+                return;
+            }
+            const created = await r.json();
+            state.labels.push(created);
+            catEditor.desired.add(created.name);
+            $('cat-editor-new-name').value = '';
+            OxiUI.toast('Label "' + created.name + '" created', 'success');
+            renderCatEditorList();
+            renderLabels();
+        }
+
+        async function applyCatEditor() {
+            if (catEditor.busy || !catEditor.part) return;
+            const cat = catEditor.part.category;
+
+            const ops = [];
+            for (const label of state.labels) {
+                const cov = L.coverageOf(label.entries, cat);
+                const covered = cov.exact || !!cov.whole;
+                const want = catEditor.desired.has(label.name);
+                if (covered === want) continue;
+                if (want) {
+                    const r = L.addCategoryToEntries(label.entries, cat);
+                    if (!r.changed) continue;
+                    ops.push({ label: label, newEntries: r.entries, split: null });
+                } else {
+                    const r = L.removeCategoryFromEntries(label.entries, cat, parentSubs);
+                    if (r.error === 'not-covered') continue;
+                    if (r.error === 'cannot-split') {
+                        $('cat-editor-error').textContent =
+                            'Can\u2019t uncheck "' + label.name + '": it covers the whole "' + r.entry + '" category and its other subcategories are unknown. Edit the label instead.';
+                        return;
+                    }
+                    ops.push({ label: label, newEntries: r.entries, split: r.split });
+                }
+            }
+
+            if (!ops.length) {
+                closeCategoryEditor();
+                OxiUI.toast('No changes to apply', 'info');
+                return;
+            }
+
+            const splits = ops.filter((o) => o.split);
+            if (splits.length) {
+                const message = splits.map((o) => {
+                    const sib = o.split.siblings;
+                    return '"' + o.label.name + '" covers the whole "' + o.split.entry + '" category; it will be ' +
+                        (sib.length ? 'narrowed to ' + sib.join(', ') + '.' : 'removed (this is its only subcategory).');
+                }).join(' ');
+                const ok = await OxiUI.confirm({
+                    title: 'Narrow whole-category entries',
+                    message: message,
+                    confirmLabel: 'Apply changes'
+                });
+                if (!ok) return;
+            }
+
+            catEditor.busy = true;
+            $('cat-editor-apply').disabled = true;
+            let failures = 0;
+            for (const op of ops) {
+                const payload = Object.assign({}, op.label, { entries: op.newEntries });
+                const r = await asyncSend('PUT', '/api/labels/' + encodeURIComponent(op.label.id), payload);
+                if (!r.ok) failures++;
+            }
+            $('cat-editor-apply').disabled = false;
+            catEditor.busy = false;
+            if (failures) {
+                $('cat-editor-error').textContent = failures + ' label update(s) failed — try again.';
+                return;
+            }
+            OxiUI.toast('Label assignment updated', 'success');
+            closeCategoryEditor();
+            await refreshLabels();
+            refreshReports();
+        }
+
+        $('cat-editor-close').addEventListener('click', closeCategoryEditor);
+        $('cat-editor-cancel').addEventListener('click', closeCategoryEditor);
+        $('cat-editor-apply').addEventListener('click', applyCatEditor);
+        $('cat-editor-new-btn').addEventListener('click', createCatEditorLabel);
+        $('cat-editor-overlay').addEventListener('mousedown', (e) => {
+            if (e.target === $('cat-editor-overlay')) closeCategoryEditor();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if ($('cat-editor-overlay').style.display === 'none') return;
+            const oxi = document.querySelector('.dialog-overlay');
+            if (oxi && oxi.style.display !== 'none') return; // OxiUI dialog on top
+            e.preventDefault();
+            closeCategoryEditor();
+        });
+        $('cat-editor-new-name').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                createCatEditorLabel();
+            }
+        });
 
         // ── Trend report ───────────────────────────────────────────────
 

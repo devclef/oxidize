@@ -101,6 +101,15 @@ Firefly III is never modified. Reports (`src/handlers/label.rs`):
 - `GET /api/labels/spend?start=..&end=..&period=1M[&budgets[]=..]` — standard
   `ChartLine` time series, one dataset per label (+ optional Unlabeled).
 
+On the `/labels` page each row of the per-category breakdown is clickable:
+a dialog lets the user assign/remove labels for that exact category (whole
+or subcategory) and create a new label on the fly. Because labels are
+lenses, "remove" of a category covered by a whole-category entry (`"Dining"`)
+narrows that entry to its other subcategories (`"Dining:Takeout"`, …) rather
+than silently unlabeling the rest — the pure add/remove/split logic lives in
+`static/labels-utils.js` (`coverageOf`, `addCategoryToEntries`,
+`removeCategoryFromEntries`) and is unit-tested.
+
 Both run the same transaction pipeline as the category spend charts
 (`fetch_all_transactions` + `is_journal_spent` + exclusion filtering) and
 cache in the in-memory TTL cache keyed on the label definitions. Optional

@@ -6,6 +6,12 @@
  *                                'this-month', 'last-month', 'last-3m',
  *                                'last-6m', 'last-12m', 'ytd'; null unknown
  *  - Labels.entryForSelection(parent, sub)  "Parent" or "Parent:Sub"
+ *  - Labels.entryMatches(entry, fullCategory)  backend entry semantics
+ *  - Labels.coverageOf(entries, fullCategory)  {exact, whole} coverage
+ *  - Labels.addCategoryToEntries(entries, cat)  entries after adding cat
+ *  - Labels.removeCategoryFromEntries(entries, cat, subsOf)  entries after
+ *                                removing cat (splits whole-category
+ *                                entries into their other subcategories)
  *  - Labels.donutData(parts, total)  {labels, values, colors} for a
  *                                budget-composition donut (Unlabeled gray)
  *  - Labels.trendToChartJs(chartLine)  {labels, datasets} for the spend
@@ -119,6 +125,94 @@
         return s && s !== 'all' ? p + ':' + s : p;
     }
 
+    /**
+     * Does an entry string cover a full category name? Mirrors the backend
+     * entry_matches exactly: "Dining" covers "Dining" and "Dining:Bars"
+     * but not "DiningRoom"; "Dining:Bars" covers only "Dining:Bars".
+     */
+    function entryMatches(entry, fullCategory) {
+        var e = (entry || '').trim();
+        var f = (fullCategory || '').trim();
+        if (!e || !f) return false;
+        if (e === f) return true;
+        return f.indexOf(e + ':') === 0;
+    }
+
+    /**
+     * How an entry list covers a full category name.
+     *  - exact: an entry equal to the category name (most specific form)
+     *  - whole: an entry of a parent category covering it (null if none)
+     */
+    function coverageOf(entries, fullCategory) {
+        var exact = false;
+        var whole = null;
+        (entries || []).forEach(function (e) {
+            if (e === fullCategory) {
+                exact = true;
+                return;
+            }
+            if (whole === null && entryMatches(e, fullCategory)) whole = e;
+        });
+        return { exact: exact, whole: whole };
+    }
+
+    /**
+     * Entry list after adding a category in its most specific form.
+     * No-op (changed: false) when the category is already covered, either
+     * exactly or by a whole-category entry.
+     */
+    function addCategoryToEntries(entries, category) {
+        var list = (entries || []).slice();
+        var cov = coverageOf(list, category);
+        if (cov.exact || cov.whole) return { entries: list, changed: false };
+        list.push(category);
+        return { entries: list, changed: true };
+    }
+
+    /**
+     * Entry list after removing a category so that it is no longer covered:
+     *  - an exact entry for the category is removed;
+     *  - a whole-category entry "P" still covering it is then split into
+     *    P's other subcategories (per subcategoriesOf(P), P's full sub
+     *    list) so that only this category drops out of the label. If the
+     *    sub list is unknown (null) the removal cannot be done:
+     *    { error: 'cannot-split', entry: P }.
+     * Returns { entries, split: null | {entry, siblings} }, or
+     * { error: 'not-covered' } when the category was not covered at all.
+     */
+    function removeCategoryFromEntries(entries, category, subcategoriesOf) {
+        var list = (entries || []).slice();
+        var cov = coverageOf(list, category);
+        if (!cov.exact && !cov.whole) return { error: 'not-covered' };
+
+        if (cov.exact) list = list.filter(function (e) { return e !== category; });
+
+        var split = null;
+        for (;;) {
+            var covering = coverageOf(list, category).whole;
+            if (!covering) break;
+            var subs = subcategoriesOf ? subcategoriesOf(covering) : null;
+            if (!subs) return { error: 'cannot-split', entry: covering };
+            var idx = category.indexOf(':');
+            var sub = idx === -1 ? null : category.slice(idx + 1);
+            var siblings = subs.filter(function (x) { return x !== sub; });
+            var rebuilt = [];
+            list.forEach(function (e) {
+                if (e === covering) {
+                    siblings.forEach(function (x) {
+                        var entry = covering + ':' + x;
+                        if (rebuilt.indexOf(entry) === -1) rebuilt.push(entry);
+                    });
+                } else if (rebuilt.indexOf(e) === -1) {
+                    rebuilt.push(e);
+                }
+            });
+            list = rebuilt;
+            split = { entry: covering, siblings: siblings.slice() };
+        }
+        return { entries: list, split: split };
+    }
+
     var UNLABELED_COLOR = '#9ca3af';
 
     /**
@@ -195,7 +289,7 @@
     }
 
     var API = {
-        REVISION: '2026-10-02.1',
+        REVISION: '2026-10-02.2',
         MONTH_NAMES: MONTH_NAMES,
         ymd: ymd,
         pad2: pad2,
@@ -208,6 +302,10 @@
         periodRange: periodRange,
         periodLabel: periodLabel,
         entryForSelection: entryForSelection,
+        entryMatches: entryMatches,
+        coverageOf: coverageOf,
+        addCategoryToEntries: addCategoryToEntries,
+        removeCategoryFromEntries: removeCategoryFromEntries,
         donutData: donutData,
         formatPeriodKey: formatPeriodKey,
         trendToChartJs: trendToChartJs,
