@@ -686,8 +686,10 @@ impl Storage {
     pub fn find_label_by_name(name: &str) -> Result<Option<Label>, String> {
         with_db(|conn| {
             let mut stmt = conn
-                .prepare("SELECT id, name, description, color, entries, created_at, updated_at
-                          FROM labels WHERE name = ?1")
+                .prepare(
+                    "SELECT id, name, description, color, entries, created_at, updated_at
+                          FROM labels WHERE name = ?1",
+                )
                 .map_err(|e| e.to_string())?;
 
             let row = stmt

@@ -231,12 +231,16 @@ mod tests {
         assert_eq!(got.entries, vec!["Dining:Bars".to_string()]);
 
         // Delete
-        let req = awt::TestRequest::delete().uri("/api/labels/lbl-crud-1").to_request();
+        let req = awt::TestRequest::delete()
+            .uri("/api/labels/lbl-crud-1")
+            .to_request();
         let resp = awt::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
 
         // Delete again -> 404
-        let req = awt::TestRequest::delete().uri("/api/labels/lbl-crud-1").to_request();
+        let req = awt::TestRequest::delete()
+            .uri("/api/labels/lbl-crud-1")
+            .to_request();
         let resp = awt::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);
     }
@@ -343,11 +347,32 @@ mod tests {
         mock_tx(
             &mut server,
             vec![
-                withdrawal_tx("t1", "2026-01-05", 100.0, Some("Dining:Bars"), Some("Food"), "a1"),
-                withdrawal_tx("t2", "2026-01-06", 200.0, Some("Groceries"), Some("Food"), "a1"),
+                withdrawal_tx(
+                    "t1",
+                    "2026-01-05",
+                    100.0,
+                    Some("Dining:Bars"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "t2",
+                    "2026-01-06",
+                    200.0,
+                    Some("Groceries"),
+                    Some("Food"),
+                    "a1",
+                ),
                 withdrawal_tx("t3", "2026-01-07", 50.0, Some("Health"), Some("Food"), "a1"),
                 // Different budget: must be excluded from Food's composition.
-                withdrawal_tx("t4", "2026-01-08", 30.0, Some("Dining"), Some("Travel"), "a1"),
+                withdrawal_tx(
+                    "t4",
+                    "2026-01-08",
+                    30.0,
+                    Some("Dining"),
+                    Some("Travel"),
+                    "a1",
+                ),
                 // No budget: must be excluded.
                 withdrawal_tx("t5", "2026-01-09", 40.0, Some("Groceries"), None, "a1"),
                 // Income: never counts as spend.
@@ -374,7 +399,12 @@ mod tests {
         let parts = data["parts"].as_array().unwrap();
         let by_name: std::collections::HashMap<String, f64> = parts
             .iter()
-            .map(|p| (p["label"].as_str().unwrap().to_string(), p["amount"].as_f64().unwrap()))
+            .map(|p| {
+                (
+                    p["label"].as_str().unwrap().to_string(),
+                    p["amount"].as_f64().unwrap(),
+                )
+            })
             .collect();
         assert!((by_name["wants"] - 100.0).abs() < 1e-9);
         assert!((by_name["needs"] - 200.0).abs() < 1e-9);
@@ -382,10 +412,7 @@ mod tests {
         // Sorted descending: needs first.
         assert_eq!(parts[0]["label"], "needs");
         // Percentages of the total.
-        let needs_pct = parts
-            .iter()
-            .find(|p| p["label"] == "needs")
-            .unwrap()["pct"]
+        let needs_pct = parts.iter().find(|p| p["label"] == "needs").unwrap()["pct"]
             .as_f64()
             .unwrap();
         assert!((needs_pct - 200.0 / 350.0 * 100.0).abs() < 1e-9);
@@ -395,7 +422,10 @@ mod tests {
         assert_eq!(cats.len(), 3);
         assert_eq!(cats[0]["category"], "Groceries");
         assert_eq!(cats[0]["labels"], json!(["needs"]));
-        let dining = cats.iter().find(|c| c["category"] == "Dining:Bars").unwrap();
+        let dining = cats
+            .iter()
+            .find(|c| c["category"] == "Dining:Bars")
+            .unwrap();
         assert_eq!(dining["labels"], json!(["wants"]));
         let health = cats.iter().find(|c| c["category"] == "Health").unwrap();
         assert_eq!(health["labels"], json!([]));
@@ -502,8 +532,22 @@ mod tests {
         mock_tx(
             &mut server,
             vec![
-                withdrawal_tx("t1", "2026-01-05", 100.0, Some("Dining"), Some("Food"), "a1"),
-                withdrawal_tx("t2", "2026-01-06", 90.0, Some("Dining"), Some("Travel"), "a1"),
+                withdrawal_tx(
+                    "t1",
+                    "2026-01-05",
+                    100.0,
+                    Some("Dining"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "t2",
+                    "2026-01-06",
+                    90.0,
+                    Some("Dining"),
+                    Some("Travel"),
+                    "a1",
+                ),
                 withdrawal_tx("t3", "2026-01-07", 50.0, Some("Health"), Some("Food"), "a1"),
             ],
         )
@@ -570,7 +614,10 @@ mod tests {
         let req = awt::TestRequest::get().uri("/").to_request();
         let resp = awt::call_service(&app, req).await;
         let html = html_of(resp).await;
-        assert!(!html.contains("href=\"/labels\""), "nav link should be stripped");
+        assert!(
+            !html.contains("href=\"/labels\""),
+            "nav link should be stripped"
+        );
 
         // Re-enable: page served again with the nav link present.
         let req = awt::TestRequest::patch()

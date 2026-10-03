@@ -87,8 +87,7 @@ pub async fn create_label(body: web::Json<Label>) -> impl Responder {
         return HttpResponse::BadRequest().body("Label name is required");
     }
     if label.entries.is_empty() {
-        return HttpResponse::BadRequest()
-            .body("Label must have at least one category");
+        return HttpResponse::BadRequest().body("Label must have at least one category");
     }
 
     match crate::storage::Storage::create_label(&label) {

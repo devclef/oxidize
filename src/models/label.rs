@@ -63,8 +63,7 @@ pub fn entry_matches(entry: &str, full_category: &str) -> bool {
     }
     // Entry is a parent name covering all of its subcategories:
     // "Dining" must match "Dining:Bars" but not "DiningRoom".
-    full
-        .strip_prefix(entry)
+    full.strip_prefix(entry)
         .and_then(|rest| rest.strip_prefix(':'))
         .is_some()
 }
@@ -73,7 +72,11 @@ pub fn entry_matches(entry: &str, full_category: &str) -> bool {
 pub fn matching_label_names(full_category: &str, labels: &[Label]) -> Vec<String> {
     let mut out = Vec::new();
     for label in labels {
-        if label.entries.iter().any(|e| entry_matches(e, full_category)) {
+        if label
+            .entries
+            .iter()
+            .any(|e| entry_matches(e, full_category))
+        {
             out.push(label.name.clone());
         }
     }
@@ -178,12 +181,14 @@ pub fn composition_parts(
     };
     let mut parts: Vec<LabelPart> = labels
         .iter()
-        .filter_map(|l| by_label.get(&l.name).map(|amount| LabelPart {
-            label: l.name.clone(),
-            color: l.color.clone(),
-            amount: *amount,
-            pct: pct(*amount),
-        }))
+        .filter_map(|l| {
+            by_label.get(&l.name).map(|amount| LabelPart {
+                label: l.name.clone(),
+                color: l.color.clone(),
+                amount: *amount,
+                pct: pct(*amount),
+            })
+        })
         .collect();
     if unlabeled > 0.0 {
         parts.push(LabelPart {
@@ -193,7 +198,11 @@ pub fn composition_parts(
             pct: pct(unlabeled),
         });
     }
-    parts.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    parts.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     parts
 }
 
@@ -263,19 +272,13 @@ mod tests {
 
     #[test]
     fn composition_parts_sorts_and_includes_unlabeled() {
-        let labels = vec![
-            label("wants", &["Dining"]),
-            label("needs", &["Groceries"]),
-        ];
+        let labels = vec![label("wants", &["Dining"]), label("needs", &["Groceries"])];
         let mut by_label = BTreeMap::new();
         by_label.insert("wants".to_string(), 400.0);
         by_label.insert("needs".to_string(), 600.0);
         let parts = composition_parts(&labels, &by_label, 1000.0, 100.0);
         assert_eq!(
-            parts
-                .iter()
-                .map(|p| p.label.as_str())
-                .collect::<Vec<_>>(),
+            parts.iter().map(|p| p.label.as_str()).collect::<Vec<_>>(),
             vec!["needs", "wants", "Unlabeled"]
         );
         assert!((parts[0].pct - 60.0).abs() < 1e-9);

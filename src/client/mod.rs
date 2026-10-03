@@ -1,5 +1,6 @@
 use crate::cache::DataCache;
 use crate::config::Config;
+use crate::models::label::{Label, LabelBudgetComposition, LabelCategoryPart};
 use crate::models::summary::{
     budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
     MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
@@ -11,7 +12,6 @@ use crate::models::{
     CategoryListResponse, CategoryRead, ChartDataSet, ChartLine, Exclusions, MonthStats,
     ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
 };
-use crate::models::label::{Label, LabelBudgetComposition, LabelCategoryPart};
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
@@ -3354,7 +3354,6 @@ impl FireflyClient {
         Ok(chart)
     }
 
-
     /// Time-series spending per user-defined label (see models/label.rs).
     /// One dataset per label (plus an optional "Unlabeled"), one point per
     /// period bucket. Uses the same transaction pipeline as the category
@@ -3459,7 +3458,10 @@ impl FireflyClient {
                 .filter(|c| !c.trim().is_empty())
                 .map(str::to_string);
             let period_key = Self::get_period_key(date, &period_val, Some(&end));
-            buckets.entry(period_key).or_default().push((full_category, amount));
+            buckets
+                .entry(period_key)
+                .or_default()
+                .push((full_category, amount));
 
             if currency_symbol.is_none() {
                 currency_symbol = journal
@@ -3474,8 +3476,10 @@ impl FireflyClient {
         }
 
         // Classify each bucket against all labels at once.
-        let mut per_label: std::collections::BTreeMap<String, std::collections::HashMap<String, f64>> =
-            std::collections::BTreeMap::new();
+        let mut per_label: std::collections::BTreeMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = std::collections::BTreeMap::new();
         let mut unlabeled: std::collections::HashMap<String, f64> =
             std::collections::HashMap::new();
         for (period_key, items) in &buckets {
@@ -3493,7 +3497,12 @@ impl FireflyClient {
 
         let mut datasets: Vec<ChartDataSet> = labels
             .iter()
-            .filter(|l| per_label.get(&l.name).map(|e| !e.is_empty()).unwrap_or(false))
+            .filter(|l| {
+                per_label
+                    .get(&l.name)
+                    .map(|e| !e.is_empty())
+                    .unwrap_or(false)
+            })
             .map(|l| ChartDataSet {
                 label: l.name.clone(),
                 currency_symbol: currency_symbol.clone(),
@@ -3570,7 +3579,9 @@ impl FireflyClient {
         let end = end_date
             .clone()
             .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-        let start = start_date.clone().unwrap_or_else(|| Utc::now().format("%Y-%m-01").to_string());
+        let start = start_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-01").to_string());
 
         let all_transactions = self
             .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
@@ -3634,7 +3645,12 @@ impl FireflyClient {
         }
 
         let classified = classify(&items, &labels);
-        let parts = composition_parts(&labels, &classified.by_label, classified.total, classified.unlabeled);
+        let parts = composition_parts(
+            &labels,
+            &classified.by_label,
+            classified.total,
+            classified.unlabeled,
+        );
 
         // Per-category breakdown (full category name as stored on the journal).
         let mut by_category: std::collections::BTreeMap<String, f64> =
