@@ -38,6 +38,7 @@ pub struct DataCache {
     reimbursement_summary: RwLock<HashMap<String, CacheEntry<String>>>,
     label_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     label_composition: RwLock<HashMap<String, CacheEntry<String>>>,
+    label_unlabeled: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -69,6 +70,7 @@ impl DataCache {
             reimbursement_summary: RwLock::new(HashMap::new()),
             label_spend: RwLock::new(HashMap::new()),
             label_composition: RwLock::new(HashMap::new()),
+            label_unlabeled: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -893,6 +895,75 @@ impl DataCache {
         Self::set_tiered(&self.label_composition, &key, &data, self.current_ttl());
     }
 
+    fn label_unlabeled_key(
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let budgets = budget_names.join(",");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:label_unlabeled:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            labels_json,
+            start,
+            end,
+            budgets,
+            accounts,
+            exclusions.cache_key()
+        )
+    }
+
+    pub fn get_label_unlabeled(
+        &self,
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::label_unlabeled_key(
+            labels_json,
+            start_date,
+            end_date,
+            budget_names,
+            account_ids,
+            exclusions,
+        );
+        Self::get_tiered(&self.label_unlabeled, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_label_unlabeled(
+        &self,
+        labels_json: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::label_unlabeled_key(
+            labels_json,
+            start_date,
+            end_date,
+            budget_names,
+            account_ids,
+            exclusions,
+        );
+        Self::set_tiered(&self.label_unlabeled, &key, &data, self.current_ttl());
+    }
+
     pub fn clear_label_spend(&self) {
         Self::clear_tiered(
             &self.label_spend,
@@ -904,6 +975,13 @@ impl DataCache {
         Self::clear_tiered(
             &self.label_composition,
             Some(&format!("v{}:label_comp:", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_label_unlabeled(&self) {
+        Self::clear_tiered(
+            &self.label_unlabeled,
+            Some(&format!("v{}:label_unlabeled:", CACHE_VERSION)),
         );
     }
 
@@ -925,6 +1003,7 @@ impl DataCache {
         self.clear_reimbursement_summary();
         self.clear_label_spend();
         self.clear_label_composition();
+        self.clear_label_unlabeled();
     }
 
     pub fn clear_accounts(&self) {

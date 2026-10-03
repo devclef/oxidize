@@ -20,7 +20,7 @@ mod tests {
     use oxidize::handlers::index::index;
     use oxidize::handlers::label::{
         create_label, delete_label, get_label_budget_composition_api, get_label_spend_api,
-        labels_page, list_labels, update_label,
+        get_unlabeled_categories_api, labels_page, list_labels, update_label,
     };
     use oxidize::handlers::settings::{get_settings_api, update_settings_api};
     use oxidize::models::Label;
@@ -73,6 +73,7 @@ mod tests {
                     .service(delete_label)
                     .service(get_label_budget_composition_api)
                     .service(get_label_spend_api)
+                    .service(get_unlabeled_categories_api)
                     .service(get_settings_api)
                     .service(update_settings_api)
                     .route("/", web::get().to(index)),
@@ -584,6 +585,175 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn unlabeled_categories_report_all_budgets() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let config = make_test_config(server.url());
+        let client = web::Data::new(FireflyClient::new(config.clone()));
+        let app = build_app!(config, client);
+
+        clear_labels();
+        for l in [
+            // Whole-category entry: covers Dining:Bars and Dining.
+            make_label("lbl-ul-wants", "wants", &["Dining"]),
+            // Subcategory entry: covers only Groceries:Supermarkets.
+            make_label("lbl-ul-needs", "needs", &["Groceries:Supermarkets"]),
+        ] {
+            let req = awt::TestRequest::post()
+                .uri("/api/labels")
+                .set_json(&l)
+                .to_request();
+            assert_eq!(awt::call_service(&app, req).await.status(), 201);
+        }
+
+        // January 2026 fixture across two budgets.
+        mock_tx(
+            &mut server,
+            vec![
+                withdrawal_tx(
+                    "u1",
+                    "2026-01-05",
+                    100.0,
+                    Some("Dining:Bars"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "u2",
+                    "2026-01-06",
+                    200.0,
+                    Some("Groceries:Supermarkets"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx("u3", "2026-01-07", 50.0, Some("Health"), Some("Food"), "a1"),
+                withdrawal_tx(
+                    "u4",
+                    "2026-01-08",
+                    30.0,
+                    Some("Dining"),
+                    Some("Travel"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "u5",
+                    "2026-01-09",
+                    80.0,
+                    Some("Groceries:DiscountStore"),
+                    Some("Travel"),
+                    "a1",
+                ),
+                // No category at all: unlabeled but not listable.
+                withdrawal_tx("u6", "2026-01-10", 20.0, None, Some("Food"), "a1"),
+                // Second Health spend, different budget.
+                withdrawal_tx(
+                    "u7",
+                    "2026-01-11",
+                    10.0,
+                    Some("Health"),
+                    Some("Travel"),
+                    "a1",
+                ),
+                // Income: never counts as spend.
+                deposit_tx("u8", "2026-01-12", 5000.0),
+            ],
+        )
+        .await;
+
+        let req = awt::TestRequest::get()
+            .uri("/api/labels/unlabeled-categories?start=2026-01-01&end=2026-01-31")
+            .to_request();
+        let resp = awt::call_service(&app, req).await;
+        let status = resp.status();
+        let body_bytes = awt::read_body(resp).await;
+        assert_eq!(status, 200);
+        let data: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(data["start"], "2026-01-01");
+        assert_eq!(data["end"], "2026-01-31");
+        assert!((data["total"].as_f64().unwrap() - 490.0).abs() < 1e-9);
+        // Health (50+10) + DiscountStore (80) + uncategorized (20).
+        assert!((data["unlabeled"].as_f64().unwrap() - 160.0).abs() < 1e-9);
+        assert!((data["uncategorized"].as_f64().unwrap() - 20.0).abs() < 1e-9);
+        assert_eq!(data["currency_symbol"], "$");
+
+        let cats = data["categories"].as_array().unwrap();
+        assert_eq!(cats.len(), 2);
+        // Sorted by amount descending.
+        assert_eq!(cats[0]["category"], "Groceries:DiscountStore");
+        assert!((cats[0]["amount"].as_f64().unwrap() - 80.0).abs() < 1e-9);
+        assert_eq!(cats[0]["budgets"], json!(["Travel"]));
+        let health = &cats[1];
+        assert_eq!(health["category"], "Health");
+        assert!((health["amount"].as_f64().unwrap() - 60.0).abs() < 1e-9);
+        assert_eq!(health["budgets"], json!(["Food", "Travel"]));
+        // pct is a share of the period total.
+        assert!((health["pct"].as_f64().unwrap() - 60.0 / 490.0 * 100.0).abs() < 1e-9);
+
+        clear_labels();
+    }
+
+    #[actix_web::test]
+    async fn unlabeled_categories_budget_filter() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let config = make_test_config(server.url());
+        let client = web::Data::new(FireflyClient::new(config.clone()));
+        let app = build_app!(config, client);
+
+        clear_labels();
+        let req = awt::TestRequest::post()
+            .uri("/api/labels")
+            .set_json(&make_label("lbl-ul-bf", "wants", &["Dining"]))
+            .to_request();
+        assert_eq!(awt::call_service(&app, req).await.status(), 201);
+
+        mock_tx(
+            &mut server,
+            vec![
+                withdrawal_tx(
+                    "b1",
+                    "2026-01-05",
+                    100.0,
+                    Some("Dining"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx("b2", "2026-01-06", 90.0, Some("Toys"), Some("Travel"), "a1"),
+                withdrawal_tx("b3", "2026-01-07", 50.0, Some("Health"), Some("Food"), "a1"),
+                withdrawal_tx(
+                    "b4",
+                    "2026-01-08",
+                    10.0,
+                    Some("Health"),
+                    Some("Travel"),
+                    "a1",
+                ),
+            ],
+        )
+        .await;
+
+        // Travel only: Toys 90 + Health 10; Food's Dining/Health excluded.
+        let req = awt::TestRequest::get()
+            .uri(
+                "/api/labels/unlabeled-categories?start=2026-01-01&end=2026-01-31&budgets[]=Travel",
+            )
+            .to_request();
+        let resp = awt::call_service(&app, req).await;
+        let data: serde_json::Value = awt::read_body_json(resp).await;
+        assert!((data["total"].as_f64().unwrap() - 100.0).abs() < 1e-9);
+        assert!((data["unlabeled"].as_f64().unwrap() - 100.0).abs() < 1e-9);
+        let cats = data["categories"].as_array().unwrap();
+        assert_eq!(cats.len(), 2);
+        assert_eq!(cats[0]["category"], "Toys");
+        assert_eq!(cats[0]["budgets"], json!(["Travel"]));
+        assert_eq!(cats[1]["category"], "Health");
+        assert_eq!(cats[1]["budgets"], json!(["Travel"]));
+
+        clear_labels();
+    }
+
+    #[actix_web::test]
     async fn disabled_feature_returns_404_and_strips_nav() {
         let _guard = TEST_LOCK.lock().unwrap();
         let server = mockito::Server::new_async().await;
@@ -604,6 +774,7 @@ mod tests {
             "/api/labels",
             "/api/labels/budget-composition?budget=Food",
             "/api/labels/spend",
+            "/api/labels/unlabeled-categories",
         ] {
             let req = awt::TestRequest::get().uri(uri).to_request();
             let resp = awt::call_service(&app, req).await;

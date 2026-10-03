@@ -86,9 +86,9 @@
         .comp-summary strong { color: var(--text-color); }
         .cat-labels { display: flex; flex-wrap: wrap; gap: 4px; }
         .summary-hint { color: var(--text-muted); font-weight: 400; font-size: var(--text-xs); }
-        #comp-cat-body tr.cat-row { cursor: pointer; }
-        #comp-cat-body tr.cat-row:hover td { background: rgba(59, 130, 246, 0.08); }
-        #comp-cat-body tr.cat-row:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+        tr.cat-row { cursor: pointer; }
+        tr.cat-row:hover td { background: rgba(59, 130, 246, 0.08); }
+        tr.cat-row:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
         .cat-row-manage { color: var(--text-muted); font-size: var(--text-xs); margin-left: 6px; }
         .cat-editor-row {
             display: flex;
@@ -185,6 +185,48 @@
                 <div class="panel-actions" style="margin-top: 16px;">
                     <button id="label-save-btn" class="btn-primary">Save</button>
                     <button id="label-cancel-btn" class="ghost-btn">Cancel</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Unlabeled spend (all budgets) ────────────────────────── -->
+        <section class="panel" id="unlabeled-panel" aria-label="Unlabeled spend across all budgets">
+            <div class="panel-head">
+                <h3>Unlabeled spend</h3>
+            </div>
+            <div class="report-controls">
+                <label for="unlabeled-period">Period
+                    <select id="unlabeled-period" class="form-select">
+                        <option value="this-month" selected>This month</option>
+                        <option value="last-month">Last month</option>
+                        <option value="last-3m">Last 3 months</option>
+                        <option value="last-6m">Last 6 months</option>
+                        <option value="last-12m">Last 12 months</option>
+                        <option value="ytd">Year to date</option>
+                    </select>
+                </label>
+                <label for="unlabeled-budget">Budget
+                    <select id="unlabeled-budget" class="form-select" style="min-width: 180px;"><option value="">Loading…</option></select>
+                </label>
+            </div>
+            <div id="unlabeled-empty" class="empty-state">
+                <p>Loading…</p>
+            </div>
+            <div id="unlabeled-content" style="display: none;">
+                <div id="unlabeled-summary" class="comp-summary"></div>
+                <div id="unlabeled-uncat" class="comp-summary" style="display: none;"></div>
+                <div class="results-table-wrapper">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Category</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">% of spend</th>
+                                <th scope="col">Budgets</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unlabeled-body"></tbody>
+                    </table>
                 </div>
             </div>
         </section>
@@ -392,7 +434,7 @@
         }
 
         function populateBudgetSelects() {
-            for (const id of ['comp-budget', 'trend-budget']) {
+            for (const id of ['comp-budget', 'trend-budget', 'unlabeled-budget']) {
                 const sel = $(id);
                 sel.innerHTML = '';
                 const placeholder = document.createElement('option');
@@ -721,6 +763,117 @@
 
         $('comp-budget').addEventListener('change', loadComposition);
         $('comp-period').addEventListener('change', loadComposition);
+
+        // ── Unlabeled spend across all budgets ───────────────────────
+        // One list of every category with spend that matches no label in
+        // the period (all budgets at once) so they can be labeled without
+        // switching between budgets. Rows open the same per-category
+        // editor as the composition breakdown.
+
+        async function loadUnlabeled() {
+            const range = L.periodRange($('unlabeled-period').value) || L.periodRange('this-month');
+            const budget = $('unlabeled-budget').value;
+            const params = new URLSearchParams();
+            params.append('start', range.start);
+            params.append('end', range.end);
+            if (budget) params.append('budgets[]', budget);
+
+            try {
+                const data = await getJson('/api/labels/unlabeled-categories?' + params.toString());
+                if (data.currency_symbol) state.currencySymbol = data.currency_symbol;
+
+                const periodName = L.periodLabel($('unlabeled-period').value).toLowerCase();
+                const empty = $('unlabeled-empty');
+
+                if (!data.categories.length) {
+                    $('unlabeled-content').style.display = 'none';
+                    empty.style.display = 'block';
+                    empty.innerHTML = '<p>Everything ' + periodName + ' is covered by your labels.</p>';
+                    return;
+                }
+
+                empty.style.display = 'none';
+                $('unlabeled-content').style.display = 'block';
+
+                const fmt = (v) => L.formatAmount(v, data.currency_symbol);
+                const pct = data.total > 0 ? (100 * data.unlabeled / data.total).toFixed(1) : '0.0';
+                $('unlabeled-summary').innerHTML =
+                    '<strong>' + fmt(data.unlabeled) + '</strong> of <strong>' + fmt(data.total) +
+                    '</strong> spent ' + periodName + ' (' + pct + '%) matches no label — ' +
+                    escapeHtml(data.categories.length) + ' categor' +
+                    (data.categories.length === 1 ? 'y' : 'ies') +
+                    ' to review. Click a row to manage its labels.';
+
+                const uncat = $('unlabeled-uncat');
+                if (data.uncategorized > 0) {
+                    uncat.style.display = 'block';
+                    uncat.innerHTML = 'Includes <strong>' + fmt(data.uncategorized) +
+                        '</strong> uncategorized — spend without a category can\u2019t be labeled.';
+                } else {
+                    uncat.style.display = 'none';
+                }
+
+                const body = $('unlabeled-body');
+                body.innerHTML = '';
+                (data.categories || []).forEach((c) => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'cat-row';
+                    tr.title = 'Click to manage labels for ' + c.category;
+                    tr.tabIndex = 0;
+                    tr.setAttribute('role', 'button');
+                    tr.setAttribute('aria-label', 'Manage labels for ' + c.category);
+                    const openThisEditor = () => openCategoryEditor({ category: c.category, labels: [] });
+                    tr.addEventListener('click', openThisEditor);
+                    tr.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openThisEditor();
+                        }
+                    });
+                    const tdCat = document.createElement('td');
+                    tdCat.textContent = c.category;
+                    const manage = document.createElement('span');
+                    manage.className = 'cat-row-manage';
+                    manage.textContent = '\u270e';
+                    manage.title = 'Manage labels';
+                    manage.setAttribute('aria-hidden', 'true');
+                    tdCat.appendChild(document.createTextNode(' '));
+                    tdCat.appendChild(manage);
+                    const tdAmount = document.createElement('td');
+                    tdAmount.textContent = fmt(c.amount);
+                    const tdPct = document.createElement('td');
+                    tdPct.textContent = c.pct.toFixed(1) + '%';
+                    const tdBudgets = document.createElement('td');
+                    const wrap = document.createElement('div');
+                    wrap.className = 'cat-labels';
+                    if (c.budgets && c.budgets.length) {
+                        c.budgets.forEach((name) => {
+                            const chip = document.createElement('span');
+                            chip.className = 'chip-static';
+                            chip.textContent = name;
+                            wrap.appendChild(chip);
+                        });
+                    } else {
+                        const chip = document.createElement('span');
+                        chip.className = 'chip-static';
+                        chip.style.color = 'var(--text-muted)';
+                        chip.textContent = 'no budget';
+                        wrap.appendChild(chip);
+                    }
+                    tdBudgets.appendChild(wrap);
+                    tr.appendChild(tdCat);
+                    tr.appendChild(tdAmount);
+                    tr.appendChild(tdPct);
+                    tr.appendChild(tdBudgets);
+                    body.appendChild(tr);
+                });
+            } catch (e) {
+                showError(e.message);
+            }
+        }
+
+        $('unlabeled-period').addEventListener('change', loadUnlabeled);
+        $('unlabeled-budget').addEventListener('change', loadUnlabeled);
 
         // ── Per-category label editor (breakdown rows) ────────────────
         // Clicking a per-category breakdown row opens a dialog to
@@ -1091,6 +1244,7 @@
         function refreshReports() {
             if ($('comp-budget').value) loadComposition();
             loadTrend();
+            loadUnlabeled();
         }
 
         function escapeHtml(s) {

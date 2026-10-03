@@ -1,6 +1,8 @@
 use crate::cache::DataCache;
 use crate::config::Config;
-use crate::models::label::{Label, LabelBudgetComposition, LabelCategoryPart};
+use crate::models::label::{
+    Label, LabelBudgetComposition, LabelCategoryPart, UnlabeledCategoriesReport,
+};
 use crate::models::summary::{
     budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
     MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
@@ -3702,6 +3704,125 @@ impl FireflyClient {
                 &budget,
                 start_date.as_deref(),
                 end_date.as_deref(),
+                account_ids.as_deref(),
+                exclusions,
+                json,
+            );
+        }
+
+        Ok(result)
+    }
+
+    /// Every spend category of a period that matches no user label
+    /// (see models/label.rs), across all budgets at once. When
+    /// `budget_names` is non-empty only spend charged to those budgets is
+    /// considered. Uses the same transaction pipeline as the other label
+    /// reports.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_unlabeled_categories(
+        &self,
+        labels: Vec<Label>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        budget_names: Vec<String>,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<UnlabeledCategoriesReport, String> {
+        use crate::models::label::unlabeled_report;
+
+        let labels_json = serde_json::to_string(&labels).unwrap_or_default();
+        if let Some(cached_json) = self.cache.get_label_unlabeled(
+            &labels_json,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            &budget_names,
+            account_ids.as_deref(),
+            exclusions,
+        ) {
+            debug!("Cache hit for unlabeled categories");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached unlabeled categories: {}", e));
+        }
+
+        // Default to the current calendar month.
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-01").to_string());
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+        let budget_set: std::collections::HashSet<String> = budget_names.iter().cloned().collect();
+
+        let mut items: Vec<(Option<String>, f64, Option<String>)> = Vec::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &all_transactions {
+            let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            else {
+                continue;
+            };
+            for journal in trans_arr {
+                if !is_journal_spent(journal, &selected_ids) {
+                    continue;
+                }
+                if journal_is_excluded(exclusions, journal) {
+                    continue;
+                }
+                let journal_budget = journal
+                    .get("budget_name")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("");
+                if !budget_set.is_empty() && !budget_set.contains(journal_budget) {
+                    continue;
+                }
+                let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) else {
+                    continue;
+                };
+                let Ok(amount) = amount_str.parse::<f64>() else {
+                    continue;
+                };
+                let full_category = journal
+                    .get("category_name")
+                    .and_then(|c| c.as_str())
+                    .filter(|c| !c.trim().is_empty())
+                    .map(str::to_string);
+                let budget = (!journal_budget.is_empty()).then(|| journal_budget.to_string());
+                items.push((full_category, amount, budget));
+
+                if currency_symbol.is_none() {
+                    currency_symbol = journal
+                        .get("currency_symbol")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                    currency_code = journal
+                        .get("currency_code")
+                        .and_then(|c| c.as_str())
+                        .map(String::from);
+                }
+            }
+        }
+
+        let result = unlabeled_report(start, end, &items, &labels, currency_code, currency_symbol);
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_label_unlabeled(
+                &labels_json,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                &budget_names,
                 account_ids.as_deref(),
                 exclusions,
                 json,

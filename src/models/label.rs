@@ -206,6 +206,116 @@ pub fn composition_parts(
     parts
 }
 
+/// One unlabeled category: spend in a period that matches no label,
+/// grouped by full category name.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UnlabeledCategory {
+    /// Full category name as stored on the journal ("Parent:Sub", or the
+    /// plain parent name when the category has no subcategory).
+    pub category: String,
+    pub amount: f64,
+    /// amount / total * 100 (0 when total is 0).
+    pub pct: f64,
+    /// Names of the budgets this spend was charged to, sorted and
+    /// deduplicated (empty when none of it had a budget).
+    pub budgets: Vec<String>,
+}
+
+/// Every spend category of a period that matches no user label, across
+/// all budgets at once. Categories matching at least one label are
+/// omitted entirely; spend without a category is counted in
+/// `uncategorized` and can never be labeled.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UnlabeledCategoriesReport {
+    pub start: String,
+    pub end: String,
+    /// Total spend in the period (after account/budget/exclusion filters).
+    pub total: f64,
+    /// Spend matching no label at all (includes uncategorized spend).
+    pub unlabeled: f64,
+    /// Spend without a category (subset of `unlabeled`; not labelable).
+    pub uncategorized: f64,
+    /// Categories matching no label, sorted by amount descending.
+    pub categories: Vec<UnlabeledCategory>,
+    pub currency_code: Option<String>,
+    pub currency_symbol: Option<String>,
+}
+
+/// Aggregate spend items into the unlabeled-categories report.
+///
+/// `items` are (full category name or None, amount, budget name or None)
+/// triples, already filtered to spent journals. Pure so it can be unit
+/// tested; the transaction parsing lives in the client.
+pub fn unlabeled_report(
+    start: String,
+    end: String,
+    items: &[(Option<String>, f64, Option<String>)],
+    labels: &[Label],
+    currency_code: Option<String>,
+    currency_symbol: Option<String>,
+) -> UnlabeledCategoriesReport {
+    use std::collections::BTreeSet;
+
+    let mut total = 0.0;
+    let mut unlabeled = 0.0;
+    let mut uncategorized = 0.0;
+    let mut by_category: BTreeMap<String, (f64, BTreeSet<String>)> = BTreeMap::new();
+
+    for (category, amount, budget) in items {
+        total += amount;
+        let Some(cat) = category.as_deref().filter(|c| !c.trim().is_empty()) else {
+            // No category at all: never labelable.
+            unlabeled += amount;
+            uncategorized += amount;
+            continue;
+        };
+        let labeled = labels
+            .iter()
+            .any(|l| l.entries.iter().any(|e| entry_matches(e, cat)));
+        if labeled {
+            continue;
+        }
+        unlabeled += amount;
+        let entry = by_category
+            .entry(cat.to_string())
+            .or_insert((0.0, BTreeSet::new()));
+        entry.0 += amount;
+        if let Some(b) = budget.as_deref().filter(|b| !b.trim().is_empty()) {
+            entry.1.insert(b.to_string());
+        }
+    }
+
+    let mut categories: Vec<UnlabeledCategory> = by_category
+        .into_iter()
+        .map(|(category, (amount, budgets))| UnlabeledCategory {
+            category,
+            amount,
+            pct: if total > 0.0 {
+                amount / total * 100.0
+            } else {
+                0.0
+            },
+            budgets: budgets.into_iter().collect(),
+        })
+        .collect();
+    categories.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    UnlabeledCategoriesReport {
+        start,
+        end,
+        total,
+        unlabeled,
+        uncategorized,
+        categories,
+        currency_code,
+        currency_symbol,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +413,85 @@ mod tests {
         let by_label = BTreeMap::new();
         let parts = composition_parts(&labels, &by_label, 0.0, 0.0);
         assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn unlabeled_report_drops_labeled_and_tracks_budgets() {
+        let labels = vec![
+            label("wants", &["Dining"]),
+            label("needs", &["Groceries:Supermarkets"]),
+        ];
+        let items = vec![
+            (
+                Some("Dining:Bars".to_string()),
+                100.0,
+                Some("Food".to_string()),
+            ),
+            (
+                Some("Groceries:Supermarkets".to_string()),
+                200.0,
+                Some("Food".to_string()),
+            ),
+            (Some("Health".to_string()), 50.0, Some("Food".to_string())),
+            (Some("Dining".to_string()), 30.0, Some("Travel".to_string())),
+            (
+                Some("Groceries:DiscountStore".to_string()),
+                80.0,
+                Some("Travel".to_string()),
+            ),
+            (None, 20.0, Some("Food".to_string())),
+            (Some("Health".to_string()), 10.0, Some("Travel".to_string())),
+        ];
+        let r = unlabeled_report(
+            "2026-01-01".to_string(),
+            "2026-01-31".to_string(),
+            &items,
+            &labels,
+            Some("USD".to_string()),
+            Some("$".to_string()),
+        );
+        assert!((r.total - 490.0).abs() < 1e-9);
+        // Health 50+10, DiscountStore 80, uncategorized 20.
+        assert!((r.unlabeled - 160.0).abs() < 1e-9);
+        assert!((r.uncategorized - 20.0).abs() < 1e-9);
+        assert_eq!(
+            r.categories
+                .iter()
+                .map(|c| c.category.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Groceries:DiscountStore", "Health"]
+        );
+        let health = &r.categories[1];
+        assert!((health.amount - 60.0).abs() < 1e-9);
+        assert_eq!(
+            health.budgets,
+            vec!["Food".to_string(), "Travel".to_string()]
+        );
+        assert!((health.pct - 60.0 / 490.0 * 100.0).abs() < 1e-9);
+        assert!((r.categories[0].pct - 80.0 / 490.0 * 100.0).abs() < 1e-9);
+        assert_eq!(r.categories[0].budgets, vec!["Travel".to_string()]);
+        assert_eq!(r.currency_code.as_deref(), Some("USD"));
+    }
+
+    #[test]
+    fn unlabeled_report_with_no_labels_lists_everything() {
+        let items = vec![
+            (Some("A".to_string()), 5.0, None),
+            (Some("B".to_string()), 7.0, Some("x".to_string())),
+        ];
+        let r = unlabeled_report("s".to_string(), "e".to_string(), &items, &[], None, None);
+        assert!((r.total - 12.0).abs() < 1e-9);
+        assert!((r.unlabeled - 12.0).abs() < 1e-9);
+        assert!((r.uncategorized - 0.0).abs() < 1e-9);
+        assert_eq!(r.categories.len(), 2);
+        assert_eq!(r.categories[0].category, "B");
+        assert!(r.categories[1].budgets.is_empty());
+    }
+
+    #[test]
+    fn unlabeled_report_zero_total_has_zero_pct() {
+        let r = unlabeled_report("s".to_string(), "e".to_string(), &[], &[], None, None);
+        assert!(r.categories.is_empty());
+        assert!((r.total - 0.0).abs() < 1e-9);
     }
 }

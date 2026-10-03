@@ -100,8 +100,14 @@ Firefly III is never modified. Reports (`src/handlers/label.rs`):
   shares of one budget's spend + per-category breakdown.
 - `GET /api/labels/spend?start=..&end=..&period=1M[&budgets[]=..]` — standard
   `ChartLine` time series, one dataset per label (+ optional Unlabeled).
+- `GET /api/labels/unlabeled-categories?start=..&end=..[&budgets[]=..]` —
+  every category with spend that matches no label, across all budgets at
+  once (amount, share of total, budgets charged to), for labeling without
+  switching between budgets.
 
-On the `/labels` page each row of the per-category breakdown is clickable:
+On the `/labels` page an "Unlabeled spend" panel lists every unlabeled
+category of a period across all budgets at once (default: this month),
+and each row of the per-category breakdown is clickable:
 a dialog lets the user assign/remove labels for that exact category (whole
 or subcategory) and create a new label on the fly. Because labels are
 lenses, "remove" of a category covered by a whole-category entry (`"Dining"`)

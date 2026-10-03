@@ -203,6 +203,75 @@ pub async fn get_label_budget_composition_api(
     }
 }
 
+/// GET /api/labels/unlabeled-categories — every spend category of a
+/// period that matches no user label, across all budgets at once (so
+/// they can be labeled without switching between budgets).
+///
+/// Query params:
+///   start, end (default: current calendar month), budgets[] (optional:
+///   only spend charged to these budgets), accounts[] (optional),
+///   exclude_categories[], exclude_budgets[] (same semantics as the chart
+///   endpoints).
+///
+/// Response: total / unlabeled / uncategorized totals plus one entry per
+/// unlabeled category (amount, share of total, budgets it was charged to),
+/// sorted by amount descending.
+#[get("/api/labels/unlabeled-categories")]
+pub async fn get_unlabeled_categories_api(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    if !labels_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Spending Labels is disabled. Enable it under Settings."
+        }));
+    }
+
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut budgets: Vec<String> = Vec::new();
+    let mut account_ids: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "budgets[]" | "budgets" => budgets.push(v),
+            "accounts[]" | "accounts" => account_ids.push(v),
+            _ => {}
+        }
+    }
+
+    let labels = match crate::storage::Storage::get_all_labels() {
+        Ok(l) => l,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    match client
+        .get_unlabeled_categories(
+            labels,
+            start,
+            end,
+            budgets,
+            if account_ids.is_empty() {
+                None
+            } else {
+                Some(account_ids)
+            },
+            &exclusions,
+        )
+        .await
+    {
+        Ok(report) => HttpResponse::Ok().json(report),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 /// GET /api/labels/spend — time series of spend per label.
 ///
 /// Query params:

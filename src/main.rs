@@ -65,6 +65,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::label::delete_label)
             .service(handlers::label::get_label_budget_composition_api)
             .service(handlers::label::get_label_spend_api)
+            .service(handlers::label::get_unlabeled_categories_api)
             .service(handlers::dashboard_api::list_dashboards)
             .service(handlers::dashboard_api::get_dashboard_widgets)
             .service(handlers::dashboard_api::create_dashboard)
