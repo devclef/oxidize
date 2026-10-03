@@ -1,6 +1,15 @@
-const CACHE_NAME = 'oxidize-cache-v19';
+// If this worker was installed under the legacy /static/ scope (before the
+// root-scope rollout), drop that registration so the root-scope worker
+// governs all pages and requests.
+if (new URL(self.registration.scope).pathname !== '/') {
+  self.registration.unregister();
+}
+
+const CACHE_NAME = 'oxidize-cache-v20';
 // The summary-utils.js entry carries the same ?v= as the script tag in
 // summary.html so the precached copy matches what the page requests.
+// Icons and the web app manifest are precached so installability and the
+// install dialog work fully offline.
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/theme.js',
@@ -8,7 +17,12 @@ const STATIC_ASSETS = [
   '/static/date-utils.js',
   '/static/app.js',
   '/static/dashboard.js',
-  '/static/summary-utils.js?v=14'
+  '/static/summary-utils.js?v=14',
+  '/static/icons/icon-192x192.png',
+  '/static/icons/icon-512x512.png',
+  '/static/icons/icon-maskable-192x192.png',
+  '/static/icons/icon-maskable-512x512.png',
+  '/api/manifest'
 ];
 
 self.addEventListener('install', (event) => {

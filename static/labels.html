@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
     <meta name="theme-color" content="#3b82f6">
     <link rel="manifest" href="/api/manifest">
+    <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js', { scope: '/' }); }); }</script>
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>

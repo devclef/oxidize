@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#3b82f6">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="manifest" href="/api/manifest">
+    <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js', { scope: '/' }); }); }</script>
     <script src="/static/theme.js"></script>
 </head>
 <body>

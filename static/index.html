@@ -416,6 +416,6 @@
     <script src="/static/date-utils.js"></script>
     <script src="/static/ui.js"></script>
     <script src="/static/app.js"></script>
-    <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js'); }); }</script>
+    <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js', { scope: '/' }); }); }</script>
 </body>
 </html>

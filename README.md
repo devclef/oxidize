@@ -19,6 +19,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
 - **SQLite Persistence** - widgets and groups stored locally
+- **PWA** - installable as an app on Android (Chrome "Install app"), with offline support for the UI shell
 - **Docker Support** - multi-stage build, minimal runtime image
 
 ## Quick Start
@@ -28,7 +29,21 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - [Rust](https://rustup.rs/) (1.88+)
 - A running Firefly III instance with API access
 
-### Configuration
+### PWA (install on Android)
+
+Oxidize is a Progressive Web App. On an Android phone, open the site in **Chrome** (it must be
+served over **HTTPS** in production) and use the menu (⋮) → **Install app** (or *Add to Home
+screen*). It installs with its own icon, launches in a full-screen standalone window without
+browser chrome, and the UI shell (pages, styles, icons) works offline — live data still
+requires a connection to Firefly III through the server.
+
+- `static/manifest.json` (served at `/api/manifest`) declares the app identity, standalone
+  display and `any` + `maskable` icons
+- `static/sw.js` is a service worker registered from every page with **root scope**; it
+  precaches the UI assets and serves pages network-first with an offline fallback
+
+
+## Configuration
 
 Create a `.env` file in the project root:
 
