@@ -472,10 +472,34 @@ mod tests {
         mock_tx(
             &mut server,
             vec![
-                withdrawal_tx("t1", "2026-01-05", 100.0, Some("Dining:Bars"), None, "a1"),
-                withdrawal_tx("t2", "2026-01-06", 200.0, Some("Groceries"), None, "a1"),
-                withdrawal_tx("t3", "2026-02-03", 300.0, Some("Dining"), None, "a1"),
-                withdrawal_tx("t4", "2026-02-04", 10.0, Some("Toys"), None, "a1"),
+                withdrawal_tx(
+                    "t1",
+                    "2026-01-05",
+                    100.0,
+                    Some("Dining:Bars"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "t2",
+                    "2026-01-06",
+                    200.0,
+                    Some("Groceries"),
+                    Some("Food"),
+                    "a1",
+                ),
+                withdrawal_tx(
+                    "t3",
+                    "2026-02-03",
+                    300.0,
+                    Some("Dining"),
+                    Some("Travel"),
+                    "a1",
+                ),
+                withdrawal_tx("t4", "2026-02-04", 10.0, Some("Toys"), Some("Travel"), "a1"),
+                // No budget: excluded from label charts (would skew them).
+                withdrawal_tx("t5", "2026-01-08", 700.0, Some("Dining"), None, "a1"),
+                withdrawal_tx("t6", "2026-02-05", 50.0, Some("Toys"), None, "a1"),
             ],
         )
         .await;
@@ -550,6 +574,8 @@ mod tests {
                     "a1",
                 ),
                 withdrawal_tx("t3", "2026-01-07", 50.0, Some("Health"), Some("Food"), "a1"),
+                // No budget: excluded even when matching a label.
+                withdrawal_tx("t4", "2026-01-08", 999.0, Some("Dining"), None, "a1"),
             ],
         )
         .await;
@@ -654,6 +680,9 @@ mod tests {
                     Some("Travel"),
                     "a1",
                 ),
+                // No budget: excluded from the report entirely (would
+                // skew the totals and shares).
+                withdrawal_tx("u9", "2026-01-13", 300.0, Some("Health"), None, "a1"),
                 // Income: never counts as spend.
                 deposit_tx("u8", "2026-01-12", 5000.0),
             ],
@@ -704,7 +733,7 @@ mod tests {
         clear_labels();
         let req = awt::TestRequest::post()
             .uri("/api/labels")
-            .set_json(&make_label("lbl-ul-bf", "wants", &["Dining"]))
+            .set_json(make_label("lbl-ul-bf", "wants", &["Dining"]))
             .to_request();
         assert_eq!(awt::call_service(&app, req).await.status(), 201);
 
@@ -729,6 +758,8 @@ mod tests {
                     Some("Travel"),
                     "a1",
                 ),
+                // No budget: never counted, with or without a budget filter.
+                withdrawal_tx("b5", "2026-01-09", 40.0, Some("Toys"), None, "a1"),
             ],
         )
         .await;

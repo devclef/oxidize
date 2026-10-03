@@ -205,7 +205,8 @@ pub async fn get_label_budget_composition_api(
 
 /// GET /api/labels/unlabeled-categories — every spend category of a
 /// period that matches no user label, across all budgets at once (so
-/// they can be labeled without switching between budgets).
+/// they can be labeled without switching between budgets). Spend not
+/// charged to a budget is excluded (it would skew the shares).
 ///
 /// Query params:
 ///   start, end (default: current calendar month), budgets[] (optional:
@@ -279,6 +280,7 @@ pub async fn get_unlabeled_categories_api(
 ///   budgets[] (optional: only spend assigned to these budgets),
 ///   accounts[] (optional), exclude_categories[], exclude_budgets[],
 ///   include_unlabeled ("0"/"false" to hide the Unlabeled series).
+///   Spend not charged to a budget is always excluded.
 ///
 /// Response: standard ChartLine (one dataset per label, sorted by total
 /// spend descending), renderable like /api/expenses-by-category.

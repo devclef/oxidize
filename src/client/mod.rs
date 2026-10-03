@@ -3360,6 +3360,10 @@ impl FireflyClient {
     /// One dataset per label (plus an optional "Unlabeled"), one point per
     /// period bucket. Uses the same transaction pipeline as the category
     /// spend charts.
+    ///
+    /// Spend not charged to a budget (empty `budget_name`) is always
+    /// excluded: labels are a lens over budgets, so unbudgeted spend would
+    /// skew the charts.
     #[allow(clippy::too_many_arguments)]
     pub async fn get_label_spend_chart(
         &self,
@@ -3436,14 +3440,16 @@ impl FireflyClient {
             if journal_is_excluded(exclusions, journal) {
                 continue;
             }
-            if !budget_set.is_empty() {
-                let budget_name = journal
-                    .get("budget_name")
-                    .and_then(|b| b.as_str())
-                    .unwrap_or("");
-                if !budget_set.contains(budget_name) {
-                    continue;
-                }
+            let journal_budget = journal
+                .get("budget_name")
+                .and_then(|b| b.as_str())
+                .unwrap_or("");
+            // Spend not charged to a budget is always excluded: labels are
+            // a lens over budgets, so unbudgeted spend would skew the charts.
+            if journal_budget.is_empty()
+                || (!budget_set.is_empty() && !budget_set.contains(journal_budget))
+            {
+                continue;
             }
             let (Some(amount_str), Some(date)) = (
                 journal.get("amount").and_then(|a| a.as_str()),
@@ -3716,8 +3722,10 @@ impl FireflyClient {
     /// Every spend category of a period that matches no user label
     /// (see models/label.rs), across all budgets at once. When
     /// `budget_names` is non-empty only spend charged to those budgets is
-    /// considered. Uses the same transaction pipeline as the other label
-    /// reports.
+    /// considered. Spend not charged to a budget (empty `budget_name`) is
+    /// always excluded: labels are a lens over budgets, so unbudgeted spend
+    /// would skew the report. Uses the same transaction pipeline as the
+    /// other label reports.
     #[allow(clippy::too_many_arguments)]
     pub async fn get_unlabeled_categories(
         &self,
@@ -3785,7 +3793,12 @@ impl FireflyClient {
                     .get("budget_name")
                     .and_then(|b| b.as_str())
                     .unwrap_or("");
-                if !budget_set.is_empty() && !budget_set.contains(journal_budget) {
+                // Spend not charged to a budget is always excluded: labels
+                // are a lens over budgets, so unbudgeted spend would skew
+                // the report.
+                if journal_budget.is_empty()
+                    || (!budget_set.is_empty() && !budget_set.contains(journal_budget))
+                {
                     continue;
                 }
                 let Some(amount_str) = journal.get("amount").and_then(|a| a.as_str()) else {
@@ -3799,8 +3812,7 @@ impl FireflyClient {
                     .and_then(|c| c.as_str())
                     .filter(|c| !c.trim().is_empty())
                     .map(str::to_string);
-                let budget = (!journal_budget.is_empty()).then(|| journal_budget.to_string());
-                items.push((full_category, amount, budget));
+                items.push((full_category, amount, Some(journal_budget.to_string())));
 
                 if currency_symbol.is_none() {
                     currency_symbol = journal

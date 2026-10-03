@@ -217,7 +217,8 @@ pub struct UnlabeledCategory {
     /// amount / total * 100 (0 when total is 0).
     pub pct: f64,
     /// Names of the budgets this spend was charged to, sorted and
-    /// deduplicated (empty when none of it had a budget).
+    /// deduplicated. Always non-empty for client data: unbudgeted spend is
+    /// excluded before aggregation.
     pub budgets: Vec<String>,
 }
 
