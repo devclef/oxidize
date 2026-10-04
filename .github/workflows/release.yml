@@ -37,9 +37,16 @@ jobs:
         id: tag-msg
         run: |
           TAG_NAME="${GITHUB_REF#refs/tags/}"
-          MESSAGE=$(git tag -l --format='%(contents)' "${TAG_NAME}")
-          # Write to a file to preserve newlines
-          echo "${MESSAGE}" > /tmp/release-notes.md
+          # Fetch the annotated tag object explicitly: on tag-triggered
+          # runs the checkout may leave only a lightweight tag ref, in
+          # which case %(contents) resolves to the commit subject.
+          git fetch --depth=1 origin "${TAG_NAME}"
+          if [ "$(git cat-file -t FETCH_HEAD)" = "tag" ]; then
+            # Strip the 5-line tag header (object/type/tag/tagger/blank)
+            git cat-file tag "$(git rev-parse FETCH_HEAD)" | tail -n +6 > /tmp/release-notes.md
+          else
+            echo "" > /tmp/release-notes.md
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
