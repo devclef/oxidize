@@ -1,7 +1,8 @@
 use crate::cache::DataCache;
 use crate::config::Config;
 use crate::models::label::{
-    Label, LabelBudgetComposition, LabelCategoryPart, UnlabeledCategoriesReport,
+    entry_matches, Label, LabelBudgetComposition, LabelCategoryPart, LabelTransaction,
+    LabelTransactions, UnlabeledCategoriesReport,
 };
 use crate::models::summary::{
     budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
@@ -3552,6 +3553,206 @@ impl FireflyClient {
         }
 
         Ok(chart)
+    }
+
+    /// Every transaction matching one label's category entries (OXI-48) —
+    /// the drill-down behind the label aggregates. Same transaction
+    /// pipeline as `get_label_spend_chart`: spent journals only, exclusion
+    /// filtering, then per-label entry matching (whole-category and
+    /// "Parent:Sub" semantics).
+    ///
+    /// Spend not charged to a budget (empty `budget_name`) is excluded by
+    /// default, like the other label reports; pass `include_unbudgeted` to
+    /// list it as well.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_label_transactions(
+        &self,
+        labels: Vec<Label>,
+        label_id: &str,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        budget_names: Vec<String>,
+        account_ids: Option<Vec<String>>,
+        include_unbudgeted: bool,
+        exclusions: &Exclusions,
+    ) -> Result<LabelTransactions, String> {
+        let Some(label) = labels.iter().find(|l| l.id == label_id) else {
+            return Err("Label not found".to_string());
+        };
+
+        let labels_json = serde_json::to_string(&labels).unwrap_or_default();
+        if let Some(cached_json) = self.cache.get_label_transactions(
+            &labels_json,
+            label_id,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            &budget_names,
+            account_ids.as_deref(),
+            exclusions,
+            include_unbudgeted,
+        ) {
+            debug!("Cache hit for label transactions");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached label transactions: {}", e));
+        }
+
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+        let budget_set: std::collections::HashSet<String> = budget_names.iter().cloned().collect();
+
+        let mut transactions: Vec<LabelTransaction> = Vec::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &all_transactions {
+            // Transaction-level fields shared by all of its journals.
+            let payee = tx
+                .get("payee")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+                .filter(|n| !n.trim().is_empty())
+                .map(String::from);
+            let description = tx
+                .get("description")
+                .and_then(|d| d.as_str())
+                .filter(|d| !d.trim().is_empty())
+                .map(String::from);
+
+            let Some(journals) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            else {
+                continue;
+            };
+            for journal in journals {
+                if !is_journal_spent(journal, &selected_ids) {
+                    continue;
+                }
+                if journal_is_excluded(exclusions, journal) {
+                    continue;
+                }
+                let journal_budget = journal
+                    .get("budget_name")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("");
+                // Same rules as the other label reports: unbudgeted spend is
+                // excluded unless explicitly requested, and a budgets[]
+                // filter always requires spend charged to one of the
+                // selected budgets.
+                if (!include_unbudgeted && journal_budget.is_empty())
+                    || (!budget_set.is_empty() && !budget_set.contains(journal_budget))
+                {
+                    continue;
+                }
+                let (Some(amount_str), Some(date)) = (
+                    journal.get("amount").and_then(|a| a.as_str()),
+                    journal.get("date").and_then(|d| d.as_str()),
+                ) else {
+                    continue;
+                };
+                let Ok(amount) = amount_str.parse::<f64>() else {
+                    continue;
+                };
+                // Uncategorized spend can never match a label.
+                let Some(full_category) = journal
+                    .get("category_name")
+                    .and_then(|c| c.as_str())
+                    .filter(|c| !c.trim().is_empty())
+                    .map(str::to_string)
+                else {
+                    continue;
+                };
+                if !label
+                    .entries
+                    .iter()
+                    .any(|e| entry_matches(e, &full_category))
+                {
+                    continue;
+                }
+
+                transactions.push(LabelTransaction {
+                    id: journal
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    date: date.to_string(),
+                    amount,
+                    category: Some(full_category),
+                    budget: if journal_budget.is_empty() {
+                        None
+                    } else {
+                        Some(journal_budget.to_string())
+                    },
+                    payee: payee.clone(),
+                    description: description.clone(),
+                    account: journal
+                        .get("source_name")
+                        .and_then(|s| s.as_str())
+                        .filter(|s| !s.trim().is_empty())
+                        .map(String::from),
+                });
+
+                if currency_symbol.is_none() {
+                    currency_symbol = journal
+                        .get("currency_symbol")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                    currency_code = journal
+                        .get("currency_code")
+                        .and_then(|c| c.as_str())
+                        .map(String::from);
+                }
+            }
+        }
+
+        // Newest first; journal id as a stable tiebreaker for same-day rows.
+        transactions.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| a.id.cmp(&b.id)));
+
+        let total: f64 = transactions.iter().map(|t| t.amount.abs()).sum();
+
+        let result = LabelTransactions {
+            label: label.name.clone(),
+            start: start.clone(),
+            end,
+            count: transactions.len(),
+            total,
+            currency_symbol,
+            currency_code,
+            transactions,
+        };
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_label_transactions(
+                &labels_json,
+                label_id,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                &budget_names,
+                account_ids.as_deref(),
+                exclusions,
+                include_unbudgeted,
+                json,
+            );
+        }
+
+        Ok(result)
     }
 
     /// How a single budget's spend is composed of user-defined labels

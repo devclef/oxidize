@@ -14,7 +14,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
-- **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels and track per-label spending over time
+- **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels, track per-label spending over time, and drill down into the individual transactions behind any label
 - **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -198,6 +198,7 @@ Settings panel); effective exclusions are the union of both.
 | POST | `/api/labels` | Create label (name + category entries: parent names or full `Parent:Sub` names) |
 | PUT | `/api/labels/{id}` | Update label |
 | DELETE | `/api/labels/{id}` | Delete label |
+| GET | `/api/labels/transactions` | Every transaction matching a label in a period (`label` required, `start`, `end`, `budgets[]`, `accounts[]`, `include_unbudgeted`, exclusions) — the drill-down behind the label reports |
 | GET | `/api/labels/budget-composition` | How one budget's spend is composed of the labels (`budget` required; `start`, `end`, `accounts[]`, supports exclusions) |
 | GET | `/api/labels/spend` | Time series of spend per label (standard chart shape; `start`, `end`, `period`, `budgets[]`, `accounts[]`, `include_unlabeled`, supports exclusions) |
 

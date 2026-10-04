@@ -104,10 +104,18 @@ Firefly III is never modified. Reports (`src/handlers/label.rs`):
   every category with spend that matches no label, across all budgets at
   once (amount, share of total, budgets charged to), for labeling without
   switching between budgets.
+- `GET /api/labels/transactions?label=<id>&start=..&end=..[&budgets[]=..][&include_unbudgeted=1]`
+  — every individual transaction matching one label in a period (date,
+  payee, description, category, budget, account, amount; count + total),
+  newest first. The drill-down behind the aggregates; same pipeline and
+  unbudgeted-spend semantics as the chart endpoints.
 
 On the `/labels` page an "Unlabeled spend" panel lists every unlabeled
 category of a period across all budgets at once (default: this month),
-and each row of the per-category breakdown is clickable:
+and a "Transactions for a label" panel lists every individual transaction
+matching a chosen label in a period (label + period + budget filters,
+optional unbudgeted spend), so the aggregates can be explained. Each row
+of the per-category breakdown is clickable:
 a dialog lets the user assign/remove labels for that exact category (whole
 or subcategory) and create a new label on the fly. Because labels are
 lenses, "remove" of a category covered by a whole-category entry (`"Dining"`)

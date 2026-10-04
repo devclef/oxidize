@@ -288,8 +288,38 @@
         return s ? s + n : n;
     }
 
+    /**
+     * Query string (without the leading "?") for /api/labels/transactions:
+     * the label id, start/end resolved from the period id, and the optional
+     * budget filter / include-unbudgeted flag.
+     */
+    function txQuery(labelId, periodId, budget, includeUnbudgeted) {
+        var range = periodRange(periodId) || periodRange('this-month');
+        var p = new URLSearchParams();
+        p.append('label', labelId);
+        p.append('start', range.start);
+        p.append('end', range.end);
+        if (budget) p.append('budgets[]', budget);
+        if (includeUnbudgeted) p.append('include_unbudgeted', '1');
+        return p.toString();
+    }
+
+    /**
+     * A transaction row's spend amount for display: Firefly III reports
+     * spend as negative, the list shows positive amounts.
+     */
+    function formatTxAmount(amount, symbol) {
+        if (amount === null || amount === undefined || isNaN(amount)) return '—';
+        var s = (symbol || '').trim() || '';
+        var n = Math.abs(Number(amount)).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        return s ? s + n : n;
+    }
+
     var API = {
-        REVISION: '2026-10-02.2',
+        REVISION: '2026-10-04.1',
         MONTH_NAMES: MONTH_NAMES,
         ymd: ymd,
         pad2: pad2,
@@ -310,6 +340,8 @@
         formatPeriodKey: formatPeriodKey,
         trendToChartJs: trendToChartJs,
         formatAmount: formatAmount,
+        txQuery: txQuery,
+        formatTxAmount: formatTxAmount,
         UNLABELED_COLOR: UNLABELED_COLOR
     };
 

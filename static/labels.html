@@ -318,6 +318,53 @@
                 <canvas id="trend-chart" height="120" aria-label="Spend trend line chart by label"></canvas>
             </div>
         </section>
+
+        <!-- ── Label transactions ─────────────────────────────────────── -->
+        <section class="panel" id="tx-panel" aria-label="Transactions for a label">
+            <div class="panel-head">
+                <h3>Transactions for a label</h3>
+            </div>
+            <div class="report-controls">
+                <label for="tx-label">Label
+                    <select id="tx-label" class="form-select" style="min-width: 160px;"><option value="">Select label…</option></select>
+                </label>
+                <label for="tx-period">Period
+                    <select id="tx-period" class="form-select">
+                        <option value="this-month" selected>This month</option>
+                        <option value="last-month">Last month</option>
+                        <option value="last-3m">Last 3 months</option>
+                        <option value="last-6m">Last 6 months</option>
+                        <option value="last-12m">Last 12 months</option>
+                        <option value="ytd">Year to date</option>
+                    </select>
+                </label>
+                <label for="tx-budget">Budget
+                    <select id="tx-budget" class="form-select" style="min-width: 180px;"><option value="">All budgets</option></select>
+                </label>
+                <label for="tx-unbudgeted"><input type="checkbox" id="tx-unbudgeted"> Include unbudgeted spend</label>
+            </div>
+            <div id="tx-empty" class="empty-state">
+                <p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account and amount.</p>
+            </div>
+            <div id="tx-content" style="display: none;">
+                <div id="tx-summary" class="comp-summary"></div>
+                <div class="results-table-wrapper">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Description</th>
+                                <th scope="col">Category</th>
+                                <th scope="col">Budget</th>
+                                <th scope="col">Account</th>
+                                <th scope="col">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tx-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
     </div>
 
     <!-- ── Per-category label editor dialog ───────────────────────────── -->
@@ -347,12 +394,12 @@
     </div>
 
     <script src="/static/ui.js"></script>
-    <script src="/static/labels-utils.js?v=2026-10-02.2"></script>
+    <script src="/static/labels-utils.js?v=2026-10-04.1"></script>
     <script>
     'use strict';
     (function () {
         const L = window.Labels;
-        if (!L || L.REVISION !== '2026-10-02.2') {
+        if (!L || L.REVISION !== '2026-10-04.1') {
             console.error('labels.html: labels-utils.js version mismatch', L && L.REVISION);
         }
 
@@ -410,6 +457,24 @@
             if (results[2].status === 'fulfilled') state.budgets = results[2].value;
             populateCategoryPicker();
             populateBudgetSelects();
+            populateLabelSelect();
+        }
+
+        function populateLabelSelect() {
+            const sel = $('tx-label');
+            const prev = sel.value;
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select label…';
+            sel.appendChild(placeholder);
+            state.labels.forEach((l) => {
+                const opt = document.createElement('option');
+                opt.value = l.id;
+                opt.textContent = l.name;
+                sel.appendChild(opt);
+            });
+            sel.value = prev;
         }
 
         function populateCategoryPicker() {
@@ -435,7 +500,7 @@
         }
 
         function populateBudgetSelects() {
-            for (const id of ['comp-budget', 'trend-budget', 'unlabeled-budget']) {
+            for (const id of ['comp-budget', 'trend-budget', 'unlabeled-budget', 'tx-budget']) {
                 const sel = $(id);
                 sel.innerHTML = '';
                 const placeholder = document.createElement('option');
@@ -615,6 +680,7 @@
         async function refreshLabels() {
             state.labels = await getJson('/api/labels');
             renderLabels();
+            populateLabelSelect();
         }
 
         // ── Budget composition report ──────────────────────────────────
@@ -1242,10 +1308,70 @@
         $('trend-budget').addEventListener('change', loadTrend);
         $('trend-include-unlabeled').addEventListener('change', loadTrend);
 
+        // ── Transactions for a label (drill-down, OXI-48) ─────────────
+        // Lists every individual transaction matching the selected label
+        // in the period, so the aggregates above can be explained.
+
+        async function loadTransactions() {
+            const labelId = $('tx-label').value;
+            const empty = $('tx-empty');
+            if (!labelId) {
+                $('tx-content').style.display = 'none';
+                empty.style.display = 'block';
+                empty.innerHTML = '<p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account and amount.</p>';
+                return;
+            }
+            const label = state.labels.find((l) => l.id === labelId);
+            const name = (label && label.name) || labelId;
+            const range = L.periodRange($('tx-period').value) || L.periodRange('this-month');
+            const params = L.txQuery(labelId, $('tx-period').value, $('tx-budget').value, $('tx-unbudgeted').checked);
+
+            try {
+                const data = await getJson('/api/labels/transactions?' + params);
+                if (data.currency_symbol) state.currencySymbol = data.currency_symbol;
+
+                empty.style.display = 'none';
+                $('tx-content').style.display = 'block';
+                const fmt = (v) => L.formatTxAmount(v, data.currency_symbol);
+                const unbudgetedNote = $('tx-unbudgeted').checked
+                    ? 'unbudgeted spend included'
+                    : 'unbudgeted spend excluded';
+                $('tx-summary').innerHTML = data.count
+                    ? '<strong>' + escapeHtml(String(data.count)) + '</strong> transaction' +
+                      (data.count === 1 ? '' : 's') + ' for <strong>' + escapeHtml(name) +
+                      '</strong> from ' + range.start + ' to ' + range.end +
+                      ' — total spend <strong>' + fmt(data.total) + '</strong>' +
+                      ' <span class="summary-hint">(' + unbudgetedNote + ')</span>'
+                    : 'No transactions for <strong>' + escapeHtml(name) +
+                      '</strong> from ' + range.start + ' to ' + range.end +
+                      ' <span class="summary-hint">(' + unbudgetedNote + ')</span>';
+
+                const body = $('tx-body');
+                body.innerHTML = '';
+                (data.transactions || []).forEach((t) => {
+                    const tr = document.createElement('tr');
+                    const cells = [t.date, t.payee || t.description || '—', t.category || '—', t.budget || '—', t.account || '—', fmt(t.amount)];
+                    cells.forEach((text, i) => {
+                        const td = document.createElement('td');
+                        td.textContent = text;
+                        if (i === 1 && t.payee && t.description) td.title = t.description;
+                        tr.appendChild(td);
+                    });
+                    body.appendChild(tr);
+                });
+            } catch (e) {
+                showError(e.message);
+            }
+        }
+
+        ['tx-label', 'tx-period', 'tx-budget'].forEach((id) => $(id).addEventListener('change', loadTransactions));
+        $('tx-unbudgeted').addEventListener('change', loadTransactions);
+
         function refreshReports() {
             if ($('comp-budget').value) loadComposition();
             loadTrend();
             loadUnlabeled();
+            if ($('tx-label').value) loadTransactions();
         }
 
         function escapeHtml(s) {

@@ -317,6 +317,47 @@ pub fn unlabeled_report(
     }
 }
 
+/// One transaction matching a label's category entries (OXI-48): the
+/// drill-down behind the label aggregates.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabelTransaction {
+    /// Firefly III journal entry id (stable across refetches).
+    pub id: String,
+    /// "YYYY-MM-DD" as reported by Firefly III.
+    pub date: String,
+    /// Signed Firefly III amount (negative = spend).
+    pub amount: f64,
+    /// Full category name as stored on the journal.
+    pub category: Option<String>,
+    /// Budget the spend was charged to, if any.
+    pub budget: Option<String>,
+    /// Payee name from the transaction, if any.
+    pub payee: Option<String>,
+    /// Transaction description.
+    pub description: Option<String>,
+    /// Name of the account the money went out of (the spend journal's
+    /// source account).
+    pub account: Option<String>,
+}
+
+/// Every transaction of one label in a period.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct LabelTransactions {
+    /// Name of the label the list was built for.
+    pub label: String,
+    pub start: String,
+    pub end: String,
+    /// Number of listed transactions.
+    pub count: usize,
+    /// Positive total spend for the listed transactions (Firefly III
+    /// reports spend amounts as negative).
+    pub total: f64,
+    pub currency_symbol: Option<String>,
+    pub currency_code: Option<String>,
+    /// Sorted by date, newest first.
+    pub transactions: Vec<LabelTransaction>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -345,3 +345,91 @@ pub async fn get_label_spend_api(
         Err(e) => HttpResponse::InternalServerError().body(e),
     }
 }
+
+/// GET /api/labels/transactions — every transaction matching one label in a
+/// period (OXI-48): the drill-down behind the label aggregates.
+///
+/// Query params:
+///   label (required: label id),
+///   start, end (default: last 365 days / today),
+///   budgets[] (optional: only spend charged to these budgets),
+///   accounts[] (optional),
+///   include_unbudgeted ("1"/"true" to include spend not charged to a
+///   budget; excluded by default, consistent with the other label reports),
+///   exclude_categories[], exclude_budgets[] (same semantics as the chart
+///   endpoints).
+///
+/// Response: { label, start, end, count, total (positive spend),
+/// currency_symbol, currency_code, transactions: [{ id, date, amount
+/// (signed, negative = spend), category, budget, payee, description,
+/// account }] }, sorted by date newest first.
+#[get("/api/labels/transactions")]
+pub async fn get_label_transactions_api(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    if !labels_enabled() {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Spending Labels is disabled. Enable it under Settings."
+        }));
+    }
+
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
+    let mut label_id: Option<String> = None;
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut budgets: Vec<String> = Vec::new();
+    let mut account_ids: Vec<String> = Vec::new();
+    let mut include_unbudgeted = false;
+
+    for (k, v) in params {
+        match k.as_str() {
+            "label" => label_id = Some(v),
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "budgets[]" | "budgets" => budgets.push(v),
+            "accounts[]" | "accounts" => account_ids.push(v),
+            "include_unbudgeted" => include_unbudgeted = v == "1" || v == "true",
+            _ => {}
+        }
+    }
+
+    let Some(label_id) = label_id else {
+        return HttpResponse::BadRequest().body("label parameter is required");
+    };
+
+    let labels = match crate::storage::Storage::get_all_labels() {
+        Ok(l) => l,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+    if !labels.iter().any(|l| l.id == label_id) {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "message": "Label not found"
+        }));
+    }
+
+    match client
+        .get_label_transactions(
+            labels,
+            &label_id,
+            start,
+            end,
+            budgets,
+            if account_ids.is_empty() {
+                None
+            } else {
+                Some(account_ids)
+            },
+            include_unbudgeted,
+            &exclusions,
+        )
+        .await
+    {
+        Ok(data) => HttpResponse::Ok().json(data),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}

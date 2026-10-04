@@ -39,6 +39,7 @@ pub struct DataCache {
     label_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     label_composition: RwLock<HashMap<String, CacheEntry<String>>>,
     label_unlabeled: RwLock<HashMap<String, CacheEntry<String>>>,
+    label_transactions: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -71,6 +72,7 @@ impl DataCache {
             label_spend: RwLock::new(HashMap::new()),
             label_composition: RwLock::new(HashMap::new()),
             label_unlabeled: RwLock::new(HashMap::new()),
+            label_transactions: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -964,6 +966,89 @@ impl DataCache {
         Self::set_tiered(&self.label_unlabeled, &key, &data, self.current_ttl());
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn label_transactions_key(
+        labels_json: &str,
+        label_id: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unbudgeted: bool,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let budgets = budget_names.join(",");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:label_tx:{}:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            labels_json,
+            label_id,
+            start,
+            end,
+            budgets,
+            accounts,
+            include_unbudgeted,
+            exclusions.cache_key()
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_label_transactions(
+        &self,
+        labels_json: &str,
+        label_id: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unbudgeted: bool,
+    ) -> Option<String> {
+        let key = Self::label_transactions_key(
+            labels_json,
+            label_id,
+            start_date,
+            end_date,
+            budget_names,
+            account_ids,
+            exclusions,
+            include_unbudgeted,
+        );
+        Self::get_tiered(&self.label_transactions, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_label_transactions(
+        &self,
+        labels_json: &str,
+        label_id: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        budget_names: &[String],
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        include_unbudgeted: bool,
+        data: String,
+    ) {
+        let key = Self::label_transactions_key(
+            labels_json,
+            label_id,
+            start_date,
+            end_date,
+            budget_names,
+            account_ids,
+            exclusions,
+            include_unbudgeted,
+        );
+        Self::set_tiered(&self.label_transactions, &key, &data, self.current_ttl());
+    }
+
     pub fn clear_label_spend(&self) {
         Self::clear_tiered(
             &self.label_spend,
@@ -982,6 +1067,13 @@ impl DataCache {
         Self::clear_tiered(
             &self.label_unlabeled,
             Some(&format!("v{}:label_unlabeled:", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_label_transactions(&self) {
+        Self::clear_tiered(
+            &self.label_transactions,
+            Some(&format!("v{}:label_tx:", CACHE_VERSION)),
         );
     }
 
@@ -1004,6 +1096,7 @@ impl DataCache {
         self.clear_label_spend();
         self.clear_label_composition();
         self.clear_label_unlabeled();
+        self.clear_label_transactions();
     }
 
     pub fn clear_accounts(&self) {

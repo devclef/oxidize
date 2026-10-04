@@ -328,3 +328,44 @@ describe('labels page: per-category label editor wiring', () => {
         expect(m[1]).toBe(window.Labels.REVISION);
     });
 });
+
+describe('txQuery (OXI-48)', () => {
+    it('builds label, start and end from the period id', () => {
+        const now = new Date();
+        const q = window.Labels.txQuery('lbl-1', 'this-month', '', false);
+        const p = new URLSearchParams(q);
+        expect(p.get('label')).toBe('lbl-1');
+        expect(p.get('start')).toBe(window.Labels.ymd(now.getFullYear(), now.getMonth() + 1, 1));
+        expect(p.get('end')).toBe(window.Labels.today());
+        expect(p.has('budgets[]')).toBe(false);
+        expect(p.has('include_unbudgeted')).toBe(false);
+    });
+
+    it('adds budgets[] and include_unbudgeted when set', () => {
+        const q = window.Labels.txQuery('lbl 1', 'ytd', 'Food & Drink', true);
+        const p = new URLSearchParams(q);
+        expect(p.get('label')).toBe('lbl 1');
+        expect(p.get('budgets[]')).toBe('Food & Drink');
+        expect(p.get('include_unbudgeted')).toBe('1');
+    });
+
+    it('falls back to this-month for unknown period ids', () => {
+        const q = window.Labels.txQuery('lbl-1', 'bogus', '', false);
+        const p = new URLSearchParams(q);
+        const now = new Date();
+        expect(p.get('start')).toBe(window.Labels.ymd(now.getFullYear(), now.getMonth() + 1, 1));
+        expect(p.get('end')).toBe(window.Labels.today());
+    });
+});
+
+describe('formatTxAmount (OXI-48)', () => {
+    it('shows spend amounts as positive values with the symbol', () => {
+        expect(window.Labels.formatTxAmount(-12.5, '$')).toBe('$12.50');
+        expect(window.Labels.formatTxAmount(-1000, '€')).toBe('€1,000.00');
+    });
+
+    it('renders missing amounts as an em dash and keeps the symbol optional', () => {
+        expect(window.Labels.formatTxAmount(null, '$')).toBe('—');
+        expect(window.Labels.formatTxAmount(-3, '')).toBe('3.00');
+    });
+});
