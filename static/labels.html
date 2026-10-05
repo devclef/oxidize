@@ -344,7 +344,7 @@
                 <label for="tx-unbudgeted"><input type="checkbox" id="tx-unbudgeted"> Include unbudgeted spend</label>
             </div>
             <div id="tx-empty" class="empty-state">
-                <p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account and amount.</p>
+                <p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account, destination and amount.</p>
             </div>
             <div id="tx-content" style="display: none;">
                 <div id="tx-summary" class="comp-summary"></div>
@@ -357,6 +357,7 @@
                                 <th scope="col">Category</th>
                                 <th scope="col">Budget</th>
                                 <th scope="col">Account</th>
+                                <th scope="col">Destination</th>
                                 <th scope="col">Amount</th>
                             </tr>
                         </thead>
@@ -1318,7 +1319,7 @@
             if (!labelId) {
                 $('tx-content').style.display = 'none';
                 empty.style.display = 'block';
-                empty.innerHTML = '<p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account and amount.</p>';
+                empty.innerHTML = '<p>Pick a label to list every matching transaction of the period — date, payee, category, budget, account, destination and amount.</p>';
                 return;
             }
             const label = state.labels.find((l) => l.id === labelId);
@@ -1350,7 +1351,7 @@
                 body.innerHTML = '';
                 (data.transactions || []).forEach((t) => {
                     const tr = document.createElement('tr');
-                    const cells = [t.date, t.payee || t.description || '—', t.category || '—', t.budget || '—', t.account || '—', fmt(t.amount)];
+                    const cells = [t.date, t.payee || t.description || '—', t.category || '—', t.budget || '—', t.account || '—', t.destination || '—', fmt(t.amount)];
                     cells.forEach((text, i) => {
                         const td = document.createElement('td');
                         td.textContent = text;

@@ -3621,20 +3621,24 @@ impl FireflyClient {
 
         for tx in &all_transactions {
             // Transaction-level fields shared by all of its journals.
-            let payee = tx
-                .get("payee")
+            // In the Firefly III v6 API these live under "attributes"
+            // (siblings of the journal array), not on the wrapper
+            // object itself — reading them from the top level always
+            // yields nothing.
+            let attributes = tx.get("attributes");
+            let payee = attributes
+                .and_then(|a| a.get("payee"))
                 .and_then(|p| p.get("name"))
                 .and_then(|n| n.as_str())
                 .filter(|n| !n.trim().is_empty())
                 .map(String::from);
-            let description = tx
-                .get("description")
+            let description = attributes
+                .and_then(|a| a.get("description"))
                 .and_then(|d| d.as_str())
                 .filter(|d| !d.trim().is_empty())
                 .map(String::from);
 
-            let Some(journals) = tx
-                .get("attributes")
+            let Some(journals) = attributes
                 .and_then(|a| a.get("transactions"))
                 .and_then(|t| t.as_array())
             else {
@@ -3700,10 +3704,24 @@ impl FireflyClient {
                     } else {
                         Some(journal_budget.to_string())
                     },
-                    payee: payee.clone(),
+                    // The v6 journal array repeats the payee name on
+                    // each journal entry; use it when the transaction
+                    // wrapper does not carry one.
+                    payee: payee.clone().or_else(|| {
+                        journal
+                            .get("payee_name")
+                            .and_then(|p| p.as_str())
+                            .filter(|p| !p.trim().is_empty())
+                            .map(String::from)
+                    }),
                     description: description.clone(),
                     account: journal
                         .get("source_name")
+                        .and_then(|s| s.as_str())
+                        .filter(|s| !s.trim().is_empty())
+                        .map(String::from),
+                    destination: journal
+                        .get("destination_name")
                         .and_then(|s| s.as_str())
                         .filter(|s| !s.trim().is_empty())
                         .map(String::from),

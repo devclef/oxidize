@@ -362,7 +362,8 @@ pub async fn get_label_spend_api(
 /// Response: { label, start, end, count, total (positive spend),
 /// currency_symbol, currency_code, transactions: [{ id, date, amount
 /// (signed, negative = spend), category, budget, payee, description,
-/// account }] }, sorted by date newest first.
+/// account (source), destination (destination) }] }, sorted by date
+/// newest first.
 #[get("/api/labels/transactions")]
 pub async fn get_label_transactions_api(
     client: web::Data<FireflyClient>,

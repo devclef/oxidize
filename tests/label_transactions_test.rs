@@ -81,8 +81,10 @@ mod tests {
     }
 
     /// A withdrawal journal (a "spent" journal) with the extra fields the
-    /// transaction list needs: source_name on the journal, payee and
-    /// description on the transaction wrapper.
+    /// transaction list needs. Mirrors the real Firefly III v6 API shape:
+    /// payee and description are siblings of the journal array under
+    /// "attributes" (NOT on the wrapper object), and the journal repeats
+    /// the payee name as payee_name.
     #[allow(clippy::too_many_arguments)]
     fn withdrawal_tx(
         id: &str,
@@ -97,15 +99,15 @@ mod tests {
     ) -> serde_json::Value {
         json!({
             "id": id,
-            "date": date,
-            "description": description,
-            "payee": payee.map(|p| json!({ "id": 1, "name": p })),
             "attributes": {
+                "date": date,
+                "description": description,
+                "payee": payee.map(|p| json!({ "id": 1, "name": p })),
                 "transactions": [{
                     "type": "withdrawal",
                     "id": format!("j-{id}"),
                     "amount": format!("{:.2}", amount),
-                    "description": description,
+                    "payee_name": payee,
                     "category_name": category,
                     "budget_name": budget,
                     "source_id": source_id,
@@ -124,15 +126,15 @@ mod tests {
     fn deposit_tx(id: &str, date: &str, amount: f64) -> serde_json::Value {
         json!({
             "id": id,
-            "date": date,
-            "description": "salary",
-            "payee": null,
             "attributes": {
+                "date": date,
+                "description": "salary",
+                "payee": null,
                 "transactions": [{
                     "type": "deposit",
                     "id": format!("j-{id}"),
                     "amount": format!("{:.2}", amount),
-                    "description": "salary",
+                    "payee_name": null,
                     "category_name": null,
                     "budget_name": null,
                     "source_id": "revenue-1",
@@ -679,6 +681,64 @@ mod tests {
         assert_eq!(tx["payee"], "Bar X");
         assert_eq!(tx["description"], "drinks");
         assert_eq!(tx["account"], "Main");
+        assert_eq!(tx["destination"], "Expense");
+        clear_labels();
+    }
+
+    /// Description and payee come from the transaction's "attributes"
+    /// block (the real Firefly III v6 shape) and the destination account
+    /// is reported alongside the source account.
+    #[actix_web::test]
+    async fn tx_fields_come_from_attributes_block() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let config = make_test_config(server.url());
+        let client = web::Data::new(FireflyClient::new(config.clone()));
+        let app = build_app!(config, client);
+
+        clear_labels();
+        create_api_label!(&app, "lbl-tx-9", "wants", &["Dining"]);
+
+        // attributes.payee is null on this one: the payee must fall back
+        // to the journal's payee_name.
+        mock_tx(
+            &mut server,
+            vec![json!({
+                "id": "attr-1",
+                "attributes": {
+                    "date": "2026-10-03",
+                    "description": "attr desc",
+                    "payee": null,
+                    "transactions": [{
+                        "type": "withdrawal",
+                        "id": "j-attr-1",
+                        "amount": "-3.00",
+                        "payee_name": "Tram Stop",
+                        "category_name": "Dining",
+                        "budget_name": "Food",
+                        "source_id": "asset-1",
+                        "source_name": "Main",
+                        "destination_id": "expense-9",
+                        "destination_name": "Food:Transport",
+                        "date": "2026-10-03",
+                        "currency_code": "USD",
+                        "currency_symbol": "$"
+                    }]
+                }
+            })],
+        )
+        .await;
+
+        let data = get_json!(
+            &app,
+            "/api/labels/transactions?label=lbl-tx-9&start=2026-09-01&end=2026-10-31",
+        );
+        assert_eq!(data["count"], 1);
+        let tx = &data["transactions"].as_array().unwrap()[0];
+        assert_eq!(tx["description"], "attr desc");
+        assert_eq!(tx["payee"], "Tram Stop");
+        assert_eq!(tx["account"], "Main");
+        assert_eq!(tx["destination"], "Food:Transport");
         clear_labels();
     }
 

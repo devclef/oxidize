@@ -338,6 +338,10 @@ pub struct LabelTransaction {
     /// Name of the account the money went out of (the spend journal's
     /// source account).
     pub account: Option<String>,
+    /// Name of the account the money went into (the spend journal's
+    /// destination account, e.g. the expense account the spend was
+    /// booked to).
+    pub destination: Option<String>,
 }
 
 /// Every transaction of one label in a period.
