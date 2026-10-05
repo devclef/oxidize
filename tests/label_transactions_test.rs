@@ -81,10 +81,12 @@ mod tests {
     }
 
     /// A withdrawal journal (a "spent" journal) with the extra fields the
-    /// transaction list needs. Mirrors the real Firefly III v6 API shape:
-    /// payee and description are siblings of the journal array under
-    /// "attributes" (NOT on the wrapper object), and the journal repeats
-    /// the payee name as payee_name.
+    /// transaction list needs. Mirrors the real Firefly III v6 list
+    /// response: the wrapper's "attributes" block holds group metadata
+    /// ("group_title") plus the journal array; the transaction description
+    /// is repeated on every journal (the wrapper has no description of
+    /// its own), and the list response carries no payee object — the
+    /// journal's payee_name is the only payee data available.
     #[allow(clippy::too_many_arguments)]
     fn withdrawal_tx(
         id: &str,
@@ -100,13 +102,12 @@ mod tests {
         json!({
             "id": id,
             "attributes": {
-                "date": date,
-                "description": description,
-                "payee": payee.map(|p| json!({ "id": 1, "name": p })),
+                "group_title": null,
                 "transactions": [{
                     "type": "withdrawal",
                     "id": format!("j-{id}"),
                     "amount": format!("{:.2}", amount),
+                    "description": description,
                     "payee_name": payee,
                     "category_name": category,
                     "budget_name": budget,
@@ -127,13 +128,12 @@ mod tests {
         json!({
             "id": id,
             "attributes": {
-                "date": date,
-                "description": "salary",
-                "payee": null,
+                "group_title": null,
                 "transactions": [{
                     "type": "deposit",
                     "id": format!("j-{id}"),
                     "amount": format!("{:.2}", amount),
+                    "description": "salary",
                     "payee_name": null,
                     "category_name": null,
                     "budget_name": null,
@@ -685,11 +685,13 @@ mod tests {
         clear_labels();
     }
 
-    /// Description and payee come from the transaction's "attributes"
-    /// block (the real Firefly III v6 shape) and the destination account
-    /// is reported alongside the source account.
+    /// The description comes from the journal (where the v6 list API
+    /// keeps it), the payee from the journal's payee_name, and the
+    /// destination account is reported alongside the source account.
+    /// When a journal has no description of its own, the group wrapper's
+    /// "attributes" block is used as a fallback.
     #[actix_web::test]
-    async fn tx_fields_come_from_attributes_block() {
+    async fn tx_fields_come_from_journal() {
         let _guard = TEST_LOCK.lock().unwrap();
         let mut server = mockito::Server::new_async().await;
         let config = make_test_config(server.url());
@@ -699,33 +701,57 @@ mod tests {
         clear_labels();
         create_api_label!(&app, "lbl-tx-9", "wants", &["Dining"]);
 
-        // attributes.payee is null on this one: the payee must fall back
-        // to the journal's payee_name.
+        // Real v6 shape: no description on the wrapper, the journal
+        // carries both the description and the payee_name. A second
+        // journal with no description of its own falls back to the
+        // wrapper's "attributes.description".
         mock_tx(
             &mut server,
-            vec![json!({
-                "id": "attr-1",
-                "attributes": {
-                    "date": "2026-10-03",
-                    "description": "attr desc",
-                    "payee": null,
-                    "transactions": [{
-                        "type": "withdrawal",
-                        "id": "j-attr-1",
-                        "amount": "-3.00",
-                        "payee_name": "Tram Stop",
-                        "category_name": "Dining",
-                        "budget_name": "Food",
-                        "source_id": "asset-1",
-                        "source_name": "Main",
-                        "destination_id": "expense-9",
-                        "destination_name": "Food:Transport",
-                        "date": "2026-10-03",
-                        "currency_code": "USD",
-                        "currency_symbol": "$"
-                    }]
-                }
-            })],
+            vec![
+                json!({
+                    "id": "attr-1",
+                    "attributes": {
+                        "group_title": null,
+                        "transactions": [{
+                            "type": "withdrawal",
+                            "id": "j-attr-1",
+                            "amount": "-3.00",
+                            "description": "journal desc",
+                            "payee_name": "Tram Stop",
+                            "category_name": "Dining",
+                            "budget_name": "Food",
+                            "source_id": "asset-1",
+                            "source_name": "Main",
+                            "destination_id": "expense-9",
+                            "destination_name": "Food:Transport",
+                            "date": "2026-10-03",
+                            "currency_code": "USD",
+                            "currency_symbol": "$"
+                        }]
+                    }
+                }),
+                json!({
+                    "id": "attr-2",
+                    "attributes": {
+                        "description": "group desc",
+                        "group_title": null,
+                        "transactions": [{
+                            "type": "withdrawal",
+                            "id": "j-attr-2",
+                            "amount": "-2.00",
+                            "category_name": "Dining",
+                            "budget_name": "Food",
+                            "source_id": "asset-1",
+                            "source_name": "Main",
+                            "destination_id": "expense-9",
+                            "destination_name": "Food:Transport",
+                            "date": "2026-10-04",
+                            "currency_code": "USD",
+                            "currency_symbol": "$"
+                        }]
+                    }
+                }),
+            ],
         )
         .await;
 
@@ -733,12 +759,18 @@ mod tests {
             &app,
             "/api/labels/transactions?label=lbl-tx-9&start=2026-09-01&end=2026-10-31",
         );
-        assert_eq!(data["count"], 1);
-        let tx = &data["transactions"].as_array().unwrap()[0];
-        assert_eq!(tx["description"], "attr desc");
-        assert_eq!(tx["payee"], "Tram Stop");
-        assert_eq!(tx["account"], "Main");
-        assert_eq!(tx["destination"], "Food:Transport");
+        assert_eq!(data["count"], 2);
+        let txs = data["transactions"].as_array().unwrap();
+        // Newest first: the wrapper-fallback journal (2026-10-04).
+        assert_eq!(txs[0]["id"], "j-attr-2");
+        assert_eq!(txs[0]["description"], "group desc");
+        assert!(txs[0]["payee"].is_null());
+        // The journal-level one (2026-10-03).
+        assert_eq!(txs[1]["id"], "j-attr-1");
+        assert_eq!(txs[1]["description"], "journal desc");
+        assert_eq!(txs[1]["payee"], "Tram Stop");
+        assert_eq!(txs[1]["account"], "Main");
+        assert_eq!(txs[1]["destination"], "Food:Transport");
         clear_labels();
     }
 

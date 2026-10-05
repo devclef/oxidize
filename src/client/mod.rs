@@ -3620,19 +3620,21 @@ impl FireflyClient {
         let mut currency_code: Option<String> = None;
 
         for tx in &all_transactions {
-            // Transaction-level fields shared by all of its journals.
-            // In the Firefly III v6 API these live under "attributes"
-            // (siblings of the journal array), not on the wrapper
-            // object itself — reading them from the top level always
-            // yields nothing.
+            // Firefly III v6 list response shape: the wrapper's
+            // "attributes" object holds the journal array plus group
+            // metadata (e.g. "group_title"). The transaction description
+            // is NOT on the wrapper — it is repeated on every journal of
+            // the group, so it is read per journal below. The list
+            // response carries no payee object either. Wrapper-level
+            // values are kept only as defensive fallbacks.
             let attributes = tx.get("attributes");
-            let payee = attributes
+            let group_payee = attributes
                 .and_then(|a| a.get("payee"))
                 .and_then(|p| p.get("name"))
                 .and_then(|n| n.as_str())
                 .filter(|n| !n.trim().is_empty())
                 .map(String::from);
-            let description = attributes
+            let group_description = attributes
                 .and_then(|a| a.get("description"))
                 .and_then(|d| d.as_str())
                 .filter(|d| !d.trim().is_empty())
@@ -3704,17 +3706,18 @@ impl FireflyClient {
                     } else {
                         Some(journal_budget.to_string())
                     },
-                    // The v6 journal array repeats the payee name on
-                    // each journal entry; use it when the transaction
-                    // wrapper does not carry one.
-                    payee: payee.clone().or_else(|| {
-                        journal
-                            .get("payee_name")
-                            .and_then(|p| p.as_str())
-                            .filter(|p| !p.trim().is_empty())
-                            .map(String::from)
-                    }),
-                    description: description.clone(),
+                    payee: journal
+                        .get("payee_name")
+                        .and_then(|p| p.as_str())
+                        .filter(|p| !p.trim().is_empty())
+                        .map(String::from)
+                        .or(group_payee.clone()),
+                    description: journal
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .filter(|d| !d.trim().is_empty())
+                        .map(String::from)
+                        .or(group_description.clone()),
                     account: journal
                         .get("source_name")
                         .and_then(|s| s.as_str())
