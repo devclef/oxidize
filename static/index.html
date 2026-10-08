@@ -135,6 +135,7 @@
                 <option value="category_subcat">Category Subcategories</option>
                 <option value="card_paydown">Card Paydown</option>
                 <option value="saved_this_month">Saved This Month</option>
+                <option value="label_spend">Spending by Label</option>
             </select>
         </div>
 
@@ -241,6 +242,17 @@
                             <label class="mode-label">
                                 <input type="radio" name="earned-chart-type" value="delta_bar">
                                 Delta Bar
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Label spend options (only shown for label_spend widget type) -->
+                    <div class="toggle-group" id="label-spend-options-group" style="display: none;">
+                        <span class="control-caption">Labels</span>
+                        <div class="earned-chart-type-selector">
+                            <label class="mode-label" title="Also chart spend that matches no label as an 'Unlabeled' series (budgeted spend only)">
+                                <input type="checkbox" id="include-unlabeled-checkbox" checked>
+                                Include Unlabeled
                             </label>
                         </div>
                     </div>

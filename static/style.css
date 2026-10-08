@@ -1275,6 +1275,11 @@ button:hover {
     color: white;
 }
 
+.widget-type-badge.label-spend {
+    background: #8b5cf6;
+    color: white;
+}
+
 .empty-dashboard {
     text-align: center;
     padding: var(--space-8) 0;

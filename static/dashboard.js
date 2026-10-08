@@ -952,6 +952,9 @@ async function updateWidgetDateRange(widgetId) {
     const sankeyFlowTypeEl = document.getElementById(`${widgetId}-sankey-flow-type`);
     if (sankeyFlowTypeEl) widget.sankey_flow_type = sankeyFlowTypeEl.value;
 
+    const includeUnlabeledEl = document.getElementById(`${widgetId}-include-unlabeled`);
+    if (includeUnlabeledEl) widget.include_unlabeled = includeUnlabeledEl.checked;
+
     const exclCatsEl = document.getElementById(`${widgetId}-exclude-categories`);
     if (exclCatsEl) {
         widget.exclude_categories = Array.from(exclCatsEl.selectedOptions).map(o => o.value);
@@ -1565,17 +1568,19 @@ function getPiePalette() {
 }
 
 // Render a pie chart for widget data
-function renderPieChartWidget(ctx, widget, labels, data) {
+function renderPieChartWidget(ctx, widget, labels, data, colors = null) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = isDark ? '#d4d4de' : '#333';
 
-    const colors = getPiePalette();
+    const palette = getPiePalette();
 
-    // Sort slices largest-first so the pie chart reads clockwise from biggest to smallest
-    const indexed = labels.map((label, i) => ({ label, value: data[i] }));
+    // Sort slices largest-first so the pie chart reads clockwise from biggest to
+    // smallest (explicit per-slice colors, e.g. label colors, follow their slice)
+    const indexed = labels.map((label, i) => ({ label, value: data[i], color: (colors && colors[i]) || null }));
     indexed.sort((a, b) => b.value - a.value);
     labels = indexed.map(item => item.label);
     data = indexed.map(item => item.value);
+    const sliceColors = indexed.map((item, i) => item.color || palette[i % palette.length]);
 
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
@@ -1587,8 +1592,8 @@ function renderPieChartWidget(ctx, widget, labels, data) {
             labels: labels,
             datasets: [{
                 data: data,
-                backgroundColor: colors.slice(0, labels.length).map(c => c + 'cc'),
-                borderColor: colors.slice(0, labels.length),
+                backgroundColor: sliceColors.slice(0, labels.length).map(c => c + 'cc'),
+                borderColor: sliceColors.slice(0, labels.length),
                 borderWidth: 2
             }]
         },
@@ -2493,6 +2498,68 @@ async function renderSavedTileWidget(widget, canvasId, allGroups = []) {
     }
 }
 
+// ---- Spending by Label (label_spend widget type) -------------------------
+
+/** Color of the implicit "Unlabeled" remainder series (matches the /labels page). */
+const UNLABELED_SERIES_COLOR = '#9ca3af';
+
+/**
+ * Resolve the line color for one label spend dataset: the user-picked label
+ * color when known, the standard gray for "Unlabeled", otherwise null (the
+ * caller falls back to the generated palette).
+ */
+function labelDatasetColor(datasetLabel, colorMap) {
+    if (datasetLabel === 'Unlabeled') return UNLABELED_SERIES_COLOR;
+    if (colorMap && colorMap[datasetLabel]) return colorMap[datasetLabel];
+    return null;
+}
+
+/** {name: color} map from label definitions (labels without a color are omitted). */
+function labelColorMap(labels) {
+    const map = {};
+    (labels || []).forEach(l => {
+        if (l && l.name && l.color) map[l.name] = l.color;
+    });
+    return map;
+}
+
+/** Label definitions (for series colors); null when the API is unavailable. */
+async function fetchLabelDefinitions() {
+    try {
+        const response = await fetch('/api/labels');
+        if (!response.ok) return null;
+        const labels = await response.json();
+        return Array.isArray(labels) ? labels : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Query params for a label_spend widget's /api/labels/spend fetch (pure,
+ * testable). widget.budget_names empty = all budgets; widget.include_unlabeled
+ * absent = include; dashboard + widget exclusions are merged.
+ */
+function buildLabelSpendWidgetParams(widget, effectiveStart, effectiveEnd, allGroups, dashExclusions) {
+    const groupIds = widget.group_ids || [];
+    const groupAccountIds = new Set();
+    groupIds.forEach(gid => {
+        const g = (allGroups || []).find(gg => gg.id === gid);
+        if (g) (g.account_ids || []).forEach(id => groupAccountIds.add(id));
+    });
+    const accountIds = [...new Set([...(widget.accounts || []), ...groupAccountIds])];
+
+    const params = new URLSearchParams();
+    if (effectiveStart) params.append('start', effectiveStart);
+    if (effectiveEnd) params.append('end', effectiveEnd);
+    if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+    (widget.budget_names || []).forEach(name => params.append('budgets[]', name));
+    accountIds.forEach(id => params.append('accounts[]', id));
+    params.append('include_unlabeled', widget.include_unlabeled === false ? '0' : '1');
+    appendExclusionParams(params, mergeExclusions(dashExclusions, widget));
+    return params;
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
@@ -2634,6 +2701,32 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 throw new Error(`Error: ${response.status} ${response.statusText}`);
             }
             history = await response.json();
+        } else if (widgetType === 'label_spend') {
+            // Spending per user-defined label via the Spending Labels API
+            // (standard ChartLine with one dataset per label)
+            const params = buildLabelSpendWidgetParams(
+                widget, effectiveStart, effectiveEnd, allGroups, dashboardExclusions
+            );
+            const url = `/api/labels/spend?${params.toString()}`;
+            const response = await fetch(url);
+            if (response.status === 404) {
+                document.getElementById(`${canvasId}-error`).textContent =
+                    'Spending Labels is disabled. Enable it under Settings.';
+                return;
+            }
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const labelData = await response.json();
+            if (!labelData || labelData.length === 0) {
+                const labelDefs = await fetchLabelDefinitions();
+                const msg = (labelDefs && labelDefs.length === 0)
+                    ? 'No labels defined yet - create some on the Spending Labels page.'
+                    : 'No budgeted spend found for this range. Labels only count spend charged to a budget.';
+                document.getElementById(`${canvasId}-error`).textContent = msg;
+                return;
+            }
+            history = labelData;
         } else {
             // For balance widgets, fetch with all relevant accounts (individual + group members)
             const groupIds = widget.group_ids || [];
@@ -2753,6 +2846,147 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     absoluteData: data,
                     borderColor: colors[i],
                     backgroundColor: colors[i] + '33',
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2,
+                    order: 1
+                });
+                legendInfo.push({ name: ds.label });
+            });
+
+            // Trend line: dotted moving average per series
+            appendWidgetTrendlines(datasets, opts);
+
+            // Stacking (#24): group series for stacked rendering
+            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
+
+            if (widgetCharts[widget.id]) {
+                widgetCharts[widget.id].destroy();
+            }
+
+            widgetCharts[widget.id] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates,
+                    datasets: stackedDatasets
+                },
+                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            itemSort: (a, b) => {
+                                const va = Math.abs(a.parsed.y || 0);
+                                const vb = Math.abs(b.parsed.y || 0);
+                                return vb - va;
+                            },
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: OxiUI.applyStackedScales({
+                        y: {
+                            beginAtZero: opts.beginAtZero,
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: chartGridColor },
+                            ticks: {
+                                color: chartTextColor,
+                                maxRotation: 45,
+                                callback: function(value) {
+                                    const label = this.getLabelForValue(value);
+                                    const date = parseChartLabel(label);
+                                    return date.toLocaleDateString();
+                                }
+                            }
+                        }
+                    }, opts.stacked)
+                }
+            });
+
+            // Render interactive split legend below chart
+            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
+            return;
+        }
+
+        // Handle label_spend widget type
+        if (widgetType === 'label_spend') {
+            const labelDefs = await fetchLabelDefinitions();
+            const colorMap = labelColorMap(labelDefs);
+            const chartType = widget.chart_type || 'line';
+
+            // Pie chart mode: aggregate total spent per label
+            if (chartType === 'pie') {
+                const pieLabels = [];
+                const pieData = [];
+                const pieColors = [];
+                history.forEach(ds => {
+                    let sum = 0;
+                    if (typeof ds.entries === 'object') {
+                        Object.values(ds.entries).forEach(v => {
+                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                        });
+                    }
+                    pieLabels.push(ds.label);
+                    pieData.push(sum);
+                    pieColors.push(labelDatasetColor(ds.label, colorMap));
+                });
+                renderPieChartWidget(ctx, widget, pieLabels, pieData, pieColors);
+                return;
+            }
+
+            const opts = getChartOptions(widget);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const chartTextColor = isDark ? '#d4d4de' : '#333';
+            const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+
+            // Collect all unique dates across all label datasets
+            const dateSet = new Set();
+            history.forEach(ds => {
+                if (ds.entries && typeof ds.entries === 'object') {
+                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
+                }
+            });
+            const allDates = Array.from(dateSet).sort();
+
+            // Build Chart.js datasets - one per label (user colors, gray Unlabeled)
+            const datasets = [];
+            const legendInfo = [];
+            const palette = generateColors(history.length);
+            history.forEach((ds, i) => {
+                const data = allDates.map(date => {
+                    const val = ds.entries?.[date];
+                    if (val === undefined || val === null) return 0;
+                    let num = 0;
+                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
+                        num = parseFloat(val.value);
+                    } else {
+                        num = parseFloat(val);
+                    }
+                    return isNaN(num) ? 0 : Math.abs(num);
+                });
+                const color = labelDatasetColor(ds.label, colorMap) || palette[i];
+                datasets.push({
+                    label: ds.label,
+                    data: data,
+                    absoluteData: data,
+                    borderColor: color,
+                    backgroundColor: color + '33',
                     fill: false,
                     tension: 0.3,
                     pointRadius: 3,
@@ -3701,6 +3935,8 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge net-worth">Net Worth</span>';
         } else if (widgetType === 'saved_this_month') {
             widgetTypeBadge = '<span class="widget-type-badge saved">Saved This Month</span>';
+        } else if (widgetType === 'label_spend') {
+            widgetTypeBadge = '<span class="widget-type-badge label-spend">Spending by Label</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
@@ -3849,11 +4085,14 @@ async function renderDashboard() {
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
                         <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
                         ` : ''}
-                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat'].includes(widgetType) ? `
+                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend'].includes(widgetType) ? `
                         <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
                         ` : ''}
+                        ${widgetType === 'label_spend' ? `
+                        <label class="checkbox-label" title="Also chart budgeted spend that matches no label as an 'Unlabeled' series"><input type="checkbox" id="${widget.id}-include-unlabeled" ${widget.include_unlabeled !== false ? 'checked' : ''}> Include Unlabeled</label>
+                        ` : ''}
                     </div>
-                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey'].includes(widgetType) ? `
+                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend'].includes(widgetType) ? `
                     <div class="widget-settings-section">
                         <strong>Exclusions</strong>
                         <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>

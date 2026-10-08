@@ -198,6 +198,12 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN chart_type TEXT DEFAULT 'line'",
         [],
     );
+    // Migration: Add include_unlabeled column to widgets if it does not
+    // exist (label_spend widgets; NULL = include the Unlabeled series)
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN include_unlabeled INTEGER",
+        [],
+    );
     // Migration: Add exclusion columns to widgets if they do not exist
     let _ = conn.execute(
         "ALTER TABLE widgets ADD COLUMN exclude_categories TEXT NOT NULL DEFAULT '[]'",
@@ -278,7 +284,7 @@ impl Storage {
                 .prepare(
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type, chart_type,
-                            exclude_categories, exclude_budgets
+                            exclude_categories, exclude_budgets, include_unlabeled
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -312,6 +318,7 @@ impl Storage {
                     let chart_type: Option<String> = row.get(24)?;
                     let exclude_categories_json: String = row.get(25)?;
                     let exclude_budgets_json: String = row.get(26)?;
+                    let include_unlabeled: Option<bool> = row.get(27)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -360,6 +367,7 @@ impl Storage {
                         date_range_source,
                         sankey_flow_type,
                         chart_type,
+                        include_unlabeled,
                         created_at,
                         updated_at,
                     })
@@ -425,8 +433,8 @@ impl Storage {
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, chart_type,
-                                      exclude_categories, exclude_budgets, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                                      exclude_categories, exclude_budgets, include_unlabeled, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -452,6 +460,7 @@ impl Storage {
                     &widget.chart_type,
                     &exclude_categories_json,
                     &exclude_budgets_json,
+                    &widget.include_unlabeled,
                     &now,
                     &now
                 ],
@@ -495,8 +504,8 @@ impl Storage {
                     start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
                     widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
                     display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, chart_type = ?22,
-                    exclude_categories = ?23, exclude_budgets = ?24, updated_at = ?25
-                 WHERE id = ?26",
+                    exclude_categories = ?23, exclude_budgets = ?24, include_unlabeled = ?25, updated_at = ?26
+                 WHERE id = ?27",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -522,6 +531,7 @@ impl Storage {
                         &widget.chart_type,
                         &exclude_categories_json,
                         &exclude_budgets_json,
+                        &widget.include_unlabeled,
                         &now,
                         &widget.id
                     ],

@@ -34,7 +34,10 @@ pub struct Widget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earned_chart_type: Option<String>, // "bars", "delta_line", "delta_bar
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub widget_type: Option<String>, // "balance" (default) or "earned_spent"
+    /// "balance" (default), "earned_spent", "budget_spent",
+    /// "expenses_by_category", "category_subcat", "net_worth", "card_paydown",
+    /// "saved_this_month", "sankey" or "label_spend" (per-label spend trend).
+    pub widget_type: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_chart_options_for_widget")]
@@ -60,6 +63,11 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chart_type: Option<String>,
+    /// Label spend widgets: include the "Unlabeled" remainder series.
+    /// `None` (widgets saved before this field existed) means include it.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_unlabeled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,6 +289,41 @@ mod tests {
         let out = serde_json::to_value(&widget).unwrap();
         assert_eq!(out["exclude_categories"].as_array().unwrap().len(), 0);
         assert_eq!(out["exclude_budgets"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn widget_legacy_json_defaults_include_unlabeled() {
+        // Widgets saved before include_unlabeled existed must still
+        // deserialize with the field absent (rendered as "include").
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": [],
+            "widget_type": "label_spend"
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.include_unlabeled, None);
+
+        // And it is skipped on serialization, so the saved JSON shape is
+        // unchanged for widgets that never set it.
+        let out = serde_json::to_value(&widget).unwrap();
+        assert!(out.get("include_unlabeled").is_none());
+    }
+
+    #[test]
+    fn widget_label_spend_include_unlabeled_round_trips() {
+        let json = r#"{
+            "id": "w2",
+            "name": "Labels",
+            "accounts": [],
+            "widget_type": "label_spend",
+            "include_unlabeled": false
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.include_unlabeled, Some(false));
+
+        let out = serde_json::to_value(&widget).unwrap();
+        assert_eq!(out["include_unlabeled"].as_bool(), Some(false));
     }
 
     #[test]

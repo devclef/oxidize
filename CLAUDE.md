@@ -129,6 +129,17 @@ Both run the same transaction pipeline as the category spend charts
 cache in the in-memory TTL cache keyed on the label definitions. Optional
 feature: `labels_enabled` setting (default on; toggle under /settings).
 
+Labels are also available as a dashboard widget type (`label_spend`,
+"Spending by Label", see `plans/label-spend-widget.md`): created in the
+Widget Builder, rendered on dashboards as a multi-series chart from the
+existing `GET /api/labels/spend` endpoint (one series per label plus an
+optional "Unlabeled" series, colored with each label's user-picked color
+via `GET /api/labels`). The widget reuses `budget_names` (empty = all
+budgets), `interval`, `chart_type` (line/pie), exclusions and stacking,
+and stores an optional `include_unlabeled` flag (absent = include). When
+the feature is disabled (404) or no labels exist, widgets show a friendly
+message instead of a chart.
+
 ### Source Code Layout
 
 ```
@@ -332,7 +343,7 @@ CREATE TABLE widgets (
     end_date TEXT,
     interval TEXT,
     chart_mode TEXT,
-    widget_type TEXT,                -- "balance" or "earned_spent"
+    widget_type TEXT,                -- widget type (balance, earned_spent, ..., label_spend)
     chart_options TEXT,              -- JSON object (ChartOptions)
     display_order INTEGER NOT NULL DEFAULT 0,
     width INTEGER NOT NULL DEFAULT 12,
@@ -373,7 +384,8 @@ CREATE TABLE groups (
 #### Models (`src/models/`)
 
 **`Widget`** — configurable dashboard chart widget:
-- `widget_type`: `"balance"` (default) or `"earned_spent"`
+- `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"` or `"label_spend"`
+- `include_unlabeled`: optional bool for `label_spend` widgets (absent = include the "Unlabeled" series)
 - `exclude_categories` / `exclude_budgets`: optional name arrays that exclude categories/budgets entirely from the widget's data (merged with dashboard-level exclusions)
 - `chart_options`: optional `ChartOptions` struct with display settings (show_points, fill_area, tension, x/y axis limits, begin_at_zero, show_pct, pct_mode)
 - Has a custom deserializer (`deserialize_chart_options_for_widget`) that strips null fields before deserializing, so partial updates work correctly
