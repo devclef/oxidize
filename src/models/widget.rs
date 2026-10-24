@@ -36,7 +36,8 @@ pub struct Widget {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// "balance" (default), "earned_spent", "budget_spent",
     /// "expenses_by_category", "category_subcat", "net_worth", "card_paydown",
-    /// "saved_this_month", "sankey" or "label_spend" (per-label spend trend).
+    /// "saved_this_month", "sankey", "label_spend" (per-label spend
+    /// trend) or "subscription_cost" (per-subscription cost over time).
     pub widget_type: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -68,6 +69,15 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_unlabeled: Option<bool>,
+    /// Subscription cost widgets: Firefly III subscription (bill) IDs
+    /// selected for the widget. Empty (with no groups) means "all
+    /// subscriptions".
+    #[serde(default)]
+    pub subscription_ids: Vec<String>,
+    /// Subscription cost widgets: object-group IDs whose subscriptions are
+    /// included in the widget.
+    #[serde(default)]
+    pub subscription_group_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -289,6 +299,54 @@ mod tests {
         let out = serde_json::to_value(&widget).unwrap();
         assert_eq!(out["exclude_categories"].as_array().unwrap().len(), 0);
         assert_eq!(out["exclude_budgets"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn widget_legacy_json_defaults_subscription_fields() {
+        // Widgets saved before the subscription fields existed must still
+        // deserialize, picking up empty selection lists.
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": []
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert!(widget.subscription_ids.is_empty());
+        assert!(widget.subscription_group_ids.is_empty());
+    }
+
+    #[test]
+    fn widget_subscription_fields_round_trip() {
+        let json = r#"{
+            "id": "w2",
+            "name": "Subs",
+            "accounts": [],
+            "widget_type": "subscription_cost",
+            "subscription_ids": ["11", "12"],
+            "subscription_group_ids": ["3"]
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            widget.subscription_ids,
+            vec!["11".to_string(), "12".to_string()]
+        );
+        assert_eq!(widget.subscription_group_ids, vec!["3".to_string()]);
+
+        let out = serde_json::to_value(&widget).unwrap();
+        let ids: Vec<&str> = out["subscription_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["11", "12"]);
+        let groups: Vec<&str> = out["subscription_group_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(groups, vec!["3"]);
     }
 
     #[test]

@@ -955,6 +955,15 @@ async function updateWidgetDateRange(widgetId) {
     const includeUnlabeledEl = document.getElementById(`${widgetId}-include-unlabeled`);
     if (includeUnlabeledEl) widget.include_unlabeled = includeUnlabeledEl.checked;
 
+    const subsEl = document.getElementById(`${widgetId}-subscriptions`);
+    if (subsEl) {
+        widget.subscription_ids = Array.from(subsEl.selectedOptions).map(o => o.value);
+    }
+    const subGroupsEl = document.getElementById(`${widgetId}-subscription-groups`);
+    if (subGroupsEl) {
+        widget.subscription_group_ids = Array.from(subGroupsEl.selectedOptions).map(o => o.value);
+    }
+
     const exclCatsEl = document.getElementById(`${widgetId}-exclude-categories`);
     if (exclCatsEl) {
         widget.exclude_categories = Array.from(exclCatsEl.selectedOptions).map(o => o.value);
@@ -2560,6 +2569,57 @@ function buildLabelSpendWidgetParams(widget, effectiveStart, effectiveEnd, allGr
     return params;
 }
 
+/**
+ * Query params for a subscription_cost widget's /api/subscriptions/spend
+ * fetch (pure, testable). widget.subscription_ids /
+ * widget.subscription_group_ids empty = all subscriptions; dashboard +
+ * widget exclusions are merged.
+ */
+function buildSubscriptionWidgetParams(widget, effectiveStart, effectiveEnd, allGroups, dashExclusions) {
+    const groupIds = widget.group_ids || [];
+    const groupAccountIds = new Set();
+    groupIds.forEach(gid => {
+        const g = (allGroups || []).find(gg => gg.id === gid);
+        if (g) (g.account_ids || []).forEach(id => groupAccountIds.add(id));
+    });
+    const accountIds = [...new Set([...(widget.accounts || []), ...groupAccountIds])];
+
+    const params = new URLSearchParams();
+    if (effectiveStart) params.append('start', effectiveStart);
+    if (effectiveEnd) params.append('end', effectiveEnd);
+    if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+    (widget.subscription_ids || []).forEach(id => params.append('subscriptions[]', id));
+    (widget.subscription_group_ids || []).forEach(id => params.append('groups[]', id));
+    accountIds.forEach(id => params.append('accounts[]', id));
+    appendExclusionParams(params, mergeExclusions(dashExclusions, widget));
+    return params;
+}
+
+let subscriptionOptionsPromise = null;
+
+/**
+ * Picker data for subscription_cost widget settings (fetched once per
+ * page load; the backend caches both lists).
+ */
+function getSubscriptionOptions() {
+    if (!subscriptionOptionsPromise) {
+        subscriptionOptionsPromise = Promise.all([
+            fetch('/api/subscriptions').then(r => (r.ok ? r.json() : [])),
+            fetch('/api/subscriptions/groups').then(r => (r.ok ? r.json() : []))
+        ])
+            .then(([subscriptions, groups]) => ({
+                subscriptions: Array.isArray(subscriptions) ? subscriptions : [],
+                groups: Array.isArray(groups) ? groups : []
+            }))
+            .catch(e => {
+                console.error('Failed to load subscription options:', e);
+                subscriptionOptionsPromise = null; // allow retry on next open
+                return { subscriptions: [], groups: [] };
+            });
+    }
+    return subscriptionOptionsPromise;
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
@@ -2727,6 +2787,35 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 return;
             }
             history = labelData;
+        } else if (widgetType === 'subscription_cost') {
+            // Cost over time per subscription (standard ChartLine with one
+            // dataset per subscription)
+            const params = buildSubscriptionWidgetParams(
+                widget, effectiveStart, effectiveEnd, allGroups, dashboardExclusions
+            );
+            const url = `/api/subscriptions/spend?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const subData = await response.json();
+            if (!subData || subData.length === 0) {
+                let hasAnySubscriptions = false;
+                try {
+                    const listResp = await fetch('/api/subscriptions');
+                    if (listResp.ok) {
+                        const list = await listResp.json();
+                        hasAnySubscriptions = Array.isArray(list) && list.length > 0;
+                    }
+                } catch (e) {
+                    // keep the generic message
+                }
+                document.getElementById(`${canvasId}-error`).textContent = hasAnySubscriptions
+                    ? 'No subscription spend found for this range.'
+                    : 'No subscriptions found in Firefly III.';
+                return;
+            }
+            history = subData;
         } else {
             // For balance widgets, fetch with all relevant accounts (individual + group members)
             const groupIds = widget.group_ids || [];
@@ -3065,10 +3154,13 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             return;
         }
 
-        // Handle expenses_by_category widget type
-        if (widgetType === 'expenses_by_category') {
+        // Handle expenses_by_category / subscription_cost widget types
+        // (both are one-line-per-series multi-dataset charts)
+        if (widgetType === 'expenses_by_category' || widgetType === 'subscription_cost') {
             if (!history || history.length === 0) {
-                document.getElementById(`${canvasId}-error`).textContent = 'No category expense data available';
+                document.getElementById(`${canvasId}-error`).textContent = widgetType === 'subscription_cost'
+                    ? 'No subscription cost data available'
+                    : 'No category expense data available';
                 return;
             }
 
@@ -3868,6 +3960,13 @@ async function renderDashboard() {
     const allGroups = await fetchDashboardGroups();
     const exclusionOptions = await getExclusionOptions();
 
+    // Subscription picker data, only when this dashboard has a
+    // subscription_cost widget (both lists are backend-cached)
+    const hasSubscriptionWidget = widgets.some(w => (w.widget_type || 'balance') === 'subscription_cost');
+    const subscriptionOptions = hasSubscriptionWidget
+        ? await getSubscriptionOptions()
+        : { subscriptions: [], groups: [] };
+
     // Normalize chart_options on all widgets (handles old widgets without pct fields)
     widgets.forEach(widget => {
         if (widget.chart_options) {
@@ -3937,6 +4036,8 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge saved">Saved This Month</span>';
         } else if (widgetType === 'label_spend') {
             widgetTypeBadge = '<span class="widget-type-badge label-spend">Spending by Label</span>';
+        } else if (widgetType === 'subscription_cost') {
+            widgetTypeBadge = '<span class="widget-type-badge subscription-cost">Subscription Cost</span>';
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
@@ -4085,14 +4186,14 @@ async function renderDashboard() {
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
                         <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
                         ` : ''}
-                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend'].includes(widgetType) ? `
+                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'].includes(widgetType) ? `
                         <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
                         ` : ''}
                         ${widgetType === 'label_spend' ? `
                         <label class="checkbox-label" title="Also chart budgeted spend that matches no label as an 'Unlabeled' series"><input type="checkbox" id="${widget.id}-include-unlabeled" ${widget.include_unlabeled !== false ? 'checked' : ''}> Include Unlabeled</label>
                         ` : ''}
                     </div>
-                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend'].includes(widgetType) ? `
+                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost'].includes(widgetType) ? `
                     <div class="widget-settings-section">
                         <strong>Exclusions</strong>
                         <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>
@@ -4104,6 +4205,22 @@ async function renderDashboard() {
                         <label>Exclude budgets:
                             <select multiple size="5" id="${widget.id}-exclude-budgets" class="exclusion-select">
                                 ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${(widget.exclude_budgets || []).includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </label>
+                    </div>
+                    ` : ''}
+                    ${widgetType === 'subscription_cost' ? `
+                    <div class="widget-settings-section">
+                        <strong>Subscriptions</strong>
+                        <div class="exclusions-hint">Empty selection charts every subscription. Groups include all of their subscriptions.</div>
+                        <label>Subscriptions:
+                            <select multiple size="5" id="${widget.id}-subscriptions" class="exclusion-select">
+                                ${subscriptionOptions.subscriptions.map(sub => `<option value="${escapeHtml(sub.id)}" ${(widget.subscription_ids || []).includes(sub.id) ? 'selected' : ''}>${escapeHtml(sub.name)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label>Subscription groups:
+                            <select multiple size="4" id="${widget.id}-subscription-groups" class="exclusion-select">
+                                ${subscriptionOptions.groups.map(g => `<option value="${escapeHtml(g.id)}" ${(widget.subscription_group_ids || []).includes(g.id) ? 'selected' : ''}>${escapeHtml(g.name)} (${g.bill_count})</option>`).join('')}
                             </select>
                         </label>
                     </div>

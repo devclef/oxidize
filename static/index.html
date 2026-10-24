@@ -122,6 +122,26 @@
         <div id="budgets-list"></div>
     </section>
 
+    <section id="subscriptions-section" class="section-card subscriptions-section" style="display: none;">
+        <div class="section-header">
+            <h3 class="section-title">Subscriptions<span id="subscription-count" class="account-count-badge"></span></h3>
+            <div class="section-actions">
+                <button id="select-all-subscriptions-btn" class="ghost-btn">Select all</button>
+                <button id="deselect-all-subscriptions-btn" class="ghost-btn">Deselect all</button>
+            </div>
+        </div>
+        <p class="modal-hint">Pick individual subscriptions or whole groups. Leave everything unselected to chart every subscription.</p>
+        <!-- Subscription search input -->
+        <div class="account-search">
+            <input type="text" id="subscription-search-input" placeholder="Search subscriptions..." autocomplete="off">
+        </div>
+        <div id="subscriptions-list"></div>
+        <div class="section-header" style="margin-top: 1rem;">
+            <h3 class="section-title">Subscription Groups</h3>
+        </div>
+        <div id="subscription-groups-list"></div>
+    </section>
+
     <div class="chart-header">
         <div class="dashboard-header">
             <h2 id="chart-title">Account Balance History</h2>
@@ -136,6 +156,7 @@
                 <option value="card_paydown">Card Paydown</option>
                 <option value="saved_this_month">Saved This Month</option>
                 <option value="label_spend">Spending by Label</option>
+                <option value="subscription_cost">Subscription Cost</option>
             </select>
         </div>
 

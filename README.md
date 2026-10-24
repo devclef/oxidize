@@ -15,6 +15,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
 - **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels, track per-label spending over time, and drill down into the individual transactions behind any label; also available as a "Spending by Label" dashboard widget (one line or pie slice per label, with an optional "Unlabeled" series)
+- **Subscription Cost** - pick certain subscriptions (Firefly III "bills") or groups of subscriptions (object groups containing bills) as a dashboard widget and chart their cost over time (one line or pie slice per subscription; no selection charts every subscription)
 - **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -143,6 +144,14 @@ dropped from the aggregation entirely.
 |--------|----------|-------------|
 | GET | `/api/categories/list` | List all categories |
 | GET | `/api/categories/subcategory-spend` | Spending by subcategory (supports exclusions) |
+
+### Subscriptions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/subscriptions` | List all Firefly III subscriptions (bills) |
+| GET | `/api/subscriptions/groups` | Object groups containing subscriptions (with their bill ids) |
+| GET | `/api/subscriptions/spend` | Cost over time per subscription (`start`, `end`, `period`, repeatable `subscriptions[]`, `groups[]`, `accounts[]`; empty selection = all; supports exclusions) |
 
 ### Dashboards
 

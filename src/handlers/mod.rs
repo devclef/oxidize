@@ -1,6 +1,7 @@
 pub mod account;
 pub mod avg_cost;
 pub mod settings;
+pub mod subscription;
 
 use crate::models::Exclusions;
 

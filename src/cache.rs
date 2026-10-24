@@ -40,6 +40,9 @@ pub struct DataCache {
     label_composition: RwLock<HashMap<String, CacheEntry<String>>>,
     label_unlabeled: RwLock<HashMap<String, CacheEntry<String>>>,
     label_transactions: RwLock<HashMap<String, CacheEntry<String>>>,
+    subscription_list: RwLock<HashMap<String, CacheEntry<String>>>,
+    subscription_groups: RwLock<HashMap<String, CacheEntry<String>>>,
+    subscription_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -73,6 +76,9 @@ impl DataCache {
             label_composition: RwLock::new(HashMap::new()),
             label_unlabeled: RwLock::new(HashMap::new()),
             label_transactions: RwLock::new(HashMap::new()),
+            subscription_list: RwLock::new(HashMap::new()),
+            subscription_groups: RwLock::new(HashMap::new()),
+            subscription_spend: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -739,6 +745,115 @@ impl DataCache {
         Self::set_tiered(&self.categories, &key, &data, self.current_ttl());
     }
 
+    // ── Subscriptions ────────────────────────────────────────────────
+
+    fn subscription_list_key() -> String {
+        format!("v{}:subscriptions", CACHE_VERSION)
+    }
+
+    pub fn get_subscription_list(&self) -> Option<String> {
+        let key = Self::subscription_list_key();
+        Self::get_tiered(&self.subscription_list, &key)
+    }
+
+    pub fn set_subscription_list(&self, data: String) {
+        let key = Self::subscription_list_key();
+        Self::set_tiered(&self.subscription_list, &key, &data, self.current_ttl());
+    }
+
+    fn subscription_groups_key() -> String {
+        format!("v{}:subscription_groups", CACHE_VERSION)
+    }
+
+    pub fn get_subscription_groups(&self) -> Option<String> {
+        let key = Self::subscription_groups_key();
+        Self::get_tiered(&self.subscription_groups, &key)
+    }
+
+    pub fn set_subscription_groups(&self, data: String) {
+        let key = Self::subscription_groups_key();
+        Self::set_tiered(&self.subscription_groups, &key, &data, self.current_ttl());
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn subscription_spend_key(
+        subscription_ids: &[String],
+        group_ids: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let period = period.unwrap_or("default");
+        let subs = subscription_ids.join(",");
+        let groups = group_ids.join(",");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:subscription_spend:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            subs,
+            groups,
+            start,
+            end,
+            period,
+            accounts,
+            exclusions.cache_key()
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_subscription_spend(
+        &self,
+        subscription_ids: &[String],
+        group_ids: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::subscription_spend_key(
+            subscription_ids,
+            group_ids,
+            start_date,
+            end_date,
+            period,
+            account_ids,
+            exclusions,
+        );
+        Self::get_tiered(&self.subscription_spend, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_subscription_spend(
+        &self,
+        subscription_ids: &[String],
+        group_ids: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::subscription_spend_key(
+            subscription_ids,
+            group_ids,
+            start_date,
+            end_date,
+            period,
+            account_ids,
+            exclusions,
+        );
+        Self::set_tiered(&self.subscription_spend, &key, &data, self.current_ttl());
+    }
+
     // ── Clear operations ─────────────────────────────────────────────
 
     // ── Label reports ────────────────────────────────────────────────
@@ -1097,6 +1212,9 @@ impl DataCache {
         self.clear_label_composition();
         self.clear_label_unlabeled();
         self.clear_label_transactions();
+        self.clear_subscription_list();
+        self.clear_subscription_groups();
+        self.clear_subscription_spend();
     }
 
     pub fn clear_accounts(&self) {
@@ -1177,6 +1295,27 @@ impl DataCache {
         Self::clear_tiered(
             &self.categories,
             Some(&format!("v{}:categories", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_subscription_list(&self) {
+        Self::clear_tiered(
+            &self.subscription_list,
+            Some(&format!("v{}:subscriptions", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_subscription_groups(&self) {
+        Self::clear_tiered(
+            &self.subscription_groups,
+            Some(&format!("v{}:subscription_groups", CACHE_VERSION)),
+        );
+    }
+
+    pub fn clear_subscription_spend(&self) {
+        Self::clear_tiered(
+            &self.subscription_spend,
+            Some(&format!("v{}:subscription_spend:", CACHE_VERSION)),
         );
     }
 

@@ -137,10 +137,10 @@ describe('dashboard.js wiring', () => {
 
     it('makes exclusions and stacking available for label_spend widgets', () => {
         expect(dashboardSource).toMatch(
-            /\['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend'\]/
+            /\['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'\]/
         );
         expect(dashboardSource).toMatch(
-            /\['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend'\]/
+            /\['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost'\]/
         );
     });
 });

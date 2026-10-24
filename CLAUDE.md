@@ -140,6 +140,34 @@ and stores an optional `include_unlabeled` flag (absent = include). When
 the feature is disabled (404) or no labels exist, widgets show a friendly
 message instead of a chart.
 
+### Subscription Cost Widgets
+
+Firefly III calls subscriptions **"bills"** in the v1 API
+(`GET /v1/bills`; transaction journals carry the link as
+`bill_id`/`subscription_id` + `bill_name`/`subscription_name`).
+Dashboard widget type `subscription_cost` ("Subscription Cost", see
+`plans/subscription-cost-widget.md`) lets the user pick certain
+subscriptions, or groups of subscriptions (Firefly III object groups that
+contain bills — `/v1/object-groups/{id}/bills`), and chart their cost over
+time:
+
+- `GET /api/subscriptions` — all subscriptions (picker list; TTL-cached).
+- `GET /api/subscriptions/groups` — object groups with ≥1 subscription
+  (bill ids for selection expansion + names for display; TTL-cached).
+- `GET /api/subscriptions/spend?start&end&period&subscriptions[]&groups[]
+  &accounts[]&exclude_categories[]&exclude_budgets[]` — standard
+  `ChartLine`, one dataset per subscription sorted by total desc, built
+  from the shared transaction pipeline (`fetch_all_transactions` +
+  `is_journal_spent` + exclusion filtering). Empty subscription + group
+  selections mean **all subscriptions**.
+
+The widget stores `subscription_ids` and `subscription_group_ids`
+(empty + empty = all), reuses `accounts`/`group_ids` (optional account
+filter), `interval`, `chart_type` (line/pie), exclusions and stacking.
+Widget settings on the dashboard page expose subscription/group
+multi-selects. Without subscriptions (or spend in the range) widgets show
+a friendly message instead of a chart.
+
 ### Source Code Layout
 
 ```
@@ -161,6 +189,7 @@ src/
 │   ├── index.rs             # GET / (serves index.html with injected config), /api/manifest, favicon
 │   ├── label.rs             # GET /labels page + /api/labels CRUD + /api/labels/budget-composition + /api/labels/spend
 │   ├── reimbursement.rs   # GET /reimbursements page + GET /api/reimbursements/summary + refresh
+│   ├── subscription.rs      # /api/subscriptions, /api/subscriptions/groups, /api/subscriptions/spend (Subscription Cost widget)
 │   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
 │   ├── summary.rs           # GET /summary page + GET /api/summary/month
 │   ├── group.rs             # CRUD for account groups
@@ -177,6 +206,7 @@ src/
 │   ├── label.rs     # Label (user-defined category lens) + classify() + budget composition types
 │   ├── reimbursement.rs # ReimbursementSummary types + work-expense/reimbursement matching + month buckets
 │   ├── sankey.rs    # SankeyNode, SankeyLink, SankeyFlowData, SankeyFlowType
+│   ├── subscription.rs # Subscription, SubscriptionGroup (Firefly III bills + object groups)
 │   ├── summary.rs   # MonthSummary response types + pure month/budget helpers
 │   └── widget.rs    # Widget, ChartOptions (with custom null-safe deserializer)
 └── storage/
@@ -331,7 +361,7 @@ SQLite persistence for dashboards, widgets, and groups:
 -- widgets table (group_ids, budget_ids, budget_names, parent_categories,
 -- subcategories, exclude_categories, exclude_budgets, earned_chart_type,
 -- category_graph_mode, dashboard_ids, date_range_source, sankey_flow_type,
--- chart_type added via migrations)
+-- chart_type, subscription_ids, subscription_group_ids added via migrations)
 CREATE TABLE widgets (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -343,7 +373,7 @@ CREATE TABLE widgets (
     end_date TEXT,
     interval TEXT,
     chart_mode TEXT,
-    widget_type TEXT,                -- widget type (balance, earned_spent, ..., label_spend)
+    widget_type TEXT,                -- widget type (balance, earned_spent, ..., label_spend, subscription_cost)
     chart_options TEXT,              -- JSON object (ChartOptions)
     display_order INTEGER NOT NULL DEFAULT 0,
     width INTEGER NOT NULL DEFAULT 12,
@@ -384,8 +414,9 @@ CREATE TABLE groups (
 #### Models (`src/models/`)
 
 **`Widget`** — configurable dashboard chart widget:
-- `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"` or `"label_spend"`
+- `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"`, `"label_spend"` or `"subscription_cost"`
 - `include_unlabeled`: optional bool for `label_spend` widgets (absent = include the "Unlabeled" series)
+- `subscription_ids` / `subscription_group_ids`: id arrays for `subscription_cost` widgets (Firefly III bill ids + object-group ids; both empty = all subscriptions)
 - `exclude_categories` / `exclude_budgets`: optional name arrays that exclude categories/budgets entirely from the widget's data (merged with dashboard-level exclusions)
 - `chart_options`: optional `ChartOptions` struct with display settings (show_points, fill_area, tension, x/y axis limits, begin_at_zero, show_pct, pct_mode)
 - Has a custom deserializer (`deserialize_chart_options_for_widget`) that strips null fields before deserializing, so partial updates work correctly

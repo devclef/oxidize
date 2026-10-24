@@ -1280,6 +1280,11 @@ button:hover {
     color: white;
 }
 
+.widget-type-badge.subscription-cost {
+    background: #ec4899;
+    color: white;
+}
+
 .empty-dashboard {
     text-align: center;
     padding: var(--space-8) 0;

@@ -10,10 +10,11 @@ use crate::models::summary::{
     MonthTotals, MonthTrend,
 };
 use crate::models::{
-    AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
+    parse_amount, AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
     BudgetComparison, BudgetComparisonProjections, BudgetListResponse, BudgetPeriodLimit,
     CategoryListResponse, CategoryRead, ChartDataSet, ChartLine, Exclusions, MonthStats,
     ParentCategory, SankeyFlowData, SankeyFlowType, SankeyLink, SavedThisMonth, SimpleAccount,
+    Subscription, SubscriptionGroup,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use log::{debug, error, info};
@@ -313,6 +314,14 @@ impl FireflyClient {
     pub fn clear_categories_cache(&self) {
         self.cache.clear_categories();
         info!("Categories cache cleared");
+    }
+
+    /// Clear the subscription (list / groups / spend) caches.
+    pub fn clear_subscription_cache(&self) {
+        self.cache.clear_subscription_list();
+        self.cache.clear_subscription_groups();
+        self.cache.clear_subscription_spend();
+        info!("Subscription cache cleared");
     }
 
     /// Analyze credit card paydown activity for the given card accounts.
@@ -3160,6 +3169,495 @@ impl FireflyClient {
         }
 
         Ok(result)
+    }
+
+    /// Fetch all subscriptions ("bills" in the Firefly III v1 API) with
+    /// pagination, sorted by name. Cached in the TTL cache.
+    pub async fn get_subscriptions(&self) -> Result<Vec<Subscription>, String> {
+        if let Some(cached_json) = self.cache.get_subscription_list() {
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached subscriptions: {}", e));
+        }
+
+        let url = format!("{}/v1/bills", self.base_url());
+        const PAGE_SIZE: usize = 100;
+        // Safety cap: 1000 pages x 100 = 100k subscriptions, far beyond any
+        // realistic user.
+        const MAX_PAGES: usize = 1000;
+
+        let mut subs: Vec<Subscription> = Vec::new();
+        let mut exhausted = false;
+        for page in 1..=MAX_PAGES {
+            let response = self
+                .client
+                .get(&url)
+                .headers(self.get_headers())
+                .query(&[
+                    ("limit".to_string(), PAGE_SIZE.to_string()),
+                    ("page".to_string(), page.to_string()),
+                ])
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("API request failed with status: {}. Body: {}", status, body);
+                return Err(format!(
+                    "Failed to fetch subscriptions: API request failed with status {}",
+                    status
+                ));
+            }
+
+            let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+            let data = json
+                .get("data")
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if data.len() < PAGE_SIZE {
+                exhausted = true;
+            }
+            for item in &data {
+                if let Some(sub) = Self::parse_subscription(item) {
+                    subs.push(sub);
+                }
+            }
+            if exhausted {
+                break;
+            }
+        }
+        if !exhausted {
+            return Err(format!(
+                "Failed to fetch all subscriptions: still receiving full pages after {} requests",
+                MAX_PAGES
+            ));
+        }
+
+        subs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        if let Ok(json) = serde_json::to_string(&subs) {
+            self.cache.set_subscription_list(json);
+        }
+
+        Ok(subs)
+    }
+
+    /// Parse one Firefly III bill (`type: "bills"`) item into a
+    /// `Subscription`. Items without an id are skipped.
+    fn parse_subscription(item: &serde_json::Value) -> Option<Subscription> {
+        let id = item
+            .get("id")
+            .and_then(|i| i.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if id.is_empty() {
+            return None;
+        }
+        let a = item.get("attributes");
+        let str_field = |key: &str| -> Option<String> {
+            a.and_then(|a| a.get(key))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+        };
+        Some(Subscription {
+            id,
+            name: str_field("name").unwrap_or_else(|| "Unknown subscription".to_string()),
+            currency_code: str_field("currency_code"),
+            currency_symbol: str_field("currency_symbol"),
+            amount_min: a
+                .and_then(|a| a.get("amount_min"))
+                .and_then(|v| v.as_str())
+                .and_then(parse_amount),
+            amount_max: a
+                .and_then(|a| a.get("amount_max"))
+                .and_then(|v| v.as_str())
+                .and_then(parse_amount),
+            amount_avg: a
+                .and_then(|a| a.get("amount_avg"))
+                .and_then(|v| v.as_str())
+                .and_then(parse_amount),
+            next_expected_match: str_field("next_expected_match"),
+            active: a
+                .and_then(|a| a.get("active"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        })
+    }
+
+    /// Fetch object groups that contain at least one subscription ("bill"),
+    /// with each group's bill ids (for selection expansion) and names
+    /// (display, first 20). Cached in the TTL cache.
+    pub async fn get_subscription_groups(&self) -> Result<Vec<SubscriptionGroup>, String> {
+        if let Some(cached_json) = self.cache.get_subscription_groups() {
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached subscription groups: {}", e));
+        }
+
+        let base = self.base_url();
+        let url = format!("{base}/v1/object-groups");
+        const PAGE_SIZE: usize = 100;
+        const MAX_PAGES: usize = 1000;
+
+        // 1. Every object group (id + title)
+        let mut group_ids: Vec<(String, String)> = Vec::new();
+        let mut exhausted = false;
+        for page in 1..=MAX_PAGES {
+            let response = self
+                .client
+                .get(&url)
+                .headers(self.get_headers())
+                .query(&[
+                    ("limit".to_string(), PAGE_SIZE.to_string()),
+                    ("page".to_string(), page.to_string()),
+                ])
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!("API request failed with status: {}. Body: {}", status, body);
+                return Err(format!(
+                    "Failed to fetch subscription groups: API request failed with status {}",
+                    status
+                ));
+            }
+            let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+            let data = json
+                .get("data")
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if data.len() < PAGE_SIZE {
+                exhausted = true;
+            }
+            for item in &data {
+                let id = item
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                if id.is_empty() {
+                    continue;
+                }
+                let title = item
+                    .get("attributes")
+                    .and_then(|a| a.get("title"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Unnamed group")
+                    .to_string();
+                group_ids.push((id, title));
+            }
+            if exhausted {
+                break;
+            }
+        }
+        if !exhausted {
+            return Err(format!(
+                "Failed to fetch all object groups: still receiving full pages after {} requests",
+                MAX_PAGES
+            ));
+        }
+
+        // 2. Bills per group (groups without bills are not subscription
+        //    groups and are dropped)
+        let mut result: Vec<SubscriptionGroup> = Vec::new();
+        for (gid, title) in group_ids {
+            let bills_url = format!("{base}/v1/object-groups/{gid}/bills");
+            let mut bill_ids: Vec<String> = Vec::new();
+            let mut bill_names: Vec<String> = Vec::new();
+            let mut bills_exhausted = false;
+            for page in 1..=MAX_PAGES {
+                let response = self
+                    .client
+                    .get(&bills_url)
+                    .headers(self.get_headers())
+                    .query(&[
+                        ("limit".to_string(), PAGE_SIZE.to_string()),
+                        ("page".to_string(), page.to_string()),
+                    ])
+                    .send()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    error!(
+                        "Failed to fetch bills for group {gid} with status: {}. Body: {}",
+                        status, body
+                    );
+                    return Err(format!(
+                        "Failed to fetch bills for subscription group {gid}: API status {status}"
+                    ));
+                }
+                let json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+                let data = json
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if data.len() < PAGE_SIZE {
+                    bills_exhausted = true;
+                }
+                for item in &data {
+                    let id = item
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let name = item
+                        .get("attributes")
+                        .and_then(|a| a.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !id.is_empty() {
+                        bill_ids.push(id);
+                    }
+                    if !name.is_empty() {
+                        bill_names.push(name);
+                    }
+                }
+                if bills_exhausted {
+                    break;
+                }
+            }
+            if !bills_exhausted {
+                return Err(format!(
+                    "Failed to fetch all bills for subscription group {gid}: still receiving full pages"
+                ));
+            }
+            if bill_ids.is_empty() {
+                continue;
+            }
+            result.push(SubscriptionGroup {
+                id: gid,
+                name: title,
+                bill_count: bill_ids.len(),
+                bill_ids,
+                bills: bill_names.into_iter().take(20).collect(),
+            });
+        }
+
+        result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            self.cache.set_subscription_groups(json);
+        }
+
+        Ok(result)
+    }
+
+    /// Cost over time for the selected subscriptions (bill ids), the bills
+    /// of the selected object groups, or — when both selections are empty —
+    /// every subscription. Journals are filtered to "spent" entries
+    /// (withdrawals + outbound transfers) and bucketed per period, matching
+    /// the other spend charts.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_subscription_spend_chart(
+        &self,
+        subscription_ids: Vec<String>,
+        group_ids: Vec<String>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<ChartLine, String> {
+        use crate::models::chart::ChartDataSet;
+
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
+
+        // Stable (sorted, deduped) copies for the cache key
+        let mut key_subs = subscription_ids.clone();
+        key_subs.sort();
+        key_subs.dedup();
+        let mut key_groups = group_ids.clone();
+        key_groups.sort();
+        key_groups.dedup();
+
+        if let Some(cached_json) = self.cache.get_subscription_spend(
+            &key_subs,
+            &key_groups,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            period.as_deref(),
+            account_ids.as_deref(),
+            exclusions,
+        ) {
+            debug!("Cache hit for subscription spend");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached subscription spend: {}", e));
+        }
+
+        // Expand object groups into bill ids (+ names for the name-based
+        // fallback match)
+        let mut selected_ids: std::collections::HashSet<String> =
+            subscription_ids.iter().cloned().collect();
+        let mut selected_names: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        if !group_ids.is_empty() {
+            let groups = self.get_subscription_groups().await?;
+            for g in groups.iter().filter(|g| group_ids.contains(&g.id)) {
+                for bid in &g.bill_ids {
+                    selected_ids.insert(bid.clone());
+                }
+                for name in &g.bills {
+                    selected_names.insert(name.clone());
+                }
+            }
+        }
+        let has_selection = !selected_ids.is_empty() || !selected_names.is_empty();
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        // Selected account set for the transfer filter (empty = no filter)
+        let account_set: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+
+        // key -> (label, period -> signed amount)
+        let mut per_subscription: std::collections::BTreeMap<
+            String,
+            (String, std::collections::HashMap<String, f64>),
+        > = std::collections::BTreeMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for tx in &all_transactions {
+            let journals = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array());
+            let Some(journals) = journals else { continue };
+            for journal in journals {
+                if !is_journal_spent(journal, &account_set) {
+                    continue;
+                }
+                let sub_id = journal
+                    .get("bill_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        journal
+                            .get("subscription_id")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                    })
+                    .unwrap_or("");
+                let sub_name = journal
+                    .get("bill_name")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        journal
+                            .get("subscription_name")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                    })
+                    .unwrap_or("");
+                if sub_id.is_empty() && sub_name.is_empty() {
+                    continue;
+                }
+                if has_selection {
+                    let id_match = !sub_id.is_empty() && selected_ids.contains(sub_id);
+                    let name_match = !sub_name.is_empty() && selected_names.contains(sub_name);
+                    if !id_match && !name_match {
+                        continue;
+                    }
+                }
+                if journal_is_excluded(exclusions, journal) {
+                    continue;
+                }
+                let key = if !sub_id.is_empty() {
+                    format!("id:{sub_id}")
+                } else {
+                    format!("name:{sub_name}")
+                };
+                let label = if !sub_name.is_empty() {
+                    sub_name.to_string()
+                } else {
+                    format!("Subscription {sub_id}")
+                };
+                let Some(amount) = journal
+                    .get("amount")
+                    .and_then(|a| a.as_str())
+                    .and_then(|a| a.parse::<f64>().ok())
+                else {
+                    continue;
+                };
+                let Some(date) = journal.get("date").and_then(|d| d.as_str()) else {
+                    continue;
+                };
+                let period_key = Self::get_period_key(date, &period_val, Some(&end));
+
+                let entry = per_subscription
+                    .entry(key)
+                    .or_insert_with(|| (label, std::collections::HashMap::new()));
+                *entry.1.entry(period_key).or_insert(0.0) += amount;
+
+                if currency_symbol.is_none() {
+                    currency_symbol = journal
+                        .get("currency_symbol")
+                        .and_then(|s| s.as_str())
+                        .map(String::from);
+                    currency_code = journal
+                        .get("currency_code")
+                        .and_then(|c| c.as_str())
+                        .map(String::from);
+                }
+            }
+        }
+
+        let mut chart: Vec<ChartDataSet> = per_subscription
+            .into_values()
+            .map(|(label, entries)| ChartDataSet {
+                label,
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(entries).unwrap(),
+            })
+            .collect();
+
+        // Sort by total spend descending. Spend is stored signed (negative
+        // for withdrawals), so compare by absolute total: the most
+        // expensive subscription first.
+        chart.sort_by(|a, b| {
+            let sum_a = Self::sum_entries(&a.entries).abs();
+            let sum_b = Self::sum_entries(&b.entries).abs();
+            sum_b
+                .partial_cmp(&sum_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_subscription_spend(
+                &key_subs,
+                &key_groups,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                period.as_deref(),
+                account_ids.as_deref(),
+                exclusions,
+                json,
+            );
+        }
+
+        Ok(chart)
     }
 
     /// Get subcategory spend chart data for selected parent categories.

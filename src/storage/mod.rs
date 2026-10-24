@@ -213,6 +213,16 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN exclude_budgets TEXT NOT NULL DEFAULT '[]'",
         [],
     );
+    // Migration: Add subscription selection columns to widgets (the
+    // subscription_cost widget type) if they do not exist
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN subscription_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE widgets ADD COLUMN subscription_group_ids TEXT NOT NULL DEFAULT '[]'",
+        [],
+    );
     // Migration: Add exclusion columns to dashboards if they do not exist
     let _ = conn.execute(
         "ALTER TABLE dashboards ADD COLUMN exclude_categories TEXT NOT NULL DEFAULT '[]'",
@@ -284,7 +294,7 @@ impl Storage {
                 .prepare(
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type, chart_type,
-                            exclude_categories, exclude_budgets, include_unlabeled
+                            exclude_categories, exclude_budgets, include_unlabeled, subscription_ids, subscription_group_ids
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -319,6 +329,8 @@ impl Storage {
                     let exclude_categories_json: String = row.get(25)?;
                     let exclude_budgets_json: String = row.get(26)?;
                     let include_unlabeled: Option<bool> = row.get(27)?;
+                    let subscription_ids_json: String = row.get(28)?;
+                    let subscription_group_ids_json: String = row.get(29)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -338,6 +350,10 @@ impl Storage {
                         serde_json::from_str(&exclude_budgets_json).unwrap_or_default();
                     let dashboard_ids: Vec<String> =
                         serde_json::from_str(&dashboard_ids_json).unwrap_or_default();
+                    let subscription_ids: Vec<String> =
+                        serde_json::from_str(&subscription_ids_json).unwrap_or_default();
+                    let subscription_group_ids: Vec<String> =
+                        serde_json::from_str(&subscription_group_ids_json).unwrap_or_default();
                     let chart_options =
                         deserialize_chart_options(chart_options_json.as_deref()).unwrap_or(None);
 
@@ -365,6 +381,8 @@ impl Storage {
                         chart_height,
                         dashboard_ids,
                         date_range_source,
+                        subscription_ids,
+                        subscription_group_ids,
                         sankey_flow_type,
                         chart_type,
                         include_unlabeled,
@@ -412,6 +430,10 @@ impl Storage {
             serde_json::to_string(&widget.exclude_categories).map_err(|e| e.to_string())?;
         let exclude_budgets_json =
             serde_json::to_string(&widget.exclude_budgets).map_err(|e| e.to_string())?;
+        let subscription_ids_json =
+            serde_json::to_string(&widget.subscription_ids).map_err(|e| e.to_string())?;
+        let subscription_group_ids_json =
+            serde_json::to_string(&widget.subscription_group_ids).map_err(|e| e.to_string())?;
         with_db(|conn| {
             // If the widget has no dashboard_ids, auto-assign it to the default dashboard
             let dashboard_ids_json = if widget.dashboard_ids.is_empty() {
@@ -433,8 +455,9 @@ impl Storage {
             conn.execute(
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, chart_type,
-                                      exclude_categories, exclude_budgets, include_unlabeled, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                                      exclude_categories, exclude_budgets, include_unlabeled, subscription_ids, subscription_group_ids,
+                                      created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -461,6 +484,8 @@ impl Storage {
                     &exclude_categories_json,
                     &exclude_budgets_json,
                     &widget.include_unlabeled,
+                    &subscription_ids_json,
+                    &subscription_group_ids_json,
                     &now,
                     &now
                 ],
@@ -495,6 +520,10 @@ impl Storage {
             serde_json::to_string(&widget.exclude_budgets).map_err(|e| e.to_string())?;
         let dashboard_ids_json =
             serde_json::to_string(&widget.dashboard_ids).map_err(|e| e.to_string())?;
+        let subscription_ids_json =
+            serde_json::to_string(&widget.subscription_ids).map_err(|e| e.to_string())?;
+        let subscription_group_ids_json =
+            serde_json::to_string(&widget.subscription_group_ids).map_err(|e| e.to_string())?;
 
         with_db(|conn| {
             let rows = conn
@@ -504,8 +533,9 @@ impl Storage {
                     start_date = ?9, end_date = ?10, interval = ?11, chart_mode = ?12,
                     widget_type = ?13, chart_options = ?14, earned_chart_type = ?15,
                     display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, chart_type = ?22,
-                    exclude_categories = ?23, exclude_budgets = ?24, include_unlabeled = ?25, updated_at = ?26
-                 WHERE id = ?27",
+                    exclude_categories = ?23, exclude_budgets = ?24, include_unlabeled = ?25,
+                    subscription_ids = ?26, subscription_group_ids = ?27, updated_at = ?28
+                 WHERE id = ?29",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -532,6 +562,8 @@ impl Storage {
                         &exclude_categories_json,
                         &exclude_budgets_json,
                         &widget.include_unlabeled,
+                        &subscription_ids_json,
+                        &subscription_group_ids_json,
                         &now,
                         &widget.id
                     ],

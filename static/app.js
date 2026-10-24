@@ -236,7 +236,7 @@ function escapeHtmlAttr(str) {
 // Widget types whose data supports category/budget exclusions — the same set
 // the dashboard widget settings offers them for (sankey only exists as a
 // dashboard widget type).
-const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend'];
+const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'];
 
 function currentWidgetType() {
     const sel = document.getElementById('widget-type-select');
@@ -644,6 +644,59 @@ async function fetchChartData() {
 
             chartContainer.style.display = 'block';
             renderChart(labelData, widgetType, null, colorMap);
+            return;
+        }
+
+        // For subscription_cost widget type - cost over time per subscription
+        if (widgetType === 'subscription_cost') {
+            const selectedSubscriptionIds =
+                Array.from(document.querySelectorAll('.subscription-select:checked')).map(cb => cb.value);
+            const selectedGroupIds =
+                Array.from(document.querySelectorAll('.subscription-group-select:checked')).map(cb => cb.value);
+
+            const params = buildSubscriptionSpendParams({
+                startDate,
+                endDate,
+                interval,
+                subscriptionIds: selectedSubscriptionIds,
+                groupIds: selectedGroupIds,
+                accountIds: selectedIds,
+                excludedCategories: getExcludedCategories(),
+                excludedBudgets: getExcludedBudgets()
+            });
+
+            const url = `/api/subscriptions/spend?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const subData = await response.json();
+
+            if (!subData || subData.length === 0) {
+                let hasAnySubscriptions = false;
+                try {
+                    const listResp = await fetch('/api/subscriptions');
+                    if (listResp.ok) {
+                        const list = await listResp.json();
+                        hasAnySubscriptions = Array.isArray(list) && list.length > 0;
+                    }
+                } catch (e) {
+                    // keep the generic message
+                }
+                const msg = hasAnySubscriptions
+                    ? 'No subscription spend found for the current date range.'
+                    : 'No subscriptions found in Firefly III.';
+                chartErrorEl.innerHTML = `<div class="info">${msg}</div>`;
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            chartContainer.style.display = 'block';
+            renderChart(subData, widgetType, null, null);
             return;
         }
 
@@ -1120,7 +1173,7 @@ function getStackingEnabled() {
 }
 
 // #24: widget types that have multi-series line charts a stacked toggle can affect
-const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend'];
+const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'];
 
 // Show/hide the Stacked pill based on the selected widget type and line/pie style.
 function updateStackedToggleVisibility() {
@@ -1732,6 +1785,152 @@ function renderLabelSpendChart(ctx, datasets, colorMap) {
             }, stackingEnabled)
         }
     });
+}
+
+// ---- Subscription Cost (subscription_cost widget type) -------------------
+
+let allSubscriptions = [];
+let allSubscriptionGroups = [];
+let subscriptionSearchFilter = '';
+
+/**
+ * Query params for GET /api/subscriptions/spend (pure, testable).
+ * Empty subscriptionIds/groupIds mean "no filter" (all subscriptions);
+ * interval "auto" is omitted.
+ */
+function buildSubscriptionSpendParams({ startDate, endDate, interval,
+    subscriptionIds, groupIds, accountIds, excludedCategories, excludedBudgets }) {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start', startDate);
+    if (endDate) params.append('end', endDate);
+    if (interval && interval !== 'auto') params.append('period', interval);
+    (subscriptionIds || []).forEach(id => params.append('subscriptions[]', id));
+    (groupIds || []).forEach(id => params.append('groups[]', id));
+    (accountIds || []).forEach(id => params.append('accounts[]', id));
+    (excludedCategories || []).forEach(c => params.append('exclude_categories[]', c));
+    (excludedBudgets || []).forEach(b => params.append('exclude_budgets[]', b));
+    return params;
+}
+
+async function fetchSubscriptions() {
+    try {
+        const response = await fetch('/api/subscriptions');
+        if (!response.ok) {
+            console.warn('Failed to load subscriptions:', response.status);
+            renderSubscriptions();
+            return;
+        }
+        allSubscriptions = await response.json();
+        renderSubscriptions();
+    } catch (e) {
+        console.warn('Failed to load subscriptions:', e);
+        renderSubscriptions();
+    }
+}
+
+async function fetchSubscriptionGroups() {
+    try {
+        const response = await fetch('/api/subscriptions/groups');
+        if (!response.ok) {
+            console.warn('Failed to load subscription groups:', response.status);
+            return;
+        }
+        allSubscriptionGroups = await response.json();
+        renderSubscriptionGroups();
+    } catch (e) {
+        console.warn('Failed to load subscription groups:', e);
+    }
+}
+
+function renderSubscriptions() {
+    const container = document.getElementById('subscriptions-list');
+    if (!container) return;
+
+    let filtered = allSubscriptions;
+    if (subscriptionSearchFilter) {
+        const search = subscriptionSearchFilter.toLowerCase();
+        filtered = allSubscriptions.filter(sub => (sub.name || '').toLowerCase().includes(search));
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="loading">' +
+            (allSubscriptions.length === 0
+                ? 'No subscriptions found in Firefly III.'
+                : 'No subscriptions match your search.') + '</div>';
+        updateSubscriptionBadge();
+        return;
+    }
+
+    let html = '<div class="account-list">';
+    filtered.forEach(sub => {
+        let nextDue = '';
+        if (sub.next_expected_match) {
+            const d = new Date(sub.next_expected_match);
+            if (!isNaN(d.getTime())) nextDue = d.toLocaleDateString();
+        }
+        html += `
+            <div class="account-card" data-subscription-id="${sub.id}">
+                <input type="checkbox" class="subscription-select" value="${sub.id}" data-name="${escapeHtmlAttr(sub.name)}">
+                <div class="account-info">
+                    <span class="account-name">${escapeHtmlAttr(sub.name)}</span>
+                    ${sub.currency_code ? `<span class="account-type-tag">${escapeHtmlAttr(sub.currency_code)}</span>` : ''}
+                    ${nextDue ? `<span class="account-type-tag" title="Next expected payment">Due ${escapeHtmlAttr(nextDue)}</span>` : ''}
+                    ${sub.active ? '<span class="account-type-tag active">Active</span>' : '<span class="account-type-tag inactive">Inactive</span>'}
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    updateSubscriptionBadge();
+}
+
+function renderSubscriptionGroups() {
+    const container = document.getElementById('subscription-groups-list');
+    if (!container) return;
+    if (allSubscriptionGroups.length === 0) {
+        container.innerHTML = '<div class="loading">No subscription groups found in Firefly III.</div>';
+        return;
+    }
+    let html = '<div class="account-list">';
+    allSubscriptionGroups.forEach(g => {
+        const memberHint = g.bills && g.bills.length > 0
+            ? g.bills.join(', ') + (g.bill_count > g.bills.length ? ' …' : '')
+            : '';
+        html += `
+            <div class="account-card" data-subscription-group-id="${g.id}">
+                <input type="checkbox" class="subscription-group-select" value="${g.id}" data-name="${escapeHtmlAttr(g.name)}">
+                <div class="account-info">
+                    <span class="account-name">${escapeHtmlAttr(g.name)}</span>
+                    <span class="account-count-badge">${g.bill_count} subscription${g.bill_count === 1 ? '' : 's'}</span>
+                    ${memberHint ? `<span class="account-type-tag">${escapeHtmlAttr(memberHint)}</span>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    updateSubscriptionBadge();
+}
+
+function updateSubscriptionBadge() {
+    const badge = document.getElementById('subscription-count');
+    if (!badge) return;
+    const sel = document.querySelectorAll('.subscription-select:checked').length +
+        document.querySelectorAll('.subscription-group-select:checked').length;
+    badge.textContent = sel > 0 ? `${sel} selected` : '';
+}
+
+function selectAllSubscriptions() {
+    document.querySelectorAll('.subscription-select, .subscription-group-select').forEach(cb => cb.checked = true);
+    updateSubscriptionBadge();
+    fetchChartData();
+}
+
+function deselectAllSubscriptions() {
+    document.querySelectorAll('.subscription-select, .subscription-group-select').forEach(cb => cb.checked = false);
+    updateSubscriptionBadge();
+    fetchChartData();
 }
 
 function renderExpensesByCategoryChart(ctx, datasets) {
@@ -2451,6 +2650,29 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null, la
             renderPieChart(ctx, pieLabels, pieData, pieColors);
         } else {
             renderLabelSpendChart(ctx, history, labelColors);
+        }
+        return;
+    }
+
+    // For subscription_cost widget type: one series per subscription
+    if (widgetType === 'subscription_cost') {
+        const chartType = getChartType();
+        if (chartType === 'pie') {
+            // Aggregate total cost per subscription across all dates
+            const totals = history.map(ds => {
+                let sum = 0;
+                if (typeof ds.entries === 'object') {
+                    Object.values(ds.entries).forEach(v => {
+                        sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                    });
+                }
+                return sum;
+            });
+            renderPieChart(ctx, history.map(ds => ds.label), totals);
+        } else {
+            // Same multi-series construction as the category chart (palette
+            // colors, trend lines, stacking)
+            renderExpensesByCategoryChart(ctx, history);
         }
         return;
     }
@@ -3669,6 +3891,12 @@ async function saveGraphAsWidget() {
         subcategories: selectedSubcatFullNames,
         category_graph_mode: (widgetType === 'category_subcat' || widgetType === 'expenses_by_category') ? categoryGraphMode : null,
         include_unlabeled: widgetType === 'label_spend' ? (document.getElementById('include-unlabeled-checkbox')?.checked ?? true) : null,
+        subscription_ids: widgetType === 'subscription_cost'
+            ? Array.from(document.querySelectorAll('.subscription-select:checked')).map(cb => cb.value)
+            : [],
+        subscription_group_ids: widgetType === 'subscription_cost'
+            ? Array.from(document.querySelectorAll('.subscription-group-select:checked')).map(cb => cb.value)
+            : [],
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -4183,6 +4411,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deselectAllBudgetsBtn) {
         deselectAllBudgetsBtn.addEventListener('click', deselectAllBudgets);
     }
+    // Subscription search input
+    const subscriptionSearchInput = document.getElementById('subscription-search-input');
+    let subscriptionSearchTimeout = null;
+    subscriptionSearchInput?.addEventListener('input', (e) => {
+        clearTimeout(subscriptionSearchTimeout);
+        subscriptionSearchTimeout = setTimeout(() => {
+            subscriptionSearchFilter = e.target.value.trim();
+            renderSubscriptions();
+        }, 300);
+    });
+    // Subscription checkbox changes keep the badge in sync
+    const subscriptionsListEl = document.getElementById('subscriptions-section');
+    subscriptionsListEl?.addEventListener('change', (e) => {
+        if (e.target.matches('.subscription-select, .subscription-group-select')) {
+            updateSubscriptionBadge();
+        }
+    });
+    // Subscription select/deselect buttons
+    const selectAllSubsBtn = document.getElementById('select-all-subscriptions-btn');
+    const deselectAllSubsBtn = document.getElementById('deselect-all-subscriptions-btn');
+    if (selectAllSubsBtn) {
+        selectAllSubsBtn.addEventListener('click', selectAllSubscriptions);
+    }
+    if (deselectAllSubsBtn) {
+        deselectAllSubsBtn.addEventListener('click', deselectAllSubscriptions);
+    }
     // Category button listeners
     const selectAllCategoriesBtn = document.getElementById('select-all-categories-btn');
     const deselectAllCategoriesBtn = document.getElementById('deselect-all-categories-btn');
@@ -4656,6 +4910,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'card_paydown': 'Card Paydown',
                     'saved_this_month': 'Saved This Month',
                     'label_spend': 'Spending by Label',
+                    'subscription_cost': 'Subscription Cost Over Time',
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -4734,6 +4989,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         selectAllBudgets();
                         return;
                     }
+                }
+            }
+            // Toggle subscriptions section visibility (subscription_cost:
+            // pick subscriptions and/or subscription groups; no selection
+            // means "all subscriptions")
+            const subscriptionsSection = document.getElementById('subscriptions-section');
+            if (subscriptionsSection) {
+                subscriptionsSection.style.display = widgetType === 'subscription_cost' ? 'block' : 'none';
+                if (widgetType === 'subscription_cost' && allSubscriptions.length === 0) {
+                    await fetchSubscriptions();
+                    await fetchSubscriptionGroups();
                 }
             }
             // Toggle categories section visibility
