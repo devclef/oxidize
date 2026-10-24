@@ -1,5 +1,5 @@
 # Use a multi-stage build for a smaller final image
-FROM rust:1.88-slim-bookworm AS builder
+FROM rust:1.94-slim-bookworm AS builder
 
 # Set the working directory
 WORKDIR /app
@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/li
 # Create a dummy project to cache dependencies
 RUN cargo new --bin oxidize
 WORKDIR /app/oxidize
-COPY Cargo.toml .
-RUN cargo build --release
+COPY Cargo.toml Cargo.lock .
+RUN cargo build --release --locked
 RUN rm src/*.rs
 
 # Copy the actual source code
