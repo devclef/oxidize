@@ -3235,7 +3235,7 @@ impl FireflyClient {
             ));
         }
 
-        subs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        subs.sort_by_key(|a| a.name.to_lowercase());
 
         if let Ok(json) = serde_json::to_string(&subs) {
             self.cache.set_subscription_list(json);
@@ -3442,7 +3442,7 @@ impl FireflyClient {
             });
         }
 
-        result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        result.sort_by_key(|a| a.name.to_lowercase());
 
         if let Ok(json) = serde_json::to_string(&result) {
             self.cache.set_subscription_groups(json);
