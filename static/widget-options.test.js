@@ -49,7 +49,7 @@ beforeAll(() => {
 ;window.__oxiDash = {
     buildWidgetSettingsHtml, readWidgetSettings, updateWidgetSettingsVisibility,
     wireWidgetSettingsVisibility, renderMultiSeriesWidget, renderWidgetChart,
-    showWidgetMessage, updateWidgetDateRange, renderBalanceComparisonChart, matchingTimeRangePreset,
+    showWidgetMessage, updateWidgetDateRange, renderBalanceComparisonChart, renderCardPaydownWidget, matchingTimeRangePreset,
     normalizeChartOptions, getChartOptions, computePercentChange,
     get widgetCharts() { return widgetCharts; },
     get widgetDatasetVisibility() { return widgetDatasetVisibility; },
@@ -535,6 +535,38 @@ describe('dashboard multi-series widgets honor every display option', () => {
         expect(chart.data.labels).toEqual(['Groceries', 'Fun']);
         expect(chart.data.datasets[0].data).toEqual([40, 12]);
         expect(String(chart.data.datasets[0].backgroundColor[1]).toLowerCase()).toContain('123456');
+    });
+});
+
+describe('dashboard card paydown widget', () => {
+    it('renders balance + activity charts and the summary (no canvasEl ReferenceError)', async () => {
+        document.body.innerHTML = `
+            <div class="widget-chart" style="height: 400px;">
+                <div id="cp-error"></div><canvas id="cp"></canvas>
+            </div>`;
+        const raf = window.requestAnimationFrame;
+        window.requestAnimationFrame = (cb) => { cb(); return 0; };
+        global.fetch = vi.fn(async () => ({
+            ok: true,
+            json: async () => ({
+                monthly_activity: [
+                    { month: '2026-08', balance: 900, payments: 300, spending: 200, net_paydown: 100 },
+                    { month: '2026-09', balance: 700, payments: 400, spending: 200, net_paydown: 200 }
+                ],
+                summary: { avg_monthly_paydown: 150, current_balance: 700 }
+            })
+        }));
+        try {
+            await dash.renderCardPaydownWidget({ id: 'cp', accounts: ['1'], group_ids: [] }, 'cp', [], '2026-08-01', '2026-09-30');
+        } finally {
+            window.requestAnimationFrame = raf;
+        }
+        expect(document.getElementById('cp-error').textContent).toBe('');
+        expect(dash.widgetCharts.cp.data.datasets[0].data).toEqual([900, 700]);
+        expect(dash.widgetCharts['cp-activity']).toBeTruthy();
+        expect(document.getElementById('cp-activity')).not.toBeNull();
+        expect(document.getElementById('cp-summary')).not.toBeNull();
+        expect(document.getElementById('cp').style.height).toBe('180px');
     });
 });
 

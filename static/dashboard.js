@@ -1936,6 +1936,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
     const netPaydown = activity.map(a => a.net_paydown || 0);
 
     // Determine chart layout: two stacked canvases (balance on top, activity below)
+    const canvasEl = document.getElementById(canvasId);
     const container = canvasEl.parentElement;
     const chartHeight = parseInt(container.style.height) || 300;
 
