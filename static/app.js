@@ -1262,6 +1262,7 @@ function updateStackedToggleVisibility() {
 // ChartOptions defaults so preview and saved widgets render identically.
 const DISPLAY_DEFAULTS = {
     showPoints: false,
+    showGrid: true,
     fillArea: true,
     beginAtZero: false,
     xAxisLimit: 6,
@@ -1271,6 +1272,7 @@ const DISPLAY_DEFAULTS = {
 
 function getDisplayOptions() {
     const showPointsEl = document.getElementById('show-points-toggle');
+    const showGridEl = document.getElementById('show-grid-toggle');
     const fillAreaEl = document.getElementById('fill-area-toggle');
     const beginZeroEl = document.getElementById('begin-zero-toggle');
     const xLimitEl = document.getElementById('x-axis-limit');
@@ -1284,6 +1286,7 @@ function getDisplayOptions() {
     if (!isFinite(tension) || tension < 0 || tension > 1) tension = DISPLAY_DEFAULTS.tension;
     return {
         showPoints: !!(showPointsEl && showPointsEl.checked),
+        showGrid: showGridEl ? showGridEl.checked : DISPLAY_DEFAULTS.showGrid,
         fillArea: fillAreaEl ? fillAreaEl.checked : DISPLAY_DEFAULTS.fillArea,
         beginAtZero: !!(beginZeroEl && beginZeroEl.checked),
         xAxisLimit: xLimit,
@@ -4003,6 +4006,7 @@ async function saveGraphAsWidget() {
         pct_mode: pctModeSelect ? pctModeSelect.value : 'from_previous',
         stacked: getStackingEnabled(),
         show_points: displayOpts.showPoints,
+        show_grid: displayOpts.showGrid,
         fill_area: displayOpts.fillArea,
         begin_at_zero: displayOpts.beginAtZero,
         x_axis_limit: displayOpts.xAxisLimit,
@@ -5313,6 +5317,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Display options (shared with the dashboard widget settings)
     const SHOW_POINTS_KEY = 'oxidize_show_points';
+    const SHOW_GRID_KEY = 'oxidize_show_grid';
     const FILL_AREA_KEY = 'oxidize_fill_area';
     const BEGIN_ZERO_KEY = 'oxidize_begin_at_zero';
     const X_LIMIT_KEY = 'oxidize_x_axis_limit';
@@ -5330,6 +5335,18 @@ document.addEventListener('DOMContentLoaded', () => {
         showPointsEl.checked = localStorage.getItem(SHOW_POINTS_KEY) === 'true';
         showPointsEl.addEventListener('change', () => {
             localStorage.setItem(SHOW_POINTS_KEY, showPointsEl.checked);
+            rerenderCurrentChart();
+        });
+    }
+    const showGridEl = document.getElementById('show-grid-toggle');
+    const chartWrapperEl = document.getElementById('chart-wrapper');
+    if (showGridEl) {
+        const savedGrid = localStorage.getItem(SHOW_GRID_KEY);
+        showGridEl.checked = savedGrid === null ? true : savedGrid === 'true';
+        if (chartWrapperEl) chartWrapperEl.dataset.grid = showGridEl.checked ? 'on' : 'off';
+        showGridEl.addEventListener('change', () => {
+            localStorage.setItem(SHOW_GRID_KEY, showGridEl.checked);
+            if (chartWrapperEl) chartWrapperEl.dataset.grid = showGridEl.checked ? 'on' : 'off';
             rerenderCurrentChart();
         });
     }

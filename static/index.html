@@ -366,6 +366,10 @@
                         Show Points
                     </label>
                     <label class="checkbox-label">
+                        <input type="checkbox" id="show-grid-toggle" checked>
+                        Show Grid Lines
+                    </label>
+                    <label class="checkbox-label">
                         <input type="checkbox" id="fill-area-toggle" checked>
                         Fill Area
                     </label>
@@ -422,7 +426,7 @@
         </div>
 
         <div id="chart-error"></div>
-        <div class="chart-wrapper">
+        <div class="chart-wrapper" id="chart-wrapper" data-grid="on">
             <canvas id="balanceChart"></canvas>
         </div>
         <div id="tile-preview" class="tile-preview" style="display: none;"></div>

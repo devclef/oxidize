@@ -8,8 +8,7 @@
  *  - OxiUI.formatCurrency(v, opts)   consistent amount formatting (no currency symbol)
  *  - OxiUI.getChartColors()          theme-aware chart colors
  *  - OxiUI.getSeriesPalette()        ordered categorical series colors
- *  - OxiUI.isChartGridEnabled()      chart grid lines preference (default on)
- *  - OxiUI.setChartGridEnabled(on)   save it and update live charts
+ *  - OxiUI.chartGridPlugin           hides grid lines inside [data-grid="off"]
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
  *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
  *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
@@ -303,66 +302,36 @@
         }
     };
 
-    // Chart grid lines are a per-browser preference (Settings page);
-    // when off, every chart's grid color resolves to transparent.
-    const CHART_GRID_KEY = 'oxidize_chart_grid';
-
-    function isChartGridEnabled() {
-        try {
-            return localStorage.getItem(CHART_GRID_KEY) !== 'off';
-        } catch (e) {
-            return true;
-        }
-    }
-
     function getChartColors() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         const theme = CHART_THEMES[isDark ? 'dark' : 'light'];
-        const showGrid = isChartGridEnabled();
         return Object.assign({}, theme, {
-            showGrid: showGrid,
-            gridColor: showGrid ? theme.gridColor : 'transparent',
             series: theme.series.slice(),
             seriesExtra: theme.seriesExtra.slice()
         });
     }
 
-    // Re-color the grid of every live Chart.js chart on the page.
-    function applyChartGridDefault() {
-        if (typeof Chart === 'undefined' || !Chart.defaults || !Chart.defaults.scale) return;
-        Chart.defaults.scale.grid.color = getChartColors().gridColor;
+    // Per-chart grid lines: a chart whose canvas sits inside an element
+    // marked data-grid="off" (a dashboard widget or the builder preview,
+    // driven by the widget's chart_options.show_grid) draws no grid lines.
+    function isGridHidden(canvas) {
+        return !!(canvas && canvas.closest && canvas.closest('[data-grid="off"]'));
     }
 
-    function refreshChartGrids() {
-        applyChartGridDefault();
-        if (typeof Chart === 'undefined' || !Chart.instances) return;
-        const gridColor = getChartColors().gridColor;
-        Object.values(Chart.instances).forEach((chart) => {
+    const chartGridPlugin = {
+        id: 'oxiChartGrid',
+        beforeUpdate(chart) {
+            if (!isGridHidden(chart.canvas)) return;
             const scales = (chart.options && chart.options.scales) || {};
             Object.values(scales).forEach((scale) => {
-                if (scale && scale.grid) scale.grid.color = gridColor;
+                if (scale && scale.grid) scale.grid.display = false;
             });
-            chart.update('none');
-        });
-    }
-
-    function setChartGridEnabled(enabled) {
-        try {
-            localStorage.setItem(CHART_GRID_KEY, enabled ? 'on' : 'off');
-        } catch (e) {
-            // Storage unavailable: the preference just won't persist.
         }
-        refreshChartGrids();
-        window.dispatchEvent(new CustomEvent('chartGridChanged', { detail: !!enabled }));
-    }
+    };
 
-    // Another tab changed the preference.
-    window.addEventListener('storage', (e) => {
-        if (e.key === CHART_GRID_KEY) refreshChartGrids();
-    });
-    // Theme switches change the grid color of charts that rely on defaults.
-    window.addEventListener('themeChanged', applyChartGridDefault);
-    applyChartGridDefault();
+    if (typeof Chart !== 'undefined' && typeof Chart.register === 'function') {
+        Chart.register(chartGridPlugin);
+    }
 
     // Full ordered series palette (validated slots first, then extras).
     function getSeriesPalette() {
@@ -554,8 +523,7 @@
         formatCurrency: formatCurrency,
         getChartColors: getChartColors,
         getSeriesPalette: getSeriesPalette,
-        isChartGridEnabled: isChartGridEnabled,
-        setChartGridEnabled: setChartGridEnabled,
+        chartGridPlugin: chartGridPlugin,
         spinnerHtml: spinnerHtml,
         movingAverage: movingAverage,
         trendlineDataset: trendlineDataset,

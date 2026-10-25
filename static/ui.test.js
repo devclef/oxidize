@@ -367,50 +367,48 @@ describe('OxiUI.getChartColors', () => {
     });
 });
 
-describe('chart grid preference', () => {
-    afterEach(() => {
-        localStorage.removeItem('oxidize_chart_grid');
-        delete globalThis.Chart;
-    });
-
-    it('shows the grid by default', () => {
-        localStorage.removeItem('oxidize_chart_grid');
-        expect(OxiUI.isChartGridEnabled()).toBe(true);
-        const c = OxiUI.getChartColors();
-        expect(c.showGrid).toBe(true);
-        expect(c.gridColor).toBe('#e2e8f0');
-    });
-
-    it('makes the grid transparent when turned off, and persists it', () => {
-        OxiUI.setChartGridEnabled(false);
-        expect(localStorage.getItem('oxidize_chart_grid')).toBe('off');
-        expect(OxiUI.isChartGridEnabled()).toBe(false);
-        expect(OxiUI.getChartColors().gridColor).toBe('transparent');
-        // Other colors are unaffected.
-        expect(OxiUI.getChartColors().textColor).toBe('#475569');
-        OxiUI.setChartGridEnabled(true);
-        expect(OxiUI.getChartColors().gridColor).toBe('#e2e8f0');
-    });
-
-    it('re-colors the grid of live charts and notifies listeners', () => {
-        const update = vi.fn();
-        const chart = {
-            options: { scales: { x: { grid: { color: '#e2e8f0' } }, y: { grid: { color: '#e2e8f0' } }, r: {} } },
-            update
+describe('OxiUI.chartGridPlugin (per-chart grid lines)', () => {
+    function fakeChart(canvas) {
+        return {
+            canvas,
+            options: { scales: { x: { grid: { display: true } }, y: { grid: { display: true } }, r: {} } }
         };
-        globalThis.Chart = { instances: { 0: chart }, defaults: { scale: { grid: { color: '#e2e8f0' } } } };
-        const seen = [];
-        const onChange = (e) => seen.push(e.detail);
-        window.addEventListener('chartGridChanged', onChange);
+    }
 
-        OxiUI.setChartGridEnabled(false);
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
 
-        window.removeEventListener('chartGridChanged', onChange);
-        expect(chart.options.scales.x.grid.color).toBe('transparent');
-        expect(chart.options.scales.y.grid.color).toBe('transparent');
-        expect(update).toHaveBeenCalledWith('none');
-        expect(globalThis.Chart.defaults.scale.grid.color).toBe('transparent');
-        expect(seen).toEqual([false]);
+    it('hides every scale grid for a chart inside data-grid="off"', () => {
+        document.body.innerHTML = '<div class="widget-chart" data-grid="off"><canvas></canvas></div>';
+        const chart = fakeChart(document.querySelector('canvas'));
+        OxiUI.chartGridPlugin.beforeUpdate(chart);
+        expect(chart.options.scales.x.grid.display).toBe(false);
+        expect(chart.options.scales.y.grid.display).toBe(false);
+    });
+
+    it('leaves charts with the grid on untouched', () => {
+        document.body.innerHTML =
+            '<div class="widget-chart" data-grid="on"><canvas id="a"></canvas></div>' +
+            '<div><canvas id="b"></canvas></div>';
+        for (const id of ['a', 'b']) {
+            const chart = fakeChart(document.getElementById(id));
+            OxiUI.chartGridPlugin.beforeUpdate(chart);
+            expect(chart.options.scales.x.grid.display).toBe(true);
+            expect(chart.options.scales.y.grid.display).toBe(true);
+        }
+    });
+
+    it('only affects the chart it belongs to', () => {
+        document.body.innerHTML =
+            '<div data-grid="off"><canvas id="off"></canvas></div>' +
+            '<div data-grid="on"><canvas id="on"></canvas></div>';
+        const off = fakeChart(document.getElementById('off'));
+        const on = fakeChart(document.getElementById('on'));
+        OxiUI.chartGridPlugin.beforeUpdate(off);
+        OxiUI.chartGridPlugin.beforeUpdate(on);
+        expect(off.options.scales.x.grid.display).toBe(false);
+        expect(on.options.scales.x.grid.display).toBe(true);
     });
 });
 

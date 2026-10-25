@@ -692,6 +692,7 @@ function normalizeChartOptions(opts) {
     if (!opts) return { show_pct: false, pct_mode: 'from_previous' };
     return {
         show_points: opts.show_points ?? false,
+        show_grid: opts.show_grid ?? true,
         x_axis_limit: opts.x_axis_limit ?? 6,
         y_axis_limit: opts.y_axis_limit ?? 4,
         fill_area: opts.fill_area ?? true,
@@ -940,6 +941,12 @@ async function updateWidgetDateRange(widgetId) {
     }
     const showPoints = el(`${widgetId}-show-points`);
     if (showPoints) widget.chart_options.show_points = showPoints.checked;
+    const showGrid = el(`${widgetId}-show-grid`);
+    if (showGrid) {
+        widget.chart_options.show_grid = showGrid.checked;
+        const chartEl = document.querySelector(`.widget[data-widget-id="${widgetId}"] .widget-chart`);
+        if (chartEl) chartEl.dataset.grid = showGrid.checked ? 'on' : 'off';
+    }
     const xLimit = el(`${widgetId}-x-limit`);
     if (xLimit) widget.chart_options.x_axis_limit = parseInt(xLimit.value);
     const yLimit = el(`${widgetId}-y-limit`);
@@ -1257,6 +1264,7 @@ function getChartOptions(widget) {
     const raw = normalizeChartOptions(widget.chart_options);
     return {
         showPoints: raw.show_points,
+        showGrid: raw.show_grid,
         xAxisLimit: raw.x_axis_limit,
         yAxisLimit: raw.y_axis_limit,
         fillArea: raw.fill_area,
@@ -4260,6 +4268,7 @@ async function renderDashboard() {
                         </div>
                         ` : ''}
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
+                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-grid" ${chartOpts.showGrid ? 'checked' : ''}> Show Grid Lines</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
                         <label>X-Axis Ticks: <input type="number" id="${widget.id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
@@ -4356,7 +4365,7 @@ async function renderDashboard() {
                 </div>
                 <div class="widget-body">
                     <div id="${widget.id}-error" class="widget-error"></div>
-                    <div class="widget-chart" style="height: ${widget.chart_height || 300}px;">
+                    <div class="widget-chart" data-grid="${getChartOptions(widget).showGrid ? 'on' : 'off'}" style="height: ${widget.chart_height || 300}px;">
                         <canvas id="${widget.id}" ${widgetType === 'sankey' ? 'style="display:none"' : ''}></canvas>
                         <div id="${widget.id}-sankey" ${widgetType === 'sankey' ? '' : 'style="display:none"'}></div>
                         <div class="widget-chart-resize-handle"></div>
