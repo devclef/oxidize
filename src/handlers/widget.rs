@@ -16,6 +16,9 @@ pub async fn list_widgets() -> impl Responder {
 #[post("/api/widgets")]
 pub async fn create_widget(body: web::Json<Widget>) -> impl Responder {
     let widget = body.into_inner();
+    if let Err(e) = widget.validate() {
+        return HttpResponse::BadRequest().body(e);
+    }
 
     match Storage::create_widget(&widget) {
         Ok(()) => HttpResponse::Created().json(widget),
@@ -31,6 +34,9 @@ pub async fn update_widget(path: web::Path<String>, body: web::Json<Widget>) -> 
     // Validate that the path ID matches the widget ID
     if path_id != widget.id {
         return HttpResponse::BadRequest().body("ID mismatch between path and body");
+    }
+    if let Err(e) = widget.validate() {
+        return HttpResponse::BadRequest().body(e);
     }
 
     match Storage::update_widget(&widget) {

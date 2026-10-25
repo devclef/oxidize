@@ -10,7 +10,6 @@
 ///
 /// Also verifies that empty exclusions leave results unchanged and that the
 /// cache key distinguishes excluded from non-excluded queries.
-
 #[cfg(test)]
 mod tests {
     use oxidize::client::FireflyClient;

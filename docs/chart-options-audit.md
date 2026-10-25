@@ -24,8 +24,9 @@ parity for every type and state, saving, rendering) and
 
 | Option | balance | earned_spent | multi-series¹ | net_worth | card_paydown | saved_this_month | sankey |
 |---|---|---|---|---|---|---|---|
+| Widget type (dashboard) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Accounts / groups | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ |
-| Date range | ✓ | ✓ | ✓ | ✓ | ✓ | – (always current month) | ✓ |
+| Date range (fixed or relative, end rounding) | ✓ | ✓ | ✓ | ✓ | ✓ | – (always current month) | ✓ |
 | Interval | ✓ | ✓ | ✓ | ✓ | – | – | – |
 | Layout (combined/split) | ✓ (line) | – | – | – | – | – | – |
 | Style (line/pie) | ✓ | ✓ | ✓ | – (no pie) | – | – | – |
@@ -36,7 +37,7 @@ parity for every type and state, saving, rendering) and
 | Show points / fill area / smoothness | ✓ (line) | – | ✓ (line) | ✓ | – | – | – |
 | Show grid lines | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | ✓ | – | – |
 | Y-axis from zero | ✓ (line) | delta line only | ✓ (line) | ✓ | – | – | – |
-| X/Y-axis ticks | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | – | – | – |
+| X/Y-axis ticks | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | ✓ | – | – |
 | Forecast | ✓ (line) | – | – | – | – | – | – |
 | Trend line | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | – | – | – |
 | Exclusions | – | ✓ | ✓ | – | – | – | ✓ |
@@ -46,7 +47,7 @@ parity for every type and state, saving, rendering) and
 (`budget_spent`, `label_spend`, `budget_breakdown`), group by
 (`expenses_by_category`, `category_subcat`), include unlabeled
 (`label_spend`), break down by (`budget_breakdown`), subscriptions
-(`subscription_cost`), flow type (`sankey`).
+(`subscription_cost`), categories (`category_subcat`), flow type (`sankey`).
 
 ## Fixed in this change
 
@@ -139,18 +140,28 @@ parity for every type and state, saving, rendering) and
 > markers. Unstacked fills are drawn at 10% opacity so the lines stay easy
 > to read.
 
-## Open findings (to fix later)
+## Open findings — fixed in the follow-up
 
-| # | Where | Finding | Suggested fix |
+Every finding the first pass left open is now fixed. Tests:
+`static/audit-dashboard.test.js`, `static/audit-builder.test.js`,
+`static/date-utils.test.js`, the parity checks in
+`static/widget-options.test.js`, `tests/widget_relative_range_test.rs` and
+the `Widget::validate` unit tests in `src/models/widget.rs`.
+
+| # | Where | Finding | Fix |
 |---|---|---|---|
-| O1 | both | **Relative date presets are not stored.** A widget saves absolute `start_date`/`end_date`, so "Last 30 days" stays fixed to the day it was saved and never moves forward. Only "Use dashboard range" keeps a widget current. | Add a `relative_range` widget field (e.g. `30d`, or `{count, unit}`) and work out the dates at render time. |
-| O2 | both | **"Round end date to month boundary" is only a one-off date helper.** The checkbox is not saved; on the dashboard only the mode is remembered, in localStorage per widget. | Save it together with O1. |
-| O3 | dashboard | **You cannot change the category selection** (`parent_categories` / `subcategories`) of `category_subcat` widgets, or the widget type. | Reuse the builder's category tree in a settings dialog, or add an "Edit in Widget Builder" link that loads the widget into `/`. |
-| O4 | dashboard | **The header tags and badges** (accounts, budgets, type mode) only update after a page reload when settings change. | Re-render the widget card header after a successful update. |
-| O5 | both | **The builder's comparison preview draws every account plus its "(prev)" line**, while the dashboard draws one "Total Balance" line plus its previous period. The preview does not match the saved widget. | Pick one view (probably the total, following combined/split) and use it on both pages. |
-| O6 | dashboard | **% change saves immediately** (for a live preview), while every other setting waits for "Update". | Make it preview-only and save on "Update", or save every display option live. |
-| O7 | builder | **The Accounts section still shows for Net worth**, which ignores accounts (it always covers all assets and liabilities). | Hide it when `widgetOptionSupport(...).accounts` is false. |
-| O8 | builder | **Sankey widgets can't be created in the Widget Builder** (they come from the Sankey page), but they are a dashboard widget type. | Add `sankey` to the builder type list, or note on the dashboard where they come from. |
-| O9 | both | **Card paydown and sankey have fixed styling** (ticks, smoothness, points). The controls are hidden, so this is consistent, but they can't be customised. | Use `applyLineStyle`/`applyAxisOptions` in the card paydown renderer if wanted. |
-| O10 | both | **Builder display options are remembered per browser** (localStorage) and carry over into the next widget you build. Dashboard options are per widget. | Fine as a convenience; maybe add a "reset to defaults" button in the builder. |
-| O11 | dashboard | **Sankey widgets need d3 from the CDN.** If d3 is blocked, the widget fails with "No flow data for the selected filters", which is misleading. | Detect `typeof d3 === 'undefined'` and show a specific error. |
+| O1 | both | **Relative date presets were not stored.** "Last 30 days" stayed fixed to the day it was saved. | New widget field `relative_range` (a preset key like `30d`/`ytd`, or `custom:<count>:<unit>`). The dates are worked out when the widget renders (`widgetEffectiveDates` / `resolveRelativeRange` in `date-utils.js`); `start_date`/`end_date` are still saved as a fallback. The preset list gains a "Fixed dates" entry: typing a date, or picking it, pins the range. Older widgets whose dates are exactly a preset today open as that preset. The backend rejects malformed values (400). |
+| O2 | both | **"Round end date to month boundary" was a one-off helper** (and hidden in the builder). | Saved as `round_end_mode` together with the relative range and applied at render time. The builder shows the control again; the per-widget localStorage copy on the dashboard is gone. |
+| O3 | dashboard | **Category selection and widget type could not be changed.** | Settings now have a "Type" selector (switching rebuilds the panel with that type's controls, keeping what was entered; saved on "Update") and, for category subcategory widgets, a category picker grouped by main category. Both pages require at least one category for that type. |
+| O4 | dashboard | **Header tags and badges only updated after a reload.** | After "Update" the card's tags, badges and settings panel are rebuilt from the saved widget (`refreshWidgetCard`). Names in titles, tags and badges are now HTML-escaped. |
+| O5 | both | **The comparison preview did not match the saved widget**, and the previous period was looked up by the current period's dates, so it was drawn as all zeros on both pages. | One shared builder, `OxiUI.balanceComparisonChart`: combined → a total line + its previous period, split → one line per account + its previous period, aligned by position. Trend lines skip the previous-period series on both pages. |
+| O6 | dashboard | **% change saved immediately.** | It still previews live, but is saved with everything else on "Update". |
+| O7 | builder | **Accounts showed for Net worth.** | The Accounts, Groups, Categories, Budgets and Subscriptions sections now follow `widgetOptionSupport` (`data-opt`), like every other control. |
+| O8 | builder | **Sankey widgets could not be built in the Widget Builder.** | "Sankey Flow" is a builder type with a flow type control, a live preview and saving. The d3 drawing moved to `static/sankey-chart.js` (`OxiSankey`), shared with the dashboard (tooltips now escape names). |
+| O9 | both | **Card paydown styling was fixed.** | Card paydown honours the X/Y-axis tick counts on both pages (`cardPaydownChartConfig(data, opts)`). Points/fill/smoothness stay fixed: its bars and lines have their own fixed roles. Sankey has no axes or lines to style. |
+| O10 | builder | **Builder display options carried over between widgets** with no way back. | "Reset to defaults" in the advanced options puts every remembered option back to its default. |
+| O11 | dashboard | **A blocked d3 failed with a misleading error.** | Sankey widgets (and the builder preview) say the chart library could not be loaded, without fetching. |
+
+Also fixed on the way: the builder's preset/custom range buttons pre-filled
+the comparison range with the old, gapped "previous period" math, and the
+builder started on "last 30 days" whatever the configured default preset was.

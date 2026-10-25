@@ -135,7 +135,8 @@ describe('dashboard.js wiring', () => {
     });
 
     it('shows the Subscription Cost type badge', () => {
-        expect(dashboardSource).toContain('widget-type-badge subscription-cost');
+        expect(globalThis.widgetTypeBadgeHtml({ widget_type: 'subscription_cost' }))
+            .toBe('<span class="widget-type-badge subscription-cost">Subscription Cost</span>');
     });
 
     it('offers subscription + group pickers in the widget settings', () => {

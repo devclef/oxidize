@@ -101,12 +101,11 @@ function applyDateRange(range) {
 
         // Also update comparison dates if comparison is enabled
         if (typeof enableComparison !== 'undefined' && enableComparison) {
-            const durationMs = new Date(dates.end) - new Date(dates.start);
-            const comparisonEndDate = new Date(new Date(dates.start).getTime() - durationMs);
-            const comparisonStart = new Date(comparisonEndDate.getTime() - durationMs);
-
-            document.getElementById('comparison-start-date').value = comparisonStart.toISOString().split('T')[0];
-            document.getElementById('comparison-end-date').value = comparisonEndDate.toISOString().split('T')[0];
+            const previous = calculatePreviousPeriod(dates.start, dates.end);
+            if (previous) {
+                document.getElementById('comparison-start-date').value = previous.start;
+                document.getElementById('comparison-end-date').value = previous.end;
+            }
         }
     }
 }
@@ -135,4 +134,71 @@ function calculatePreviousPeriod(start, end) {
         start: prevStart.toISOString().split('T')[0],
         end: prevEnd.toISOString().split('T')[0]
     };
+}
+
+// ── Relative widget date ranges ────────────────────────────────────────
+// A widget may store `relative_range` instead of fixed dates: a preset key
+// ('30d', '3m', '1y', 'ytd', ...) or 'custom:<count>:<unit>'. The dates are
+// worked out when the widget renders, so "Last 30 days" keeps moving
+// forward. `round_end_mode` (see roundEndDate) rounds the end date.
+
+const RELATIVE_UNITS = { d: 'days', w: 'weeks', m: 'months', y: 'years' };
+
+function customRelativeRangeKey(count, unit) {
+    const n = parseInt(count, 10);
+    if (!(n >= 1 && n <= 999) || !Object.values(RELATIVE_UNITS).includes(unit)) return null;
+    return `custom:${n}:${unit}`;
+}
+
+// { kind: 'preset', key } | { kind: 'custom', count, unit } | null
+function parseRelativeRange(range) {
+    if (typeof range !== 'string' || !range) return null;
+    if (range === 'ytd') return { kind: 'preset', key: range };
+    const custom = range.match(/^custom:(\d{1,3}):(days|weeks|months|years)$/);
+    if (custom) {
+        const count = parseInt(custom[1], 10);
+        return count >= 1 ? { kind: 'custom', count, unit: custom[2] } : null;
+    }
+    const preset = range.match(/^(\d{1,3})([dwmy])$/);
+    if (preset && parseInt(preset[1], 10) >= 1) return { kind: 'preset', key: range };
+    return null;
+}
+
+// Dates for a relative range (optionally rounding the end), or null when the
+// range is missing or invalid.
+function resolveRelativeRange(range, roundEndMode) {
+    const parsed = parseRelativeRange(range);
+    if (!parsed) return null;
+    let dates;
+    if (parsed.kind === 'custom') {
+        dates = calculateRelativeDatesFromCustom(parsed.count, parsed.unit);
+    } else {
+        dates = calculateRelativeDates(parsed.key);
+        if (!dates) {
+            const m = parsed.key.match(/^(\d+)([dwmy])$/);
+            dates = m ? calculateRelativeDatesFromCustom(m[1], RELATIVE_UNITS[m[2]]) : null;
+        }
+    }
+    if (!dates) return null;
+    if (roundEndMode) dates.end = roundEndDate(dates.end, roundEndMode);
+    return dates;
+}
+
+// The dates a widget charts: the dashboard's range when it inherits it,
+// else its relative range worked out for today, else its fixed dates.
+function widgetEffectiveDates(widget, dashboardDates) {
+    const fixed = { start: widget.start_date || null, end: widget.end_date || null };
+    if ((widget.date_range_source || 'custom') === 'dashboard') {
+        const d = dashboardDates || {};
+        return { start: d.start || fixed.start, end: d.end || fixed.end };
+    }
+    return resolveRelativeRange(widget.relative_range, widget.round_end_mode) || fixed;
+}
+
+if (typeof window !== 'undefined') {
+    window.calculatePreviousPeriod = calculatePreviousPeriod;
+    window.customRelativeRangeKey = customRelativeRangeKey;
+    window.parseRelativeRange = parseRelativeRange;
+    window.resolveRelativeRange = resolveRelativeRange;
+    window.widgetEffectiveDates = widgetEffectiveDates;
 }

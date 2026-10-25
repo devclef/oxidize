@@ -18,6 +18,11 @@ The Sankey diagram shows:
 ## Saving as Widget
 
 Click **"Save as Widget"** to pin the current Sankey configuration to your dashboard.
+You can also build a Sankey widget in the Widget Builder (`/`): pick the
+**Sankey Flow** type, select accounts and a flow type, and save it.
+
+The diagram is drawn with d3, loaded from a CDN. If it is blocked (offline or
+by a content blocker) the widget says so instead of drawing.
 
 ## API
 

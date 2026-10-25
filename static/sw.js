@@ -5,7 +5,7 @@ if (new URL(self.registration.scope).pathname !== '/') {
   self.registration.unregister();
 }
 
-const CACHE_NAME = 'oxidize-cache-v29';
+const CACHE_NAME = 'oxidize-cache-v30';
 // The summary-utils.js entry carries the same ?v= as the script tag in
 // summary.html so the precached copy matches what the page requests.
 // Icons and the web app manifest are precached so installability and the
@@ -15,6 +15,7 @@ const STATIC_ASSETS = [
   '/static/theme.js',
   '/static/ui.js',
   '/static/date-utils.js',
+  '/static/sankey-chart.js',
   '/static/app.js',
   '/static/dashboard.js',
   '/static/summary-utils.js?v=15',

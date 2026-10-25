@@ -167,7 +167,7 @@ fn test_sankey_flow_type_enum_deserialization() {
 
 #[test]
 fn test_sankey_total_calculation() {
-    let links = vec![
+    let links = [
         oxidize::models::SankeyLink {
             source: "Checking".to_string(),
             target: "Food".to_string(),

@@ -5,7 +5,6 @@
 /// (debt-reducing transfers from other asset accounts into the card) and
 /// spending (flows from the card to expense/revenue accounts). Interest is
 /// not tracked separately: it cannot be reliably derived from transactions.
-
 #[cfg(test)]
 mod tests {
     use oxidize::client::FireflyClient;

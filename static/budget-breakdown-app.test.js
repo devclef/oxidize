@@ -106,9 +106,9 @@ describe('builder UI wiring (index.html)', () => {
     });
 
     it('shows the budgets section for budget_breakdown', () => {
-        expect(appSource).toContain(
-            "const budgetsApplies = widgetType === 'budget_spent' || widgetType === 'label_spend' || widgetType === 'budget_breakdown';"
-        );
+        // The section follows the shared option matrix (data-opt="budgets")
+        expect(indexHtml).toContain('id="budgets-section" class="section-card budgets-section" data-opt="budgets"');
+        expect(window.OxiUI.widgetOptionSupport('budget_breakdown').budgets).toBe(true);
     });
 
     it('requires a budget selection when saving a budget_breakdown widget', () => {

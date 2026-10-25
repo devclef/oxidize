@@ -107,6 +107,8 @@ fn test_widget_serialization_includes_new_fields() {
         subscription_group_ids: vec![],
         subscription_split_groups: None,
         budget_breakdown_by: None,
+        relative_range: None,
+        round_end_mode: None,
         created_at: None,
         updated_at: None,
     };

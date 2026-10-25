@@ -1,6 +1,10 @@
 let allAccounts = [];
 let balanceChart = null;
 let enableComparison = false;
+// Relative range the date inputs follow ('30d', 'custom:6:months', ...);
+// null when the dates were typed in (fixed). Saved with the widget so its
+// dates keep moving forward.
+let builderRelativeRange = null;
 // Re-runs the last successful chart render (used when display-only options
 // like the trend line change).
 let lastChartRenderAction = null;
@@ -333,6 +337,17 @@ async function fetchChartData() {
     // Leaving the tile: drop its preview so it does not linger under the chart
     const tilePreview = document.getElementById('tile-preview');
     if (tilePreview) tilePreview.style.display = 'none';
+
+    // Sankey flows are drawn with d3, not on the chart canvas
+    if (widgetType === 'sankey') {
+        await fetchSankeyPreview(selectedIds, startDate, endDate);
+        return;
+    }
+    const sankeyPreview = document.getElementById('sankey-preview');
+    if (sankeyPreview) {
+        sankeyPreview.style.display = 'none';
+        sankeyPreview.innerHTML = '';
+    }
 
     try {
         const params = new URLSearchParams();
@@ -1312,6 +1327,44 @@ function getDisplayOptions() {
         yAxisLimit: yLimit,
         tension: tension
     };
+}
+
+// Display and advanced options the builder remembers in this browser, with
+// their defaults (the backend ChartOptions defaults)
+const RESETTABLE_OPTION_DEFAULTS = {
+    'show-points-toggle': DISPLAY_DEFAULTS.showPoints,
+    'show-grid-toggle': DISPLAY_DEFAULTS.showGrid,
+    'fill-area-toggle': DISPLAY_DEFAULTS.fillArea,
+    'begin-zero-toggle': DISPLAY_DEFAULTS.beginAtZero,
+    'x-axis-limit': DISPLAY_DEFAULTS.xAxisLimit,
+    'y-axis-limit': DISPLAY_DEFAULTS.yAxisLimit,
+    'tension-range': DISPLAY_DEFAULTS.tension,
+    'stacked-toggle': false,
+    'show-pct-toggle': false,
+    'pct-mode-select': 'from_previous',
+    'enable-forecast': false,
+    'forecast-days': 30,
+    'enable-trendline': false,
+    'trendline-window': 7
+};
+
+// Put every remembered option back to its default. Each control fires its
+// own change handler, which stores the value and re-renders the chart.
+function resetDisplayOptions() {
+    Object.entries(RESETTABLE_OPTION_DEFAULTS).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox') {
+            if (el.checked === value) return;
+            el.checked = value;
+        } else {
+            if (el.value === String(value)) return;
+            el.value = String(value);
+        }
+        el.dispatchEvent(new Event('change'));
+    });
+    applyBuilderOptionVisibility();
+    OxiUI.toast('Display options reset to defaults', 'success');
 }
 
 // Re-render the last chart so display-only options take effect immediately.
@@ -2457,7 +2510,68 @@ function renderCardPaydownPreview(ctx, data) {
         balanceChart.destroy();
     }
     // Same chart as the dashboard widget (OxiUI.cardPaydownChartConfig)
-    balanceChart = new Chart(ctx, OxiUI.cardPaydownChartConfig(data));
+    balanceChart = new Chart(ctx, OxiUI.cardPaydownChartConfig(data, getDisplayOptions()));
+}
+
+// ── Sankey flow preview ────────────────────────────────────────────────
+// Same flows and drawing (OxiSankey) as the dashboard sankey widget.
+function getSankeyFlowType() {
+    return document.getElementById('sankey-flow-type-select')?.value || 'destination';
+}
+
+async function fetchSankeyPreview(selectedIds, startDate, endDate) {
+    const previewEl = document.getElementById('sankey-preview');
+    const chartContainer = document.querySelector('.chart-wrapper');
+    const legendEl = document.getElementById('split-legend');
+    const updateBtn = document.getElementById('update-chart-btn');
+    if (chartErrorEl) chartErrorEl.innerHTML = '';
+    if (chartContainer) chartContainer.style.display = 'none';
+    if (legendEl) legendEl.style.display = 'none';
+    if (balanceChart) {
+        balanceChart.destroy();
+        balanceChart = null;
+    }
+    if (!previewEl) return;
+    previewEl.style.display = 'block';
+    const message = (text) => {
+        previewEl.innerHTML = '';
+        const div = document.createElement('div');
+        div.className = 'info';
+        div.textContent = text;
+        previewEl.appendChild(div);
+    };
+
+    try {
+        if (typeof OxiSankey === 'undefined' || !OxiSankey.available()) {
+            message(typeof OxiSankey === 'undefined'
+                ? 'The Sankey chart script could not be loaded. Refresh the page.'
+                : OxiSankey.unavailableMessage);
+            return;
+        }
+        if (selectedIds.length === 0) {
+            message('Please select at least one account to chart its flows.');
+            return;
+        }
+        previewEl.innerHTML = '<div class="loading">' + OxiUI.spinnerHtml('Loading flows…') + '</div>';
+        const params = new URLSearchParams();
+        params.append('flow_type', getSankeyFlowType());
+        if (startDate) params.append('start', startDate);
+        if (endDate) params.append('end', endDate);
+        selectedIds.forEach(id => params.append('accounts[]', id));
+        appendExclusionParams(params);
+        const response = await fetch('/api/sankey/flows?' + params.toString());
+        if (response.status === 404) {
+            message('Sankey Flow is disabled. Enable it under Settings.');
+            return;
+        }
+        if (!response.ok) throw new Error(`Error: ${response.status} ${response.statusText}`);
+        const data = await response.json();
+        OxiSankey.render(previewEl, data, { tooltip: document.getElementById('sankey-tooltip') });
+    } catch (e) {
+        message(`Failed to load flow data: ${e.message}`);
+    } finally {
+        if (updateBtn) { updateBtn.disabled = false; updateBtn.textContent = 'Update graph'; }
+    }
 }
 
 // ── Saved This Month stat tile ─────────────────────────────────────────
@@ -3389,8 +3503,9 @@ function renderGroups() {
     const groupsSection = document.getElementById('groups-section');
     const groupsList = document.getElementById('groups-list');
 
-    // Always show the section so the "Create Group" button is visible
-    groupsSection.style.display = 'block';
+    // Show the section (so "Create group" is visible) unless the widget
+    // type ignores accounts
+    groupsSection.style.display = OxiUI.widgetOptionSupport(currentWidgetType()).accounts ? '' : 'none';
     groupsList.innerHTML = '';
 
     if (groups.length === 0) {
@@ -3819,8 +3934,9 @@ async function saveGraphAsWidget() {
         }
     }
 
-    // Only balance and card_paydown widget types require accounts
-    if ((widgetType === 'balance' || widgetType === 'card_paydown') && selectedIds.length === 0) {
+    // Balance, card paydown and sankey widgets chart accounts, so they
+    // need at least one
+    if ((widgetType === 'balance' || widgetType === 'card_paydown' || widgetType === 'sankey') && selectedIds.length === 0) {
         OxiUI.toast('Please select at least one account', 'error');
         return;
     }
@@ -3828,6 +3944,12 @@ async function saveGraphAsWidget() {
     // Budget Breakdown needs at least one budget to break down
     if (widgetType === 'budget_breakdown' && selectedBudgetNames.length === 0) {
         OxiUI.toast('Please select at least one budget', 'error');
+        return;
+    }
+
+    // Same check as the dashboard settings: a category chart needs categories
+    if (widgetType === 'category_subcat' && selectedSubcatFullNames.length === 0) {
+        OxiUI.toast('Please select at least one category', 'error');
         return;
     }
 
@@ -3864,6 +3986,8 @@ async function saveGraphAsWidget() {
     // so a graph saved here renders identically to one edited there.
     const displayOpts = getDisplayOptions();
     const comparisonSupported = widgetType === 'balance';
+    const dateRangeSupported = OxiUI.widgetOptionSupport(widgetType).dateRange;
+    const roundEndCheckbox = document.getElementById('round-end-checkbox');
     const chartOptions = {
         enable_forecast: enableForecastEl ? enableForecastEl.checked : false,
         forecast_days: forecastDaysEl ? (parseInt(forecastDaysEl.value, 10) || 30) : 30,
@@ -3905,8 +4029,12 @@ async function saveGraphAsWidget() {
             ? (document.getElementById('subscription-split-checkbox')?.checked ?? false)
             : null,
         budget_breakdown_by: widgetType === 'budget_breakdown' ? getBudgetBreakdownBy() : null,
+        sankey_flow_type: widgetType === 'sankey' ? getSankeyFlowType() : null,
         start_date: startDate || null,
         end_date: endDate || null,
+        relative_range: dateRangeSupported ? builderRelativeRange : null,
+        round_end_mode: dateRangeSupported && builderRelativeRange && roundEndCheckbox?.checked
+            ? (document.getElementById('round-end-mode')?.value || null) : null,
         interval: interval || null,
         chart_mode: chartMode,
         earned_chart_type: earnedChartType,
@@ -4031,55 +4159,17 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
     const chartTextColor = chartColors().textColor;
     const chartGridColor = chartColors().gridColor;
     
-    let labels = [];
-    const firstDataset = primaryData.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
-    if (firstDataset) {
-        if (Array.isArray(firstDataset.entries)) {
-            labels = firstDataset.entries.map(e => e.key || e.date || e.timestamp);
-        } else {
-            labels = Object.keys(firstDataset.entries);
-        }
-    }
-    
+    // Same series as the saved dashboard widget: total or per account
+    // (following the layout), each with its previous period
+    const chartMode = document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined';
+    const { labels, datasets: chartDatasets } = OxiUI.balanceComparisonChart(
+        primaryData, comparisonData, { split: chartMode === 'split' });
     if (labels.length === 0) {
         console.warn('No labels found in comparison chart data');
         return;
     }
-    
-    const chartDatasets = [];
-    const colors = seriesPalette();
-    
-    primaryData.forEach((ds, idx) => {
-        const data = extractChartData(ds.entries, labels);
-        const color = colors[idx % colors.length];
-        chartDatasets.push({
-            label: ds.label,
-            data: data,
-            borderColor: color,
-            backgroundColor: color + '20',
-            borderWidth: 2,
-            fill: displayOpts.fillArea,
-            tension: displayOpts.tension,
-            pointRadius: displayOpts.showPoints ? 4 : 0
-        });
-    });
-    
-    comparisonData.forEach((ds, idx) => {
-        const data = extractChartData(ds.entries, labels);
-        const color = colors[(idx + primaryData.length) % colors.length];
-        chartDatasets.push({
-            label: ds.label + ' (prev)' ,
-            data: data,
-            borderColor: color,
-            backgroundColor: color + '20',
-            borderWidth: 2,
-            borderDash: [5, 5],
-            fill: false,
-            tension: displayOpts.tension,
-            pointRadius: displayOpts.showPoints ? 4 : 0
-        });
-    });
-    
+    OxiUI.styleComparisonDatasets(chartDatasets, displayOpts);
+
     if (balanceChart) {
         balanceChart.destroy();
     }
@@ -4129,7 +4219,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const customRangeCount = document.getElementById('custom-range-count');
     const customRangeUnit = document.getElementById('custom-range-unit');
     const applyCustomRangeBtn = document.getElementById('apply-custom-range-btn');
-    const roundEndControls = document.getElementById('round-end-controls');
     const roundEndCheckbox = document.getElementById('round-end-checkbox');
     const roundEndMode = document.getElementById('round-end-mode');
     const ROLL_END_MODE_KEY = 'oxidize_round_end_mode';
@@ -4155,62 +4244,66 @@ document.addEventListener('DOMContentLoaded', () => {
         timeRangeSelect.appendChild(option);
     });
 
-    // Apply selected time range preset
-    function applyPresetTimeRange(key) {
-        const dates = calculateRelativeDates(key);
-        if (!dates) return;
+    function setRangeDates(dates) {
         document.getElementById('start-date').value = dates.start;
         document.getElementById('end-date').value = dates.end;
-
-        // Update comparison dates if enabled
-        if (typeof enableComparison !== 'undefined' && enableComparison) {
-            const durationMs = new Date(dates.end) - new Date(dates.start);
-            const comparisonEndDate = new Date(new Date(dates.start).getTime() - durationMs);
-            const comparisonStart = new Date(comparisonEndDate.getTime() - durationMs);
-            document.getElementById('comparison-start-date').value = comparisonStart.toISOString().split('T')[0];
-            document.getElementById('comparison-end-date').value = comparisonEndDate.toISOString().split('T')[0];
+        // Keep the comparison on the period right before the new range
+        if (enableComparison) {
+            const previous = calculatePreviousPeriod(dates.start, dates.end);
+            if (previous) {
+                document.getElementById('comparison-start-date').value = previous.start;
+                document.getElementById('comparison-end-date').value = previous.end;
+            }
         }
+    }
 
-        // Apply round end date if enabled
-        if (roundEndCheckbox && roundEndCheckbox.checked) {
-            const roundedEnd = roundEndDate(dates.end, roundEndMode.value);
-            document.getElementById('end-date').value = roundedEnd;
-        }
+    function currentRoundEndMode() {
+        return roundEndCheckbox && roundEndCheckbox.checked ? roundEndMode.value : null;
+    }
 
-        fetchChartData();
+    // Apply a relative range (preset key or 'custom:N:unit') to the inputs
+    function applyRelativeRange(range) {
+        const dates = resolveRelativeRange(range, currentRoundEndMode());
+        if (!dates) return false;
+        builderRelativeRange = range;
+        setRangeDates(dates);
+        return true;
+    }
+
+    // Apply selected time range preset
+    function applyPresetTimeRange(key) {
+        if (applyRelativeRange(key)) fetchChartData();
     }
 
     // Apply custom relative range
     function applyCustomRange() {
-        const count = parseInt(customRangeCount.value, 10) || 1;
-        const unit = customRangeUnit.value;
-        const dates = calculateRelativeDatesFromCustom(count, unit);
-        if (!dates) return;
-        document.getElementById('start-date').value = dates.start;
-        document.getElementById('end-date').value = dates.end;
+        const range = customRelativeRangeKey(parseInt(customRangeCount.value, 10) || 1, customRangeUnit.value);
+        if (applyRelativeRange(range)) fetchChartData();
+    }
 
-        // Apply round end date if enabled
-        if (roundEndCheckbox && roundEndCheckbox.checked) {
-            const roundedEnd = roundEndDate(dates.end, roundEndMode.value);
-            document.getElementById('end-date').value = roundedEnd;
-        }
-
-        fetchChartData();
+    function showRangeControls(value) {
+        customRangeControls.style.display = value === '__none__' ? 'inline-flex' : 'none';
+        applyTimeRangeBtn.style.display = value === '__none__' || value === '__fixed__' ? 'none' : 'inline-block';
     }
 
     // Time range select handler
     timeRangeSelect.addEventListener('change', () => {
         const value = timeRangeSelect.value;
-        if (value === '__none__') {
-            // Show custom range inputs
-            customRangeControls.style.display = 'inline-flex';
-            applyTimeRangeBtn.style.display = 'none';
-        } else {
-            // Hide custom range inputs
-            customRangeControls.style.display = 'none';
-            applyTimeRangeBtn.style.display = 'inline-block';
+        showRangeControls(value);
+        if (value === '__fixed__') {
+            builderRelativeRange = null;
+        } else if (value !== '__none__') {
             applyPresetTimeRange(value);
         }
+    });
+
+    // Typing a date pins the range: the widget keeps exactly these dates
+    ['start-date', 'end-date'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', (e) => {
+            builderRelativeRange = null;
+            timeRangeSelect.value = '__fixed__';
+            showRangeControls('__fixed__');
+        });
     });
 
     // Apply button for preset
@@ -4225,30 +4318,20 @@ document.addEventListener('DOMContentLoaded', () => {
         applyCustomRangeBtn.addEventListener('click', applyCustomRange);
     }
 
-    // Round end date checkbox handler
+    // Re-apply the current relative range (with or without rounding)
+    function reapplyRelativeRange() {
+        if (builderRelativeRange) applyPresetTimeRange(builderRelativeRange);
+    }
+
+    // Round end date: the mode is remembered per browser and saved with
+    // the widget, so a relative range keeps being rounded on the dashboard
     if (roundEndCheckbox) {
         const savedRoundMode = localStorage.getItem(ROLL_END_MODE_KEY) || 'end_of_current_month';
         roundEndMode.value = savedRoundMode;
 
         roundEndCheckbox.addEventListener('change', () => {
             roundEndMode.style.display = roundEndCheckbox.checked ? 'inline-block' : 'none';
-            if (roundEndCheckbox.checked) {
-                // Re-apply current range with rounding
-                const currentValue = timeRangeSelect.value;
-                if (currentValue !== '__none__') {
-                    applyPresetTimeRange(currentValue);
-                } else {
-                    applyCustomRange();
-                }
-            } else {
-                // Re-apply without rounding
-                const currentValue = timeRangeSelect.value;
-                if (currentValue !== '__none__') {
-                    applyPresetTimeRange(currentValue);
-                } else {
-                    applyCustomRange();
-                }
-            }
+            reapplyRelativeRange();
         });
     }
 
@@ -4256,15 +4339,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (roundEndMode) {
         roundEndMode.addEventListener('change', () => {
             localStorage.setItem(ROLL_END_MODE_KEY, roundEndMode.value);
-            // Re-apply current range with new rounding
-            const currentValue = timeRangeSelect.value;
-            if (currentValue !== '__none__') {
-                applyPresetTimeRange(currentValue);
-            } else {
-                applyCustomRange();
-            }
+            reapplyRelativeRange();
         });
     }
+
+    // Start on the configured default preset (falls back to the last 30
+    // days as fixed dates when the preset is unknown)
+    if (!applyRelativeRange(defaultTimeRange)) {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - 30);
+        setRangeDates({ start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] });
+        timeRangeSelect.value = '__fixed__';
+    }
+    showRangeControls(timeRangeSelect.value);
 
     // Theme toggle button
     const themeToggle = document.getElementById('theme-toggle');
@@ -4378,14 +4466,6 @@ document.addEventListener('DOMContentLoaded', () => {
         advancedOptions.classList.toggle('visible', advancedVisible);
         toggleAdvancedBtn.textContent = advancedVisible ? 'Hide advanced options' : 'Advanced options';
     });
-
-    // Set default dates (last 30 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-
-    document.getElementById('end-date').valueAsDate = endDate;
-    document.getElementById('start-date').valueAsDate = startDate;
 
     app.innerHTML = '<div class="empty-state"><p>Pick an account type above, then click <strong>Fetch accounts</strong> to start building a graph.</p></div>';
 
@@ -4918,6 +4998,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'label_spend': 'Spending by Label',
                     'subscription_cost': 'Subscription Cost Over Time',
                     'budget_breakdown': budgetBreakdownTitle(getBudgetBreakdownBy()),
+                    'sankey': 'Sankey Flow',
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -4932,10 +5013,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // budgets are charted; label_spend uses it as an optional filter,
             // where no selection means "all budgets"; budget_breakdown
             // requires a selection)
+            // (section visibility follows OxiUI.widgetOptionSupport via data-opt)
+            const support = OxiUI.widgetOptionSupport(widgetType);
             const budgetsSection = document.getElementById('budgets-section');
-            const budgetsApplies = widgetType === 'budget_spent' || widgetType === 'label_spend' || widgetType === 'budget_breakdown';
+            const budgetsApplies = support.budgets;
             if (budgetsSection) {
-                budgetsSection.style.display = budgetsApplies ? 'block' : 'none';
                 if (budgetsApplies && allBudgets.length === 0) {
                     await fetchBudgets();
                 }
@@ -4952,7 +5034,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // means "all subscriptions")
             const subscriptionsSection = document.getElementById('subscriptions-section');
             if (subscriptionsSection) {
-                subscriptionsSection.style.display = widgetType === 'subscription_cost' ? 'block' : 'none';
                 if (widgetType === 'subscription_cost' && allSubscriptions.length === 0) {
                     await fetchSubscriptions();
                     await fetchSubscriptionGroups();
@@ -4961,7 +5042,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Toggle categories section visibility
             const categoriesSection = document.getElementById('categories-section');
             if (categoriesSection) {
-                categoriesSection.style.display = widgetType === 'category_subcat' ? 'block' : 'none';
                 if (widgetType === 'category_subcat' && allCategories.length === 0) {
                     await fetchCategories();
                 }
@@ -4976,6 +5056,9 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchChartData();
         });
     }
+
+    // Sankey flow grouping changes the preview
+    document.getElementById('sankey-flow-type-select')?.addEventListener('change', () => fetchChartData());
 
     // Handle category graph mode change
     document.querySelectorAll('input[name="category-graph-mode"]').forEach(radio => {
@@ -5193,6 +5276,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rerenderCurrentChart();
         });
     }
+
+    document.getElementById('reset-display-options-btn')?.addEventListener('click', resetDisplayOptions);
 
     // Stacked values toggle (#24): line charts render stacked or unstacked
     const stackedToggleEl = document.getElementById('stacked-toggle');

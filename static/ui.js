@@ -22,6 +22,7 @@
  *  - OxiUI.applyAxisOptions(sc, o)  tick limits / y-from-zero on scales
  *  - OxiUI.computePercentChange(..) % change labels (from previous / first)
  *  - OxiUI.cardPaydownChartConfig(d) card paydown chart (builder + dashboard)
+ *  - OxiUI.balanceComparisonChart(..) balance vs previous period series
  */
 (function () {
     'use strict';
@@ -613,7 +614,7 @@
         const window = opts.window != null ? opts.window : 7;
         const additions = [];
         datasets.forEach((ds, i) => {
-            if (!ds || ds.isTrendline || !Array.isArray(ds.data)) return;
+            if (!ds || ds.isTrendline || ds.isComparison || !Array.isArray(ds.data)) return;
             const t = trendlineDataset(ds.label, ds.data, {
                 window: window,
                 color: opts.color,
@@ -698,12 +699,13 @@
             trendline: lineChart || earnedLine,
             lineStyle: lineChart,
             grid: !pie && !['saved_this_month', 'sankey'].includes(t),
-            ticks: lineChart || earnedLine,
+            ticks: lineChart || earnedLine || t === 'card_paydown',
             beginAtZero: lineChart || (earnedLine && variant === 'delta_line'),
             exclusions: EXCLUSION_TYPES.includes(t),
             includeUnlabeled: t === 'label_spend',
             breakdownBy: t === 'budget_breakdown',
             subscriptions: t === 'subscription_cost',
+            categories: t === 'category_subcat',
             sankeyFlow: t === 'sankey'
         };
     }
@@ -830,7 +832,8 @@
     // spending (down) as bars, net paydown as a line, and the card balance
     // as a dashed line on its own right-hand axis.
     //   data  /api/card-paydown response ({ monthly_activity: [...] })
-    function cardPaydownChartConfig(data) {
+    // opts (optional): { xAxisLimit, yAxisLimit } tick limits
+    function cardPaydownChartConfig(data, opts) {
         const activity = (data && data.monthly_activity) || [];
         const c = getChartColors();
         const alpha = function (hex, a) {
@@ -839,7 +842,7 @@
         const money = function (v) {
             return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         };
-        return {
+        const config = {
             type: 'bar',
             plugins: [hoverValueGuidePlugin],
             data: {
@@ -935,6 +938,114 @@
                 }
             }
         };
+        if (opts) {
+            const scales = config.options.scales;
+            applyAxisOptions(scales, { xAxisLimit: opts.xAxisLimit, yAxisLimit: opts.yAxisLimit });
+            if (opts.yAxisLimit > 0) scales.y1.ticks.maxTicksLimit = opts.yAxisLimit;
+        }
+        return config;
+    }
+
+    // ── Balance comparison ──────────────────────────────────────────
+    // "Compare with previous period" for balance charts, shared by the
+    // builder preview and the dashboard widget. Follows the layout:
+    // combined -> one total line + the previous period's total; split -> one
+    // line per account + that account's previous period. The previous
+    // period has its own dates, so its values are aligned by position (day
+    // 1 with day 1), not looked up by the current period's labels.
+    //   history, comparison  /api/accounts/balance-history responses
+    //   opts  { split }
+    // Returns { labels, datasets } (comparison series carry isComparison).
+    function seriesValues(entries) {
+        if (Array.isArray(entries)) {
+            return entries.map(function (e) { return parseFloat(e && e.value != null ? e.value : e) || 0; });
+        }
+        if (!entries || typeof entries !== 'object') return [];
+        return Object.keys(entries).sort().map(function (k) {
+            const v = entries[k];
+            return parseFloat(v !== null && typeof v === 'object' ? v.value : v) || 0;
+        });
+    }
+
+    function seriesLabels(entries) {
+        if (Array.isArray(entries)) {
+            return entries.map(function (e) { return e.key || e.date || e.timestamp; });
+        }
+        return entries && typeof entries === 'object' ? Object.keys(entries).sort() : [];
+    }
+
+    function fitLength(values, length) {
+        const out = values.slice(0, length);
+        while (out.length < length) out.push(null);
+        return out;
+    }
+
+    function balanceComparisonChart(history, comparison, opts) {
+        opts = opts || {};
+        const current = (history || []).filter(function (ds) { return ds && ds.entries; });
+        const previous = (comparison || []).filter(function (ds) { return ds && ds.entries; });
+        const first = current.find(function (ds) { return seriesLabels(ds.entries).length > 0; });
+        const labels = first ? seriesLabels(first.entries) : [];
+        if (labels.length === 0) return { labels: [], datasets: [] };
+
+        const c = getChartColors();
+        const palette = getSeriesPalette();
+        const line = function (label, data, color, isComparison) {
+            return {
+                label: label,
+                data: fitLength(data, labels.length),
+                borderColor: color,
+                backgroundColor: color + (isComparison ? '1a' : '33'),
+                borderWidth: 2,
+                borderDash: isComparison ? [5, 5] : undefined,
+                fill: false,
+                isComparison: !!isComparison
+            };
+        };
+        const total = function (series) {
+            const sum = new Array(labels.length).fill(0);
+            series.forEach(function (ds) {
+                seriesValues(ds.entries).forEach(function (v, i) {
+                    if (i < sum.length) sum[i] += v;
+                });
+            });
+            return sum;
+        };
+
+        if (!opts.split) {
+            const datasets = [line('Total balance', total(current), c.accent, false)];
+            if (previous.length) {
+                datasets.push(line('Total balance (prev period)', total(previous), c.neutral, true));
+            }
+            return { labels: labels, datasets: datasets };
+        }
+
+        const datasets = current.map(function (ds, i) {
+            return line(ds.label, seriesValues(ds.entries), palette[i % palette.length], false);
+        });
+        current.forEach(function (ds, i) {
+            const prev = previous.find(function (p) { return p.label === ds.label; }) ||
+                (previous.length === current.length ? previous[i] : null);
+            if (!prev) return;
+            datasets.push(line(ds.label + ' (prev period)', seriesValues(prev.entries),
+                palette[i % palette.length], true));
+        });
+        return { labels: labels, datasets: datasets };
+    }
+
+    // Line display options for a comparison chart: the current period gets
+    // the usual points / fill / smoothness, the previous period the same
+    // points and smoothness but never a fill (it would hide the current one).
+    function styleComparisonDatasets(datasets, opts) {
+        opts = opts || {};
+        applyLineStyle(datasets.filter(function (d) { return !d.isComparison; }),
+            { showPoints: opts.showPoints, fillArea: opts.fillArea, tension: opts.tension, stacked: false });
+        datasets.filter(function (d) { return d.isComparison; }).forEach(function (d) {
+            if (isFinite(opts.tension)) d.tension = opts.tension;
+            d.pointRadius = opts.showPoints ? 3 : 0;
+            d.fill = false;
+        });
+        return datasets;
     }
 
     window.OxiUI = {
@@ -961,6 +1072,8 @@
         applyAxisOptions: applyAxisOptions,
         computePercentChange: computePercentChange,
         cardPaydownChartConfig: cardPaydownChartConfig,
+        balanceComparisonChart: balanceComparisonChart,
+        styleComparisonDatasets: styleComparisonDatasets,
         hoverValueGuidePlugin: hoverValueGuidePlugin
     };
 })();

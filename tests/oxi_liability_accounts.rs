@@ -8,7 +8,6 @@
 /// client-side type filter in `get_accounts` must treat both spellings as
 /// the same family, otherwise a `type=liability` request returns zero
 /// accounts on v6 and the Graph Builder list loses every liability account.
-
 #[cfg(test)]
 mod tests {
     use mockito::Server;

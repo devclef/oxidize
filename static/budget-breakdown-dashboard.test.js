@@ -146,7 +146,9 @@ describe('dashboard.js wiring', () => {
     });
 
     it('shows the Budget Breakdown type badge', () => {
-        expect(dashboardSource).toContain('widget-type-badge budget-breakdown');
+        expect(globalThis.widgetTypeBadgeHtml({ widget_type: 'budget_breakdown' })).toContain('widget-type-badge budget-breakdown');
+        expect(globalThis.widgetTypeBadgeHtml({ widget_type: 'budget_breakdown', budget_breakdown_by: 'destination' }))
+            .toContain('Budget: Destinations');
     });
 
     it('renders budget_breakdown with the shared multi-series renderer', () => {

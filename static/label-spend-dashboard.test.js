@@ -135,7 +135,7 @@ describe('dashboard.js wiring', () => {
     });
 
     it('shows a "Spending by Label" widget type badge', () => {
-        expect(dashboardSource).toContain(
+        expect(globalThis.widgetTypeBadgeHtml({ widget_type: 'label_spend' })).toBe(
             '<span class="widget-type-badge label-spend">Spending by Label</span>'
         );
     });
