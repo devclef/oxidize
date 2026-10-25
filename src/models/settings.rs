@@ -29,8 +29,6 @@ pub struct Settings {
     /// Whether the Monthly Summary page is available. Default: disabled, so
     /// the page and its nav link are hidden until explicitly enabled.
     pub monthly_summary_enabled: bool,
-    /// Whether the Sankey Flow page is available. Default: enabled.
-    pub sankey_enabled: bool,
     /// Whether the Reimbursements page is available. Default: enabled.
     pub reimbursements_enabled: bool,
     /// Whether the Budget Comparison page is available. Default: enabled.
@@ -93,7 +91,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             monthly_summary_enabled: false,
-            sankey_enabled: true,
             reimbursements_enabled: true,
             budget_comparison_enabled: true,
             avg_cost_enabled: true,
@@ -117,7 +114,6 @@ impl Settings {
         let mut s = Self::default();
         for (key, field) in [
             ("monthly_summary_enabled", &mut s.monthly_summary_enabled),
-            ("sankey_enabled", &mut s.sankey_enabled),
             ("reimbursements_enabled", &mut s.reimbursements_enabled),
             (
                 "budget_comparison_enabled",
@@ -165,7 +161,6 @@ impl Settings {
     pub fn to_rows(&self) -> std::collections::HashMap<String, String> {
         let mut map: std::collections::HashMap<String, String> = [
             ("monthly_summary_enabled", self.monthly_summary_enabled),
-            ("sankey_enabled", self.sankey_enabled),
             ("reimbursements_enabled", self.reimbursements_enabled),
             ("budget_comparison_enabled", self.budget_comparison_enabled),
             ("avg_cost_enabled", self.avg_cost_enabled),
@@ -217,7 +212,6 @@ impl Settings {
     pub fn with_defaults_from(&self, config: &Config) -> Settings {
         Settings {
             monthly_summary_enabled: self.monthly_summary_enabled,
-            sankey_enabled: self.sankey_enabled,
             reimbursements_enabled: self.reimbursements_enabled,
             budget_comparison_enabled: self.budget_comparison_enabled,
             avg_cost_enabled: self.avg_cost_enabled,
@@ -265,7 +259,6 @@ impl Settings {
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct SettingsUpdate {
     pub monthly_summary_enabled: Option<bool>,
-    pub sankey_enabled: Option<bool>,
     pub reimbursements_enabled: Option<bool>,
     pub budget_comparison_enabled: Option<bool>,
     pub avg_cost_enabled: Option<bool>,
@@ -354,9 +347,6 @@ impl SettingsUpdate {
     pub fn apply(self, current: &mut Settings) {
         if let Some(v) = self.monthly_summary_enabled {
             current.monthly_summary_enabled = v;
-        }
-        if let Some(v) = self.sankey_enabled {
-            current.sankey_enabled = v;
         }
         if let Some(v) = self.reimbursements_enabled {
             current.reimbursements_enabled = v;

@@ -6,12 +6,9 @@ The dashboard (`/dashboard`) is your customizable financial overview. It display
 
 ### Adding Widgets
 
-You have two ways to add widgets:
-
-1. **From the main page**: After configuring a chart on the home page (`/`), click **"Save as Widget"**.
-
-2. **From the Sankey page** (`/sankey`): click **"Save as widget"** (the Widget
-   Builder can build Sankey widgets too).
+Widgets are built in the Widget Builder (`/`): configure a chart, then click
+**"Save as widget"**. Every widget type is built there, including **Sankey
+Flow** diagrams.
 
 Every widget's **Settings** panel can change everything it was built with:
 its type, accounts/groups, categories, budgets, subscriptions, date range

@@ -1,58 +1,20 @@
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 
 use crate::client::FireflyClient;
-use crate::config::Config;
 use crate::models::SankeyFlowType;
 
-/// True when the Sankey Flow feature is enabled in the settings.
-/// (Unreadable settings are treated as enabled: the default is on.)
-fn sankey_enabled() -> bool {
-    crate::storage::Storage::get_settings()
-        .map(|s| s.sankey_enabled)
-        .unwrap_or(true)
-}
-
-/// GET endpoint for the sankey page. Returns 404 when the feature is
-/// disabled (toggle under /settings).
+/// The Sankey Flow page was retired: sankey widgets are built in the Widget
+/// Builder now. Old bookmarks land there instead of on a 404.
 #[get("/sankey")]
-pub async fn sankey_page(config: web::Data<Config>) -> HttpResponse {
-    // Env vars are only the defaults: apply runtime settings from the
-    // /settings page (Firefly connection, account types, cache TTL, time ranges).
-    let config = crate::config::Config::effective(&config);
-    if !sankey_enabled() {
-        return HttpResponse::NotFound().json(serde_json::json!({
-            "message": "Sankey Flow is disabled. Enable it under Settings."
-        }));
-    }
-
-    let html = std::fs::read_to_string("static/sankey.html")
-        .unwrap_or_else(|_| include_str!("../../static/sankey.html").to_string());
-
-    let config_script = format!(
-        r#"
-    <script>
-        window.OXIDIZE_CONFIG = {{
-            accountTypes: {}
-        }};
-    </script>
-    "#,
-        serde_json::to_string(&config.account_types).unwrap_or_else(|_| "[]".to_string())
-    );
-
-    let html = html.replace("</head>", &format!("{} </head>", config_script));
-
-    let html = crate::handlers::hide_disabled_nav(&html);
-
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(html)
+pub async fn sankey_page() -> HttpResponse {
+    HttpResponse::Found()
+        .insert_header(("Location", "/"))
+        .finish()
 }
 
 /// GET endpoint for sankey flow data.
 ///
-/// Not gated by the sankey setting on purpose: the dashboard's sankey
-/// widget shares this endpoint, so it keeps working while the standalone
-/// page is hidden.
+/// Used by sankey widgets on the dashboard and the Widget Builder preview.
 #[get("/api/sankey/flows")]
 pub async fn get_sankey_flows(
     client: web::Data<FireflyClient>,

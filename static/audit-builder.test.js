@@ -10,7 +10,7 @@
  * DOMContentLoaded event, with Chart.js and fetch stubbed.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const read = (f) => readFileSync(path.resolve(process.cwd(), f), 'utf8');
@@ -194,6 +194,8 @@ describe('O8: Sankey widgets in the builder', () => {
         expect(w.widget_type).toBe('sankey');
         expect(w.sankey_flow_type).toBe('budget');
         expect(w.accounts).toEqual(['7']);
+        // Same height the retired Sankey page saved its widgets with
+        expect(w.chart_height).toBe(500);
     });
 
     it('previews the flows with the shared renderer', async () => {
@@ -203,9 +205,11 @@ describe('O8: Sankey widgets in the builder', () => {
         const render = vi.spyOn(window.OxiSankey, 'render').mockReturnValue('ok');
         global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ links: [{ source: 'A', target: 'B', amount: 5 }] }) }));
         $('sankey-flow-type-select').value = 'category';
+        $('exclude-categories-select').innerHTML = '<option value="Work" selected>Work</option>';
         await app.fetchChartData();
         const url = global.fetch.mock.calls.map(c => c[0]).find(u => u.startsWith('/api/sankey/flows'));
         expect(url).toContain('flow_type=category');
+        expect(url).toContain('exclude_categories%5B%5D=Work');
         expect(url).toContain('accounts%5B%5D=7');
         expect(render).toHaveBeenCalledWith($('sankey-preview'), { links: [{ source: 'A', target: 'B', amount: 5 }] }, expect.any(Object));
         expect($('sankey-preview').style.display).toBe('block');
@@ -225,6 +229,23 @@ describe('O8: Sankey widgets in the builder', () => {
         await app.fetchChartData();
         expect($('sankey-preview').textContent).toBe(window.OxiSankey.unavailableMessage);
         expect(global.fetch.mock.calls.some(c => String(c[0]).startsWith('/api/sankey/flows'))).toBe(false);
+    });
+});
+
+describe('the Sankey Flow tab is gone (built here instead)', () => {
+    it('no page links to the retired /sankey page', () => {
+        const pages = readdirSync(path.resolve(process.cwd(), 'static')).filter(f => f.endsWith('.html'));
+        expect(pages).not.toContain('sankey.html');
+        for (const page of pages) {
+            expect(read(`static/${page}`), page).not.toContain('href="/sankey"');
+        }
+    });
+
+    it('other widget types keep the default height', async () => {
+        selectType('balance');
+        addAccount('1');
+        const w = await savedWidget('Bal');
+        expect(w.chart_height).toBeUndefined();
     });
 });
 
