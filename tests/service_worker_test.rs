@@ -66,7 +66,6 @@ fn every_page_uses_the_logo() {
         "summary",
         "budget-comparison",
         "avg-cost",
-        "sankey",
         "reimbursements",
         "labels",
         "settings",

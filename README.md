@@ -99,11 +99,10 @@ env value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
 | `/dashboard` | Custom dashboard with saved widgets |
 | `/avg-cost` | Average cost per transaction (optional - enabled by default, toggle under Settings) |
 | `/budget-comparison` | Budget vs actual spending (optional - enabled by default, toggle under Settings) |
-| `/sankey` | Sankey flow visualization (optional - enabled by default, toggle under Settings) |
 | `/reimbursements` | Work expenses vs reimbursements, month by month (optional - enabled by default, toggle under Settings) |
 | `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
 | `/labels` | Spending Labels: define your own category lenses and report on budget composition and spend trends along them (optional - enabled by default, toggle under Settings) |
-| `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Sankey Flow, Reimbursements, Budget Comparison, Avg Cost, Spending Labels) |
+| `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Reimbursements, Budget Comparison, Avg Cost, Spending Labels) |
 
 ## API Endpoints
 
@@ -239,12 +238,15 @@ fly.
 
 `monthly_summary_enabled` defaults to `false`: when disabled the `/summary`
 page and `/api/summary/month` return 404 and the nav link is hidden on all
-pages. `sankey_enabled`, `reimbursements_enabled`, `budget_comparison_enabled`
+pages. `reimbursements_enabled`, `budget_comparison_enabled`
 and `avg_cost_enabled` default to `true`; when disabled the page (and the
 page's own API endpoints) return 404 and the nav link is hidden on all
-pages. `/api/sankey/flows` stays available while Sankey Flow is disabled
-because the dashboard's sankey widget shares it. All flags can be changed
-while the server is running and survive restarts.
+pages. All flags can be changed while the server is running and survive
+restarts.
+
+Sankey flow diagrams are a widget type: build them in the Widget Builder
+(`/`, type **Sankey Flow**). The old `/sankey` page redirects there, and
+`/api/sankey/flows` is always available.
 
 ### Misc
 
@@ -272,7 +274,7 @@ Oxidize
 │   │   ├── group.rs     # Group CRUD
 │   │   ├── index.rs     # Main page, manifest, favicon
 │   │   ├── reimbursement.rs  # Reimbursements page and API
-│   │   ├── sankey.rs    # Sankey page and flow data
+│   │   ├── sankey.rs    # Sankey flow data (+ /sankey redirect to the builder)
 │   │   └── widget.rs    # Widget CRUD
 │   ├── models/          # Data types
 │   └── storage/mod.rs   # SQLite persistence (widgets, groups, dashboards)

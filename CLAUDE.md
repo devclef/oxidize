@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI assista
 
 ## Project Overview
 
-Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across eight pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Sankey Flow (`/sankey`), Monthly Summary (`/summary`), Reimbursements (`/reimbursements`), and Spending Labels (`/labels`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
+Oxidize is a Rust web application that serves as a lightweight dashboard frontend for [Firefly III](https://www.firefly-iii.org/), a personal finance manager. It proxies requests to the Firefly III API, aggregates financial data (balance history, earned/spent, expenses by category, net worth, budgets, sankey flows), and presents it across seven pages — Graph Builder (`/`), Dashboard (`/dashboard`), Budget Comparison (`/budget-comparison`), Average Cost per Budget (`/avg-cost`), Monthly Summary (`/summary`), Reimbursements (`/reimbursements`), and Spending Labels (`/labels`) — with configurable chart widgets and account groups. Local state (dashboards, widgets, groups) is persisted in a SQLite database.
 
 ## Commands
 
@@ -54,7 +54,7 @@ Browser (vanilla JS + Chart.js)
 Actix-Web Server (main.rs)
     │
     ├─► Static file serving (/static/*)
-    ├─► HTML page handlers (/, /dashboard, /avg-cost, /budget-comparison, /sankey)
+    ├─► HTML page handlers (/, /dashboard, /avg-cost, /budget-comparison, ...)
     ├─► API handlers (/api/*)
     │       │
     │       ▼
@@ -220,7 +220,7 @@ src/
 │   ├── label.rs             # GET /labels page + /api/labels CRUD + /api/labels/budget-composition + /api/labels/spend
 │   ├── reimbursement.rs   # GET /reimbursements page + GET /api/reimbursements/summary + refresh
 │   ├── subscription.rs      # /api/subscriptions, /api/subscriptions/groups, /api/subscriptions/spend (Subscription Cost widget)
-│   ├── sankey.rs            # GET /sankey page + GET /api/sankey/flows
+│   ├── sankey.rs            # GET /api/sankey/flows (+ GET /sankey: redirect to the builder; the page was retired)
 │   ├── summary.rs           # GET /summary page + GET /api/summary/month
 │   ├── group.rs             # CRUD for account groups
 │   └── widget.rs            # CRUD for dashboard widgets
@@ -247,7 +247,6 @@ static/               # Frontend assets (served at /static/)
 ├── dashboard.html         # Dashboard page
 ├── avg-cost.html          # Average Cost per Budget page (inline page script)
 ├── budget-comparison.html # Budget Comparison page (inline page script)
-├── sankey.html            # Sankey Flow page (inline page script)
 ├── summary.html           # Monthly Summary page (inline page script; account include/exclude filter)
 ├── reimbursements.html    # Reimbursements page (inline page script; marker + period config in localStorage)
 ├── summary-utils.js       # Pure helpers for the Monthly Summary page (month math, account filter)
@@ -495,7 +494,7 @@ No build step or bundler — plain JavaScript files served from `/static/`.
 
 **`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors (`OxiUI.getChartColors()` — text/grid/tooltip, `accent`, `earned`/`spent`, `neutral`, and an ordered colorblind-validated `series` palette; `OxiUI.getSeriesPalette()` for the full ordered list), the per-chart grid lines plugin (`OxiUI.chartGridPlugin`, registered globally: any chart whose canvas sits inside an element with `data-grid="off"` draws no grid lines — dashboard widgets set it on `.widget-chart` from `chart_options.show_grid`, the Widget Builder on its preview wrapper), the shared part-to-whole chart (`OxiUI.pieChartConfig` / `createPieChart` / `restylePieChart`: every "pie" is a doughnut with the total in the center, slices sorted largest-first with the tail past 8 folded into a neutral "Other", surface-colored slice gaps, colors softened toward the surface in dark mode; slice colors may be theme keys like `'earned'`/`'spent'`; `showTotal: false` when a sum is meaningless), and the shared spinner. Tested by `ui.test.js`. It also owns the **widget chart option matrix**: `OxiUI.widgetOptionSupport(type, {chartType, chartMode, variant})` decides which options (layout, style, stacked, % change, comparison, forecast, trend line, points/fill/smoothness, grid lines, ticks, y-from-zero, exclusions, type-specific data controls) apply to a widget type. Both the Graph Builder (`[data-opt]` controls in `index.html`, `applyBuilderOptionVisibility`) and the dashboard widget settings (`buildWidgetSettingsHtml` / `readWidgetSettings`) are driven by it — add a new option there first, then on both pages; `static/widget-options.test.js` enforces parity (findings: `docs/chart-options-audit.md`). `OxiUI.applyLineStyle` / `applyAxisOptions` / `computePercentChange` apply the saved options to chart datasets/scales on both pages; `OxiUI.balanceComparisonChart` builds the "compare with previous period" series (total or per account, previous period aligned by position) and `OxiUI.cardPaydownChartConfig` the card paydown chart for both pages. The builder's Accounts / Groups / Categories / Budgets / Subscriptions sections are `data-opt` controls too, and the dashboard settings can change a widget's type (`changeWidgetSettingsType` rebuilds the panel) and refresh its card after "Update" (`refreshWidgetCard`). Never hardcode chart hex colors in page scripts — `app.js`/`dashboard.js` go through their `chartColors()` / `seriesColor(i)` helpers, inline page scripts call `OxiUI` directly. The values mirror the `--chart-*` tokens in `style.css`; change both together.
 
-The tool pages (`avg-cost.html`, `budget-comparison.html`, `sankey.html`) keep their page logic in inline `<script>` blocks rather than separate files.
+The tool pages (`avg-cost.html`, `budget-comparison.html`) keep their page logic in inline `<script>` blocks rather than separate files.
 
 **`style.css`** — Uses CSS custom properties (variables) for theming:
 - `:root` for light mode defaults ("Slate & Teal": slate neutrals, teal `--accent-color`)
@@ -519,7 +518,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 </script>
 ```
 - `index.rs` reads `./static/index.html` from the filesystem at runtime (`std::fs::read_to_string`)
-- `avg_cost.rs`, `budget_comparison.rs`, and `sankey.rs` read their HTML at runtime and fall back to the `include_str!`-compiled copy if the file is missing
+- `avg_cost.rs` and `budget_comparison.rs` read their HTML at runtime and fall back to the `include_str!`-compiled copy if the file is missing
 - `dashboard.rs` uses `include_str!("../../static/dashboard.html")` (compiled into the binary)
 
 ## API Endpoints Reference
@@ -531,7 +530,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/dashboard` | Dashboard page (with injected config) |
 | `GET` | `/avg-cost` | Average Cost per Budget page (with injected config) |
 | `GET` | `/budget-comparison` | Budget Comparison page (with injected config) |
-| `GET` | `/sankey` | Sankey Flow page (with injected config) |
+| `GET` | `/sankey` | Redirects (302) to `/`: the Sankey page was retired, sankey widgets are built in the Widget Builder |
 | `GET` | `/summary` | Monthly Summary page (with injected config) |
 | `GET` | `/reimbursements` | Reimbursements page |
 
@@ -630,8 +629,9 @@ The /settings page (backed by the SQLite `settings` key/value table) holds
 user preferences that apply **at runtime**, without a restart:
 
 - **Feature toggles** — `monthly_summary_enabled` (off by default),
-  `sankey_enabled`, `reimbursements_enabled`, `budget_comparison_enabled`,
-  `avg_cost_enabled` (on by default). Disabled pages and APIs 404 and their
+  `reimbursements_enabled`, `budget_comparison_enabled`, `avg_cost_enabled`,
+  `labels_enabled` (on by default). (`sankey_enabled` was removed with the
+  Sankey page; a stale stored row is ignored.) Disabled pages and APIs 404 and their
   nav links are stripped from every page.
 - **Env-moved settings** (mirror the env vars above; `None` = use the env
   value): `firefly_url`, `firefly_token`, `account_types`,

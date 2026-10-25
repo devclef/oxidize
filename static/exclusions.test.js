@@ -15,7 +15,6 @@ const root = process.cwd();
 const dashboardSource = readFileSync(path.resolve(root, 'static/dashboard.js'), 'utf8');
 const dashboardHtml = readFileSync(path.resolve(root, 'static/dashboard.html'), 'utf8');
 const indexHtml = readFileSync(path.resolve(root, 'static/index.html'), 'utf8');
-const sankeyHtml = readFileSync(path.resolve(root, 'static/sankey.html'), 'utf8');
 
 beforeAll(() => {
     // Provide the config the script expects, then load the real dashboard.js.
@@ -117,11 +116,4 @@ describe('HTML wiring', () => {
         expect(appSource).toContain('exclude_budgets: getExcludedBudgets(),');
     });
 
-    it('sankey page exposes exclusion selects and wires them into the flow request', () => {
-        expect(sankeyHtml).toContain('id="exclude-categories-select"');
-        expect(sankeyHtml).toContain('id="exclude-budgets-select"');
-        expect(sankeyHtml).toContain('appendSankeyExclusionParams(params);');
-        expect(sankeyHtml).toContain('exclude_categories: getSankeyExcludedCategories(),');
-        expect(sankeyHtml).toContain('exclude_budgets: getSankeyExcludedBudgets(),');
-    });
 });

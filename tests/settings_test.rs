@@ -90,7 +90,6 @@ mod tests {
     #[test]
     fn test_optional_pages_enabled_by_default() {
         let s = Settings::default();
-        assert!(s.sankey_enabled);
         assert!(s.reimbursements_enabled);
         assert!(s.budget_comparison_enabled);
         assert!(s.avg_cost_enabled);
@@ -98,7 +97,6 @@ mod tests {
         // And the same defaults apply to rows with missing keys.
         let empty = std::collections::HashMap::new();
         let s = Settings::from_rows(&empty);
-        assert!(s.sankey_enabled);
         assert!(s.reimbursements_enabled);
         assert!(s.budget_comparison_enabled);
         assert!(s.avg_cost_enabled);
@@ -113,7 +111,7 @@ mod tests {
         };
         SettingsUpdate::default().apply(&mut s);
         assert!(!s.monthly_summary_enabled, "empty update must be a no-op");
-        assert!(s.sankey_enabled, "empty update must be a no-op");
+        assert!(s.reimbursements_enabled, "empty update must be a no-op");
 
         SettingsUpdate {
             monthly_summary_enabled: Some(true),
@@ -123,14 +121,17 @@ mod tests {
         .apply(&mut s);
         assert!(s.monthly_summary_enabled);
         assert!(!s.avg_cost_enabled);
-        assert!(s.sankey_enabled, "unprovided fields must stay untouched");
+        assert!(
+            s.reimbursements_enabled,
+            "unprovided fields must stay untouched"
+        );
     }
 
     #[test]
     fn test_settings_rows_roundtrip_and_defaults() {
         let rows = Settings {
             monthly_summary_enabled: true,
-            sankey_enabled: false,
+            reimbursements_enabled: false,
             ..Default::default()
         }
         .to_rows();
@@ -139,7 +140,7 @@ mod tests {
             Some("true")
         );
         assert_eq!(
-            rows.get("sankey_enabled").map(String::as_str),
+            rows.get("reimbursements_enabled").map(String::as_str),
             Some("false")
         );
         assert_eq!(
@@ -149,8 +150,7 @@ mod tests {
 
         let parsed = Settings::from_rows(&rows);
         assert!(parsed.monthly_summary_enabled);
-        assert!(!parsed.sankey_enabled);
-        assert!(parsed.reimbursements_enabled);
+        assert!(!parsed.reimbursements_enabled);
         assert!(parsed.budget_comparison_enabled);
         assert!(parsed.avg_cost_enabled);
 
@@ -405,7 +405,10 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = awt::read_body_json(resp).await;
         assert_eq!(body["monthly_summary_enabled"], json!(false));
-        assert_eq!(body["sankey_enabled"], json!(true));
+        assert!(
+            body.get("sankey_enabled").is_none(),
+            "the Sankey Flow page (and its toggle) is gone"
+        );
         assert_eq!(body["reimbursements_enabled"], json!(true));
         assert_eq!(body["budget_comparison_enabled"], json!(true));
         assert_eq!(body["avg_cost_enabled"], json!(true));
@@ -427,7 +430,6 @@ mod tests {
         assert_eq!(resp.status(), 404, "summary API must 404 while disabled");
 
         for (uri, what) in [
-            ("/sankey", "sankey page"),
             ("/reimbursements", "reimbursements page"),
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
@@ -436,6 +438,16 @@ mod tests {
                 awt::call_service(&service, awt::TestRequest::get().uri(uri).to_request()).await;
             assert_eq!(resp.status(), 200, "{what} must be served by default");
         }
+
+        // The retired Sankey Flow page sends old bookmarks to the Widget
+        // Builder, where sankey widgets are built now.
+        let resp = awt::call_service(
+            &service,
+            awt::TestRequest::get().uri("/sankey").to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 302);
+        assert_eq!(resp.headers().get("location").unwrap(), "/");
 
         let resp = awt::call_service(&service, awt::TestRequest::get().uri("/").to_request()).await;
         assert_eq!(resp.status(), 200);
@@ -446,8 +458,8 @@ mod tests {
             "nav link must be hidden while disabled"
         );
         assert!(
-            html.contains("Sankey Flow</a>"),
-            "sankey nav link visible by default"
+            !html.contains("Sankey Flow</a>") && !html.contains("href=\"/sankey\""),
+            "the sankey tab is gone"
         );
         assert!(
             html.contains("Reimbursements</a>"),
@@ -488,8 +500,8 @@ mod tests {
             "settings page must offer a monthly summary toggle"
         );
         assert!(
-            html.contains("sankey-toggle"),
-            "settings page must offer a sankey toggle"
+            !html.contains("sankey-toggle"),
+            "the retired Sankey Flow page has no toggle"
         );
         assert!(
             html.contains("reimbursements-toggle"),
@@ -554,9 +566,10 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = awt::read_body_json(resp).await;
         assert_eq!(body["monthly_summary_enabled"], json!(true));
-        assert_eq!(body["sankey_enabled"], json!(true));
+        assert_eq!(body["reimbursements_enabled"], json!(true));
 
-        // 5) Disable all four default-on features at once.
+        // 5) Disable the three default-on page features at once (a stale
+        //    sankey_enabled key from older clients is ignored).
         let resp = awt::call_service(
             &service,
             awt::TestRequest::patch()
@@ -576,13 +589,12 @@ mod tests {
         .await;
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = awt::read_body_json(resp).await;
-        assert_eq!(body["sankey_enabled"], json!(false));
+        assert!(body.get("sankey_enabled").is_none());
         assert_eq!(body["reimbursements_enabled"], json!(false));
         assert_eq!(body["budget_comparison_enabled"], json!(false));
         assert_eq!(body["avg_cost_enabled"], json!(false));
 
         for (uri, what) in [
-            ("/sankey", "sankey page"),
             ("/reimbursements", "reimbursements page"),
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
@@ -592,8 +604,7 @@ mod tests {
             assert_eq!(resp.status(), 404, "{what} must 404 while disabled");
         }
 
-        // The pages' own APIs 404 as well (the sankey flows endpoint is the
-        // exception: the dashboard sankey widget shares it).
+        // The pages' own APIs 404 as well.
         let resp = awt::call_service(
             &service,
             awt::TestRequest::get()
@@ -639,7 +650,7 @@ mod tests {
         assert_ne!(
             resp.status(),
             404,
-            "sankey flows API stays available for dashboard widgets"
+            "sankey flows API is always available (widgets + builder preview)"
         );
 
         // Nav links are hidden everywhere (incl. the settings page) while
@@ -649,7 +660,6 @@ mod tests {
                 awt::call_service(&service, awt::TestRequest::get().uri(uri).to_request()).await;
             let body = awt::read_body(resp).await;
             let html = String::from_utf8(body.to_vec()).unwrap();
-            assert!(!html.contains("Sankey Flow</a>"), "sankey nav link hidden");
             assert!(
                 !html.contains("Reimbursements</a>"),
                 "reimbursements nav link hidden"
@@ -669,7 +679,7 @@ mod tests {
             );
         }
 
-        // 6) Re-enable the four features: pages and APIs are served again.
+        // 6) Re-enable the three features: pages and APIs are served again.
         let resp = awt::call_service(
             &service,
             awt::TestRequest::patch()
@@ -677,7 +687,6 @@ mod tests {
                 .insert_header(("content-type", "application/json"))
                 .set_payload(
                     json!({
-                        "sankey_enabled": true,
                         "reimbursements_enabled": true,
                         "budget_comparison_enabled": true,
                         "avg_cost_enabled": true
@@ -690,7 +699,6 @@ mod tests {
         assert_eq!(resp.status(), 200);
 
         for (uri, what) in [
-            ("/sankey", "sankey page"),
             ("/reimbursements", "reimbursements page"),
             ("/budget-comparison", "budget comparison page"),
             ("/avg-cost", "avg cost page"),
@@ -707,7 +715,6 @@ mod tests {
         let resp = awt::call_service(&service, awt::TestRequest::get().uri("/").to_request()).await;
         let body = awt::read_body(resp).await;
         let html = String::from_utf8(body.to_vec()).unwrap();
-        assert!(html.contains("Sankey Flow</a>"));
         assert!(html.contains("Reimbursements</a>"));
         assert!(html.contains("Budget Comparison</a>"));
         assert!(html.contains("Avg Cost</a>"));

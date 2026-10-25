@@ -28,7 +28,6 @@ describe('settings page switch markup', () => {
     it('renders one switch per feature toggle, input before slider', () => {
         const ids = [
             'monthly-summary-toggle',
-            'sankey-toggle',
             'reimbursements-toggle',
             'budget-comparison-toggle',
             'avg-cost-toggle',
@@ -79,7 +78,6 @@ describe('settings page switch markup', () => {
     it('PATCHes the API key for every toggle it renders', () => {
         const keys = [
             'monthly_summary_enabled',
-            'sankey_enabled',
             'reimbursements_enabled',
             'budget_comparison_enabled',
             'avg_cost_enabled',

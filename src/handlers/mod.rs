@@ -59,9 +59,6 @@ pub fn hide_disabled_nav(html: &str) -> String {
             if !s.monthly_summary_enabled {
                 out = strip_nav_link(&out, "/summary", "Monthly Summary");
             }
-            if !s.sankey_enabled {
-                out = strip_nav_link(&out, "/sankey", "Sankey Flow");
-            }
             if !s.reimbursements_enabled {
                 out = strip_nav_link(&out, "/reimbursements", "Reimbursements");
             }

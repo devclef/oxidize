@@ -4043,7 +4043,9 @@ async function saveGraphAsWidget() {
         chart_options: chartOptions,
         exclude_categories: getExcludedCategories(),
         exclude_budgets: getExcludedBudgets(),
-        dashboard_ids: ['default']
+        dashboard_ids: ['default'],
+        // Flow diagrams need more height than the 300px default
+        chart_height: widgetType === 'sankey' ? 500 : undefined
     };
 
     try {
