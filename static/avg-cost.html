@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Average Cost</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -45,20 +45,20 @@
     <div class="tool-container">
         <div class="selector-row">
             <div class="panel">
-                <h3>Select Budgets</h3>
+                <h3>Budgets</h3>
                 <div class="panel-actions">
-                    <button id="select-all-budgets" class="ghost-btn">Select All</button>
-                    <button id="deselect-all-budgets" class="ghost-btn">Deselect All</button>
+                    <button id="select-all-budgets" class="ghost-btn">Select all</button>
+                    <button id="deselect-all-budgets" class="ghost-btn">Deselect all</button>
                 </div>
                 <div class="check-list" id="budget-list">
                     <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading budgets...</span></div>
                 </div>
             </div>
             <div class="panel">
-                <h3>Select Accounts (optional)</h3>
+                <h3>Accounts <span class="panel-title-hint">(optional)</span></h3>
                 <div class="panel-actions">
-                    <button id="select-all-accounts" class="ghost-btn">Select All</button>
-                    <button id="deselect-all-accounts" class="ghost-btn">Deselect All</button>
+                    <button id="select-all-accounts" class="ghost-btn">Select all</button>
+                    <button id="deselect-all-accounts" class="ghost-btn">Deselect all</button>
                 </div>
                 <div class="check-list" id="account-list">
                     <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading accounts...</span></div>
@@ -69,12 +69,12 @@
         <div class="panel">
             <div class="avg-header">
                 <div class="field">
-                    <span class="control-label">Calculation Mode</span>
+                    <span class="control-label">Calculation mode</span>
                     <div class="mode-toggle" role="radiogroup" aria-label="Calculation mode">
                         <input type="radio" id="mode-last-n" name="calc-mode" value="last_n_months" checked>
-                        <label for="mode-last-n">Last N Months</label>
+                        <label for="mode-last-n">Last N months</label>
                         <input type="radio" id="mode-prev-year" name="calc-mode" value="previous_year_same_month">
-                        <label for="mode-prev-year">Previous Year Same Month</label>
+                        <label for="mode-prev-year">Same month last year</label>
                     </div>
                 </div>
                 <div class="field" id="months-field">

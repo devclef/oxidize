@@ -2,8 +2,8 @@ const THEME_KEY = 'oxidize_theme';
 
 // Browser chrome colors per theme (PWA <meta name="theme-color">)
 const THEME_COLORS = {
-    light: '#3b82f6',
-    dark: '#1e1b4b',
+    light: '#f4f6f8',
+    dark: '#0b1015',
 };
 
 function updateThemeColor(theme) {
@@ -20,6 +20,12 @@ function getInitialTheme() {
 }
 
 function updateThemeIcons(theme) {
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+        const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        toggle.setAttribute('title', label);
+        toggle.setAttribute('aria-label', label);
+    }
     const sunIcon = document.getElementById('theme-icon-sun');
     const moonIcon = document.getElementById('theme-icon-moon');
     if (sunIcon && moonIcon) {

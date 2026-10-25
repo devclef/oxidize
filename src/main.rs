@@ -76,6 +76,7 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(handlers::index::index))
             .route("/api/manifest", web::get().to(handlers::index::manifest))
             .service(handlers::index::favicon)
+            .service(handlers::index::service_worker)
             .service(handlers::sankey::sankey_page)
             .service(handlers::sankey::get_sankey_flows)
             .service(handlers::settings::settings_page)

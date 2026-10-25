@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Spending Labels</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="manifest" href="/api/manifest">
     <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js', { scope: '/' }); }); }</script>
     <script src="/static/theme.js"></script>
@@ -88,7 +88,7 @@
         .cat-labels { display: flex; flex-wrap: wrap; gap: 4px; }
         .summary-hint { color: var(--text-muted); font-weight: 400; font-size: var(--text-xs); }
         tr.cat-row { cursor: pointer; }
-        tr.cat-row:hover td { background: rgba(59, 130, 246, 0.08); }
+        tr.cat-row:hover td { background: var(--accent-light); }
         tr.cat-row:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
         .cat-row-manage { color: var(--text-muted); font-size: var(--text-xs); margin-left: 6px; }
         .cat-editor-row {
@@ -144,7 +144,7 @@
     </header>
 
     <div class="page-body">
-        <div id="error-container" class="error" style="display: none;"></div>
+        <div id="error-container" class="error-msg" style="display: none;"></div>
 
         <!-- ── Label management ─────────────────────────────────────── -->
         <section class="panel" id="labels-panel" aria-label="Manage labels">
@@ -169,7 +169,7 @@
                     </div>
                     <div>
                         <label class="form-label" for="label-color">Color</label>
-                        <input class="color-input" id="label-color" type="color" value="#3b82f6">
+                        <input class="color-input" id="label-color" type="color" value="#2a78d6">
                     </div>
                     <div class="full">
                         <label class="form-label" for="label-description">Description (optional)</label>
@@ -382,7 +382,7 @@
                 <label class="form-label" for="cat-editor-new-name">Create a new label (it starts with this category)</label>
                 <div class="cat-editor-new-row">
                     <input class="form-input" id="cat-editor-new-name" type="text" placeholder="e.g. rent" maxlength="60" autocomplete="off">
-                    <input class="color-input" id="cat-editor-new-color" type="color" value="#8b5cf6" title="Label color" aria-label="New label color">
+                    <input class="color-input" id="cat-editor-new-color" type="color" value="#6250d6" title="Label color" aria-label="New label color">
                     <button class="ghost-btn" id="cat-editor-new-btn" type="button">Create</button>
                 </div>
                 <div id="cat-editor-error" class="cat-editor-error" role="alert"></div>
@@ -582,7 +582,7 @@
             state.draftEntries = label ? label.entries.slice() : [];
             $('label-form-title').textContent = label ? 'Edit label' : 'New label';
             $('label-name').value = label ? label.name : '';
-            $('label-color').value = (label && label.color) || '#3b82f6';
+            $('label-color').value = (label && label.color) || '#2a78d6';
             $('label-description').value = label ? label.description : '';
             renderDraftChips();
             $('label-form').style.display = 'block';
@@ -1297,7 +1297,7 @@
             }
         }
 
-        const PALETTE = ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+        const PALETTE = OxiUI.getChartColors().series;
         function colorForLabel(label, index) {
             if (label === 'Unlabeled') return L.UNLABELED_COLOR;
             const l = state.labels.find((x) => x.name === label);

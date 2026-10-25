@@ -122,12 +122,46 @@ const CONFIG = window.OXIDIZE_CONFIG || {
     autoFetchAccounts: false
 };
 
+// Theme-aware chart colors from the shared UI kit (light fallback when the
+// kit is not loaded, e.g. in isolated unit tests).
+const FALLBACK_CHART_COLORS = {
+    textColor: '#475569', gridColor: '#e2e8f0', tooltipBg: '#ffffff',
+    tooltipBorder: '#e2e8f0', tooltipText: '#1e293b', accent: '#0f766e',
+    earned: '#15803d', spent: '#dc2626', neutral: '#94a3b8',
+    series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'],
+    seriesExtra: ['#0e7490', '#a16207', '#9d174d', '#475569', '#4d7c0f', '#7c3aed', '#b45309']
+};
+
+function chartColors() {
+    if (typeof OxiUI !== 'undefined' && OxiUI.getChartColors) {
+        const c = OxiUI.getChartColors();
+        if (c && c.series) return c;
+    }
+    return FALLBACK_CHART_COLORS;
+}
+
+function seriesPalette() {
+    const c = chartColors();
+    return c.series.concat(c.seriesExtra);
+}
+
+function seriesColor(i) {
+    const palette = seriesPalette();
+    return palette[i % palette.length];
+}
+
+// '#rrggbb' + alpha (0..1) -> '#rrggbbaa'
+function withAlpha(hex, alpha) {
+    const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, '0');
+    return hex + a;
+}
+
 window.addEventListener("themeChanged", (e) => { updateChartTheme(e.detail); });
 
 function updateChartTheme(theme) {
     const isDark = theme === 'dark';
-    const textColor = isDark ? '#d4d4de' : '#333';
-    const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const textColor = chartColors().textColor;
+    const gridColor = chartColors().gridColor;
 
     if (!balanceChart) return;
 
@@ -502,8 +536,8 @@ async function fetchChartData() {
                 return {
                     label: ds.label,
                     data: data,
-                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
-                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+                    borderColor: seriesColor(i),
+                    backgroundColor: seriesColor(i) + '33',
                     fill: false,
                     tension: 0.3,
                     pointRadius: 3,
@@ -535,8 +569,8 @@ async function fetchChartData() {
                 renderPieChart(ctx, pieLabels, pieData);
             } else {
                 const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                const chartTextColor = isDark ? '#d4d4de' : '#333';
-                const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+                const chartTextColor = chartColors().textColor;
+                const chartGridColor = chartColors().gridColor;
 
                 // Trend line: dotted moving average per series
                 appendTrendlines(datasets);
@@ -825,8 +859,8 @@ async function fetchChartData() {
                 return {
                     label: ds.label,
                     data: data,
-                    borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
-                    backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+                    borderColor: seriesColor(i),
+                    backgroundColor: seriesColor(i) + '33',
                     fill: false,
                     tension: 0.3,
                     pointRadius: 3,
@@ -858,8 +892,8 @@ async function fetchChartData() {
                 renderPieChart(ctx, pieLabels, pieData);
             } else {
                 const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                const chartTextColor = isDark ? '#d4d4de' : '#333';
-                const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+                const chartTextColor = chartColors().textColor;
+                const chartGridColor = chartColors().gridColor;
 
                 // Trend line: dotted moving average per series
                 appendTrendlines(datasets);
@@ -1138,7 +1172,7 @@ const pctLabelPlugin = {
 
         // Respect theme for label colors
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const textColor = isDark ? '#8a8a98' : '#666';
+        const textColor = chartColors().textColor;
 
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             if (!dataset.data || dataset.hidden) return;
@@ -1187,12 +1221,6 @@ const pctLabelPlugin = {
 let datasetVisibility = {};
 let accountColors = [];
 let currentDatasets = [];
-
-const BUDGET_COLORS = [
-    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
-    '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#fbbf24'
-];
 
 function getSelectedAccountIds() {
     const checkboxes = document.querySelectorAll('.account-select:checked');
@@ -1283,13 +1311,9 @@ function appendTrendlines(datasets) {
 
 function generateColors(count) {
     const colors = [];
-    const hueStep = 360 / count;
     for (let i = 0; i < count; i++) {
-        const hue = Math.round(i * hueStep);
-        colors.push({
-            border: `hsl(${hue}, 70%, 50%)`,
-            background: `hsl(${hue}, 70%, 50%, 0.1)`
-        });
+        const color = seriesColor(i);
+        colors.push({ border: color, background: withAlpha(color, 0.1) });
     }
     return colors;
 }
@@ -1333,8 +1357,8 @@ function renderEarnedSpentChart(ctx, history, chartType = 'bars') {
 function renderEarnedSpentBarsChart(ctx, history) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     // Find earned and spent datasets from history
     const earnedDataset = history.find(ds => ds.label === 'earned');
@@ -1361,8 +1385,8 @@ function renderEarnedSpentBarsChart(ctx, history) {
 
     // Earned is typically positive (income), spent is typically positive (expense)
     // We'll show earned in green and spent in red
-    const earnedColor = isDark ? '#34d399' : '#27ae60';
-    const spentColor = isDark ? '#f87171' : '#e74c3c';
+    const earnedColor = chartColors().earned;
+    const spentColor = chartColors().spent;
 
     // Destroy existing chart to avoid memory leaks
     if (balanceChart) {
@@ -1448,8 +1472,8 @@ function renderEarnedSpentBarsChart(ctx, history) {
 function renderDeltaLineChart(ctx, history) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     // Find earned and spent datasets from history
     const earnedDataset = history.find(ds => ds.label === 'earned');
@@ -1477,8 +1501,8 @@ function renderDeltaLineChart(ctx, history) {
     // Calculate delta: earned - spent (positive = earned more, negative = spent more)
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
-    const lineColor = isDark ? '#7c83f7' : '#2980b9';
-    const pointColor = deltaData.map(v => v >= 0 ? '#27ae60' : '#e74c3c');
+    const lineColor = chartColors().accent;
+    const pointColor = deltaData.map(v => v >= 0 ? chartColors().earned : chartColors().spent);
 
     if (balanceChart) {
         balanceChart.destroy();
@@ -1560,8 +1584,8 @@ function renderDeltaLineChart(ctx, history) {
 function renderDeltaBarChart(ctx, history) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     // Find earned and spent datasets from history
     const earnedDataset = history.find(ds => ds.label === 'earned');
@@ -1589,8 +1613,8 @@ function renderDeltaBarChart(ctx, history) {
     // Calculate delta: earned - spent (positive = earned more, negative = spent more)
     const deltaData = earnedData.map((earned, i) => earned - spentData[i]);
 
-    const greenColor = isDark ? '#34d399' : '#27ae60';
-    const redColor = isDark ? '#f87171' : '#e74c3c';
+    const greenColor = chartColors().earned;
+    const redColor = chartColors().spent;
 
     if (balanceChart) {
         balanceChart.destroy();
@@ -1726,8 +1750,8 @@ async function fetchLabelDefinitions() {
 function renderLabelSpendChart(ctx, datasets, colorMap) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     if (!datasets || datasets.length === 0) {
         console.warn('No label spend data to render');
@@ -1756,7 +1780,7 @@ function renderLabelSpendChart(ctx, datasets, colorMap) {
             }
             return isNaN(num) ? 0 : Math.abs(num);
         });
-        const color = labelDatasetColor(ds.label, colorMap) || BUDGET_COLORS[i % BUDGET_COLORS.length];
+        const color = labelDatasetColor(ds.label, colorMap) || seriesColor(i);
         return {
             label: ds.label,
             data: data,
@@ -2023,8 +2047,8 @@ function deselectAllSubscriptions() {
 function renderExpensesByCategoryChart(ctx, datasets) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     if (!datasets || datasets.length === 0) {
         console.warn('No category data to render');
@@ -2056,8 +2080,8 @@ function renderExpensesByCategoryChart(ctx, datasets) {
         return {
             label: ds.label,
             data: data,
-            borderColor: BUDGET_COLORS[i % BUDGET_COLORS.length],
-            backgroundColor: BUDGET_COLORS[i % BUDGET_COLORS.length] + '33',
+            borderColor: seriesColor(i),
+            backgroundColor: seriesColor(i) + '33',
             fill: false,
             tension: 0.3,
             pointRadius: 3,
@@ -2130,8 +2154,8 @@ function renderExpensesByCategoryChart(ctx, datasets) {
 function renderNetWorthChart(ctx, history) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     // Extract labels and data from history
     let labels = [];
@@ -2169,7 +2193,7 @@ function renderNetWorthChart(ctx, history) {
     labels = sortedIndices.map(i => labels[i]);
     data = sortedIndices.map(i => data[i]);
 
-    const netWorthColor = isDark ? '#7c83f7' : '#3498db';
+    const netWorthColor = chartColors().accent;
 
     // Destroy existing chart
     if (balanceChart) {
@@ -2395,19 +2419,12 @@ function getChartType() {
 }
 
 function getPiePalette() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    // Dark variant brightens the saturated hues and swaps the two dark slate
-    // swatches for light neutrals so every slice stays visible on dark bg.
-    return isDark
-        ? ['#5dade2', '#ec7063', '#58d68d', '#f5b041', '#af7ac5', '#48c9b0', '#eb984e', '#85929e', '#45b39d', '#f1948a',
-           '#5499c7', '#dc7633', '#a569bd', '#aeb6bf', '#f4d03f']
-        : ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b',
-           '#2980b9', '#d35400', '#8e44ad', '#2c3e50', '#f1c40f'];
+    return seriesPalette();
 }
 
 function renderPieChart(ctx, labels, data, colors = null) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
+    const chartTextColor = chartColors().textColor;
 
     const palette = getPiePalette();
 
@@ -2472,8 +2489,8 @@ function renderCardPaydownPreview(ctx, data) {
     const balances = activity.map(a => a.balance || 0);
 
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
 
     balanceChart = new Chart(ctx, {
         type: 'bar',
@@ -2484,40 +2501,40 @@ function renderCardPaydownPreview(ctx, data) {
                 {
                     label: 'Payments',
                     data: payments,
-                    backgroundColor: 'rgba(34, 197, 94, 0.8)',
-                    borderColor: '#22c55e',
+                    backgroundColor: withAlpha(chartColors().earned, 0.8),
+                    borderColor: chartColors().earned,
                     borderWidth: 1,
                 },
                 {
                     label: 'Spending',
                     data: spending,
-                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
-                    borderColor: '#ef4444',
+                    backgroundColor: withAlpha(chartColors().spent, 0.8),
+                    borderColor: chartColors().spent,
                     borderWidth: 1,
                 },
                 {
                     label: 'Net Paydown',
                     type: 'line',
                     data: netPaydown,
-                    borderColor: '#3b82f6',
+                    borderColor: chartColors().accent,
                     backgroundColor: 'transparent',
                     borderWidth: 2,
                     tension: 0.3,
                     pointRadius: 3,
-                    pointBackgroundColor: '#3b82f6',
+                    pointBackgroundColor: chartColors().accent,
                     yAxisID: 'y',
                 },
                 {
                     label: 'Balance',
                     type: 'line',
                     data: balances,
-                    borderColor: isDark ? '#a78bfa' : '#7c3aed',
+                    borderColor: chartColors().series[6],
                     backgroundColor: 'transparent',
                     borderWidth: 2,
                     borderDash: [5, 5],
                     tension: 0.3,
                     pointRadius: 2,
-                    pointBackgroundColor: isDark ? '#a78bfa' : '#7c3aed',
+                    pointBackgroundColor: chartColors().series[6],
                     yAxisID: 'y1',
                 }
             ]
@@ -2605,7 +2622,7 @@ async function fetchSavedThisMonthTile(selectedIds) {
         if (tileEl) tileEl.innerHTML = `<div class="info">Failed to load savings data: ${escapeHtmlAttr(e.message)}</div>`;
     } finally {
         const updateBtn = document.getElementById('update-chart-btn');
-        if (updateBtn) { updateBtn.disabled = false; updateBtn.textContent = 'Update Tile'; }
+        if (updateBtn) { updateBtn.disabled = false; updateBtn.textContent = 'Update tile'; }
     }
 }
 
@@ -3264,8 +3281,8 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null, la
         }
 
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const chartTextColor = isDark ? '#d4d4de' : '#333';
-        const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+        const chartTextColor = chartColors().textColor;
+        const chartGridColor = chartColors().gridColor;
 
         // Stacking (#24): group series for stacked rendering
         const stackingEnabled = getStackingEnabled();
@@ -3407,10 +3424,10 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null, la
         }
 
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const chartTextColor = isDark ? '#d4d4de' : '#333';
-        const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
-        const color = isDark ? '#7c83f7' : '#3498db';
-        const forecastColor = isDark ? '#8a8a98' : '#888';
+        const chartTextColor = chartColors().textColor;
+        const chartGridColor = chartColors().gridColor;
+        const color = chartColors().accent;
+        const forecastColor = chartColors().neutral;
 
         const chartDatasets = [{
             label: 'Total Balance',
@@ -3607,7 +3624,7 @@ function openGroupModal(groupId = null) {
     if (groupId) {
         const group = groups.find(g => g.id === groupId);
         if (!group) return;
-        title.textContent = 'Edit Group';
+        title.textContent = 'Edit group';
         nameInput.value = group.name;
 
         allAccounts.forEach(account => {
@@ -3627,7 +3644,7 @@ function openGroupModal(groupId = null) {
             accountsList.appendChild(item);
         });
     } else {
-        title.textContent = 'Create Group';
+        title.textContent = 'Create group';
 
         if (allAccounts.length === 0) {
             accountsList.innerHTML = '<p class="modal-note">Fetch accounts first to create groups.</p>';
@@ -4144,8 +4161,8 @@ function toggleComparisonControls() {
 function renderComparisonChart(ctx, primaryData, comparisonData) {
     const displayOpts = getDisplayOptions();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = isDark ? '#d4d4de' : '#333';
-    const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#ddd';
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
     
     let labels = [];
     const firstDataset = primaryData.find(ds => ds.entries && (Array.isArray(ds.entries) ? ds.entries.length > 0 : Object.keys(ds.entries).length > 0));
@@ -4163,7 +4180,7 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
     }
     
     const chartDatasets = [];
-    const colors = ['#3498db', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b'];
+    const colors = seriesPalette();
     
     primaryData.forEach((ds, idx) => {
         const data = extractChartData(ds.entries, labels);
@@ -4501,7 +4518,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('end-date').valueAsDate = endDate;
     document.getElementById('start-date').valueAsDate = startDate;
 
-    app.innerHTML = '<div class="empty-state"><p>Pick an account type above, then click <strong>Fetch Accounts</strong> to start building a graph.</p></div>';
+    app.innerHTML = '<div class="empty-state"><p>Pick an account type above, then click <strong>Fetch accounts</strong> to start building a graph.</p></div>';
 
     fetchAccountsBtn.addEventListener('click', fetchAccounts);
     updateChartBtn.addEventListener('click', fetchChartData);
@@ -5092,7 +5109,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const updateChartBtn = document.getElementById('update-chart-btn');
             if (updateChartBtn) {
-                updateChartBtn.textContent = widgetType === 'saved_this_month' ? 'Update Tile' : 'Update Graph';
+                updateChartBtn.textContent = widgetType === 'saved_this_month' ? 'Update tile' : 'Update graph';
             }
              // Toggle budgets section visibility (budget_spent filters which
             // budgets are charted; label_spend uses it as an optional filter,

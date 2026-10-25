@@ -7,6 +7,7 @@
  *  - OxiUI.prompt(opts)              Promise<string|null> input dialog
  *  - OxiUI.formatCurrency(v, opts)   consistent amount formatting (no currency symbol)
  *  - OxiUI.getChartColors()          theme-aware chart colors
+ *  - OxiUI.getSeriesPalette()        ordered categorical series colors
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
  *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
  *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
@@ -268,23 +269,51 @@
     }
 
     // ── Theme-aware chart colors ────────────────────────────────────────
+    // Mirrors the --chart-* tokens in style.css. `series` is a categorical
+    // palette validated for color-vision deficiency on each theme's surface;
+    // `seriesExtra` only kicks in past eight series.
+    const CHART_THEMES = {
+        light: {
+            textColor: '#475569',
+            gridColor: '#e2e8f0',
+            tooltipBg: '#ffffff',
+            tooltipBorder: '#e2e8f0',
+            tooltipText: '#1e293b',
+            accent: '#0f766e',
+            earned: '#15803d',
+            spent: '#dc2626',
+            neutral: '#94a3b8',
+            series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'],
+            seriesExtra: ['#0e7490', '#a16207', '#9d174d', '#475569', '#4d7c0f', '#7c3aed', '#b45309']
+        },
+        dark: {
+            textColor: '#b4c0ce',
+            gridColor: 'rgba(148, 163, 184, 0.14)',
+            tooltipBg: '#1a232d',
+            tooltipBorder: 'rgba(148, 163, 184, 0.24)',
+            tooltipText: '#e2e8f0',
+            accent: '#2dd4bf',
+            earned: '#4ade80',
+            spent: '#f87171',
+            neutral: '#64748b',
+            series: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
+            seriesExtra: ['#22d3ee', '#facc15', '#f472b6', '#94a3b8', '#a3e635', '#c084fc', '#fb923c']
+        }
+    };
+
     function getChartColors() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        return isDark
-            ? {
-                textColor: '#d4d4de',
-                gridColor: 'rgba(255, 255, 255, 0.08)',
-                tooltipBg: '#1e1e28',
-                tooltipBorder: 'rgba(255, 255, 255, 0.15)',
-                tooltipText: '#e7e7ec'
-            }
-            : {
-                textColor: '#333',
-                gridColor: '#ddd',
-                tooltipBg: '#ffffff',
-                tooltipBorder: '#e5e7eb',
-                tooltipText: '#1a1a2e'
-            };
+        const theme = CHART_THEMES[isDark ? 'dark' : 'light'];
+        return Object.assign({}, theme, {
+            series: theme.series.slice(),
+            seriesExtra: theme.seriesExtra.slice()
+        });
+    }
+
+    // Full ordered series palette (validated slots first, then extras).
+    function getSeriesPalette() {
+        const c = getChartColors();
+        return c.series.concat(c.seriesExtra);
     }
 
     // ── Loading spinner ─────────────────────────────────────────────────
@@ -470,6 +499,7 @@
         prompt: promptDialog,
         formatCurrency: formatCurrency,
         getChartColors: getChartColors,
+        getSeriesPalette: getSeriesPalette,
         spinnerHtml: spinnerHtml,
         movingAverage: movingAverage,
         trendlineDataset: trendlineDataset,

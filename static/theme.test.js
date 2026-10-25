@@ -69,21 +69,21 @@ function metaColor() {
 describe('theme init', () => {
     it('defaults to light and syncs the theme-color meta', () => {
         expect(document.documentElement.getAttribute('data-theme')).toBe('light');
-        expect(metaColor()).toBe('#3b82f6');
+        expect(metaColor()).toBe('#f4f6f8');
     });
 
     it('uses the saved theme from localStorage', () => {
         storage.setItem('oxidize_theme', 'dark');
         (0, eval)(themeSource);
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#1e1b4b');
+        expect(metaColor()).toBe('#0b1015');
     });
 
     it('falls back to prefers-color-scheme when nothing is saved', () => {
         mockMatchMedia(true);
         (0, eval)(themeSource);
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#1e1b4b');
+        expect(metaColor()).toBe('#0b1015');
     });
 });
 
@@ -91,7 +91,7 @@ describe('theme toggle', () => {
     it('switches to dark and updates the theme-color meta', () => {
         document.querySelector('#theme-toggle').click();
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#1e1b4b');
+        expect(metaColor()).toBe('#0b1015');
         expect(storage.getItem('oxidize_theme')).toBe('dark');
     });
 
@@ -99,7 +99,7 @@ describe('theme toggle', () => {
         document.querySelector('#theme-toggle').click();
         document.querySelector('#theme-toggle').click();
         expect(document.documentElement.getAttribute('data-theme')).toBe('light');
-        expect(metaColor()).toBe('#3b82f6');
+        expect(metaColor()).toBe('#f4f6f8');
     });
 
     it('dispatches themeChanged with the new theme', () => {

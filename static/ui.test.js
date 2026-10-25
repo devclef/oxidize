@@ -342,27 +342,37 @@ describe('OxiUI.formatCurrency', () => {
 // ── Theme-aware chart colors ────────────────────────────────────────────────
 describe('OxiUI.getChartColors', () => {
     it('returns the light palette by default and when data-theme is light', () => {
-        const light = {
-            textColor: '#333',
-            gridColor: '#ddd',
-            tooltipBg: '#ffffff',
-            tooltipBorder: '#e5e7eb',
-            tooltipText: '#1a1a2e'
-        };
-        expect(OxiUI.getChartColors()).toEqual(light);
+        const c = OxiUI.getChartColors();
+        expect(c.textColor).toBe('#475569');
+        expect(c.tooltipBg).toBe('#ffffff');
+        expect(c.accent).toBe('#0f766e');
+        expect(c.series).toHaveLength(8);
         document.documentElement.setAttribute('data-theme', 'light');
-        expect(OxiUI.getChartColors()).toEqual(light);
+        expect(OxiUI.getChartColors()).toEqual(c);
     });
 
     it('returns the dark palette when data-theme is dark', () => {
         document.documentElement.setAttribute('data-theme', 'dark');
-        expect(OxiUI.getChartColors()).toEqual({
-            textColor: '#d4d4de',
-            gridColor: 'rgba(255, 255, 255, 0.08)',
-            tooltipBg: '#1e1e28',
-            tooltipBorder: 'rgba(255, 255, 255, 0.15)',
-            tooltipText: '#e7e7ec'
-        });
+        const c = OxiUI.getChartColors();
+        expect(c.textColor).toBe('#b4c0ce');
+        expect(c.tooltipBg).toBe('#1a232d');
+        expect(c.earned).toBe('#4ade80');
+        expect(c.spent).toBe('#f87171');
+        expect(c.series[0]).toBe('#3987e5');
+    });
+
+    it('returns copies so callers cannot mutate the shared palette', () => {
+        OxiUI.getChartColors().series.push('#000000');
+        expect(OxiUI.getChartColors().series).toHaveLength(8);
+    });
+});
+
+describe('OxiUI.getSeriesPalette', () => {
+    it('lists the validated series slots first, then the extras, without repeats', () => {
+        const palette = OxiUI.getSeriesPalette();
+        expect(palette.slice(0, 8)).toEqual(OxiUI.getChartColors().series);
+        expect(palette.length).toBeGreaterThan(8);
+        expect(new Set(palette).size).toBe(palette.length);
     });
 });
 

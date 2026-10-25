@@ -490,14 +490,17 @@ No build step or bundler — plain JavaScript files served from `/static/`.
 
 **`theme.js`** — Dark/light mode toggle, persisted to localStorage; also keeps the PWA `<meta name="theme-color">` in sync with the active theme
 
-**`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors, and the shared spinner. Tested by `ui.test.js`.
+**`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors (`OxiUI.getChartColors()` — text/grid/tooltip, `accent`, `earned`/`spent`, `neutral`, and an ordered colorblind-validated `series` palette; `OxiUI.getSeriesPalette()` for the full ordered list), and the shared spinner. Tested by `ui.test.js`. Never hardcode chart hex colors in page scripts — `app.js`/`dashboard.js` go through their `chartColors()` / `seriesColor(i)` helpers, inline page scripts call `OxiUI` directly. The values mirror the `--chart-*` tokens in `style.css`; change both together.
 
 The tool pages (`avg-cost.html`, `budget-comparison.html`, `sankey.html`) keep their page logic in inline `<script>` blocks rather than separate files.
 
 **`style.css`** — Uses CSS custom properties (variables) for theming:
-- `:root` for light mode defaults
+- `:root` for light mode defaults ("Slate & Teal": slate neutrals, teal `--accent-color`)
 - `[data-theme="dark"]` selector for dark mode overrides
+- `--on-accent` is the foreground for anything on a solid accent/status fill (white in light, dark ink in dark) — never hardcode `#fff`
+- `--chart-*` tokens hold chart text/grid/earned/spent and the 8 categorical series colors
 - When modifying styles, always use the existing CSS variables
+- UI copy uses sentence case for buttons, headings and card titles ("Select all", "Fetch accounts"); nav link labels are the exception
 
 ### HTML Pages and Config Injection
 
@@ -589,6 +592,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 ### Static Files
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/static/sw.js` | Service worker, served with `Service-Worker-Allowed: /` so pages can register it at root scope |
 | `GET` | `/static/*` | Serves files from `./static/` directory |
 
 ## Environment Variables

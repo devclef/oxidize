@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Reimbursements</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -429,12 +429,11 @@
         const canvas = document.getElementById('reimbChart');
         if (chart) chart.destroy();
 
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const spentColor = isDark ? '#f87171' : '#dc2626';
-        const spentBg = isDark ? 'rgba(248, 113, 113, 0.55)' : 'rgba(220, 38, 38, 0.45)';
-        const earnedColor = isDark ? '#4ade80' : '#16a34a';
-        const earnedBg = isDark ? 'rgba(74, 222, 128, 0.55)' : 'rgba(22, 163, 74, 0.45)';
         const colors = OxiUI.getChartColors();
+        const spentColor = colors.spent;
+        const spentBg = colors.spent + '80';
+        const earnedColor = colors.earned;
+        const earnedBg = colors.earned + '80';
 
         chart = new Chart(canvas.getContext('2d'), {
             type: 'bar',

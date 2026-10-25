@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Budget Comparison</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -45,10 +45,10 @@
 
     <div class="tool-container">
         <div class="panel" style="margin-bottom: var(--space-4);">
-            <h3>Select Budgets</h3>
+            <h3>Budgets</h3>
             <div class="panel-actions">
-                <button id="select-all-budgets" class="ghost-btn">Select All</button>
-                <button id="deselect-all-budgets" class="ghost-btn">Deselect All</button>
+                <button id="select-all-budgets" class="ghost-btn">Select all</button>
+                <button id="deselect-all-budgets" class="ghost-btn">Deselect all</button>
             </div>
             <div class="check-list" id="budget-list">
                 <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading budgets...</span></div>
@@ -94,15 +94,12 @@
         return OxiUI.getChartColors();
     }
 
-    // Distinct colors for multiple budgets
-    const BUDGET_COLORS = [
-        { main: '#4caf50', bg: '#4caf50cc', fill: '#4caf5033' },
-        { main: '#2196f3', bg: '#2196f3cc', fill: '#2196f333' },
-        { main: '#ff9800', bg: '#ff9800cc', fill: '#ff980033' },
-        { main: '#9c27b0', bg: '#9c27b0cc', fill: '#9c27b033' },
-        { main: '#e91e63', bg: '#e91e63cc', fill: '#e91e6333' },
-        { main: '#009688', bg: '#009688cc', fill: '#00968833' },
-    ];
+    // Distinct colors for multiple budgets (shared theme palette)
+    function budgetColor(i) {
+        const palette = OxiUI.getSeriesPalette();
+        const main = palette[i % palette.length];
+        return { main: main, bg: main + 'cc', fill: main + '33' };
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
         if ("serviceWorker" in navigator) {
@@ -295,7 +292,7 @@
             const datasets = [];
             budgetTotals.forEach((item, i) => {
                 const b = item.budget;
-                const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
+                const c = budgetColor(i);
                 datasets.push({
                     label: b.budget_name + ' (' + b.current_year + ')',
                     data: b.current_year_spent.map(v => v || 0),
@@ -320,8 +317,8 @@
                 datasets.push({
                     label: data[0].current_year + ' Limit',
                     data: data[0].current_year_limit.map(v => v || 0),
-                    backgroundColor: '#9e9e9e44',
-                    borderColor: '#9e9e9e',
+                    backgroundColor: getChartColors().neutral + '44',
+                    borderColor: getChartColors().neutral,
                     borderWidth: 2,
                     borderDash: [5, 5],
                     type: 'line',
@@ -416,7 +413,7 @@
                 data: {
                     labels: data[0].months,
                     datasets: data.flatMap((b, i) => {
-                        const c = BUDGET_COLORS[i % BUDGET_COLORS.length];
+                        const c = budgetColor(i);
                         return [
                             {
                                 label: b.budget_name + ' ' + b.current_year,

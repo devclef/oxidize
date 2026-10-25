@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Widget Builder</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
@@ -39,7 +39,7 @@
             <h1>Widget Builder</h1>
             <p class="page-subtitle">Select accounts, pick a graph or a stat tile, and save it as a dashboard widget.</p>
         </div>
-        <button id="refresh-data-btn" class="ghost-btn" title="Clear cache and fetch fresh data from Firefly III">Refresh Data</button>
+        <button id="refresh-data-btn" class="ghost-btn" title="Clear cache and fetch fresh data from Firefly III">Refresh data</button>
     </header>
 
     <section class="section-card account-section">
@@ -49,7 +49,7 @@
                 <button id="select-all-btn" class="ghost-btn">Select all</button>
                 <button id="deselect-all-btn" class="ghost-btn">Deselect all</button>
                 <button id="toggle-accounts-btn" class="ghost-btn" style="display: none;" aria-expanded="true">Collapse</button>
-                <button id="fetch-accounts-btn">Fetch Accounts</button>
+                <button id="fetch-accounts-btn">Fetch accounts</button>
                 <button id="export-csv-btn" class="ghost-btn" title="Download all accounts of a chosen type as CSV from Firefly III">Export CSV</button>
             </div>
         </div>
@@ -64,16 +64,16 @@
 
         <div id="accounts-content">
             <div id="app">
-                <div class="empty-state"><p>Pick an account type above, then click <strong>Fetch Accounts</strong> to start building a widget.</p></div>
+                <div class="empty-state"><p>Pick an account type above, then click <strong>Fetch accounts</strong> to start building a widget.</p></div>
             </div>
         </div>
     </section>
 
     <section id="groups-section" class="section-card groups-section">
         <div class="section-header">
-            <h3 class="section-title">My Groups</h3>
+            <h3 class="section-title">My groups</h3>
             <div class="section-actions">
-                <button id="create-group-btn" class="ghost-btn">+ Create Group</button>
+                <button id="create-group-btn" class="ghost-btn">+ Create group</button>
             </div>
         </div>
         <div id="groups-list"></div>
@@ -326,7 +326,7 @@
                 </div>
             </fieldset>
 
-            <button id="update-chart-btn" class="update-chart-btn">Update Graph</button>
+            <button id="update-chart-btn" class="update-chart-btn">Update graph</button>
         </div>
 
         <!-- Advanced options (collapsible) -->
@@ -431,14 +431,14 @@
         <!-- Save as widget section -->
         <div class="widget-save-section">
             <input type="text" id="widget-name-input" placeholder="Widget name">
-            <button id="save-graph-btn" class="save-graph-btn">Save as Widget</button>
+            <button id="save-graph-btn" class="save-graph-btn">Save as widget</button>
         </div>
     </div>
 
     <div id="group-modal" class="modal-overlay" style="display: none;">
         <div class="modal">
             <div class="modal-header">
-                <h3 id="group-modal-title">Create Group</h3>
+                <h3 id="group-modal-title">Create group</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">

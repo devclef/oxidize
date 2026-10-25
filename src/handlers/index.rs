@@ -47,6 +47,20 @@ pub async fn manifest() -> HttpResponse {
         .body(content)
 }
 
+/// Serve the service worker with `Service-Worker-Allowed: /` so the pages
+/// can register it with root scope even though it lives under /static/.
+#[get("/static/sw.js")]
+pub async fn service_worker() -> HttpResponse {
+    match std::fs::read_to_string("./static/sw.js") {
+        Ok(content) => HttpResponse::Ok()
+            .content_type("application/javascript; charset=utf-8")
+            .insert_header(("Service-Worker-Allowed", "/"))
+            .insert_header(("Cache-Control", "no-cache"))
+            .body(content),
+        Err(_) => HttpResponse::NotFound().finish(),
+    }
+}
+
 #[get("/favicon.ico")]
 pub async fn favicon() -> HttpResponse {
     // Return a minimal valid favicon.ico (16x16 transparent PNG as ICO)

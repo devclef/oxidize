@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oxidize - Sankey Flow</title>
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#f4f6f8">
     <link rel="manifest" href="/api/manifest">
     <script src="/static/theme.js"></script>
     <link rel="stylesheet" href="/static/style.css">
@@ -47,16 +47,16 @@
     <div class="sankey-container tool-container">
         <div class="sankey-controls">
             <div class="panel">
-                <h3>Source Accounts</h3>
+                <h3>Source accounts</h3>
                 <div class="panel-actions">
-                    <button id="select-all-accounts" class="ghost-btn">All</button>
-                    <button id="deselect-all-accounts" class="ghost-btn">None</button>
+                    <button id="select-all-accounts" class="ghost-btn">Select all</button>
+                    <button id="deselect-all-accounts" class="ghost-btn">Deselect all</button>
                 </div>
                 <div class="check-list" id="account-list">
                     <div class="loading-msg"><span class="spinner" aria-hidden="true"></span><span>Loading accounts...</span></div>
                 </div>
                 <div class="groups-inline" id="groups-inline" style="display: none;">
-                    <h4>My Groups</h4>
+                    <h4>My groups</h4>
                     <div class="check-list compact" id="groups-list-inline">
                         <div class="loading-msg"><span class="spinner" aria-hidden="true"></span><span>Loading groups...</span></div>
                     </div>
@@ -64,34 +64,34 @@
             </div>
 
             <div class="panel">
-                <h3>Flow Type</h3>
+                <h3>Flow type</h3>
                 <div class="flow-options" role="radiogroup" aria-label="Flow type">
-                    <button class="flow-option active" data-type="destination" role="radio" aria-checked="true">By Destination Account</button>
-                    <button class="flow-option" data-type="category" role="radio" aria-checked="false">By Category</button>
-                    <button class="flow-option" data-type="subcategory" role="radio" aria-checked="false">By Subcategory</button>
-                    <button class="flow-option" data-type="budget" role="radio" aria-checked="false">By Budget</button>
+                    <button class="flow-option active" data-type="destination" role="radio" aria-checked="true">By destination account</button>
+                    <button class="flow-option" data-type="category" role="radio" aria-checked="false">By category</button>
+                    <button class="flow-option" data-type="subcategory" role="radio" aria-checked="false">By subcategory</button>
+                    <button class="flow-option" data-type="budget" role="radio" aria-checked="false">By budget</button>
                 </div>
                 <div id="category-filter-panel" class="filter-panel" style="display: none;">
-                    <h4>Filter Categories</h4>
+                    <h4>Filter categories</h4>
                     <div class="panel-actions">
-                        <button id="select-all-categories" class="ghost-btn">All</button>
-                        <button id="deselect-all-categories" class="ghost-btn">None</button>
+                        <button id="select-all-categories" class="ghost-btn">Select all</button>
+                        <button id="deselect-all-categories" class="ghost-btn">Deselect all</button>
                     </div>
                     <div class="check-list compact" id="category-filter-list"></div>
                 </div>
                 <div id="subcategory-filter-panel" class="filter-panel" style="display: none;">
-                    <h4>Filter Subcategories</h4>
+                    <h4>Filter subcategories</h4>
                     <div class="panel-actions">
-                        <button id="select-all-subcategories" class="ghost-btn">All</button>
-                        <button id="deselect-all-subcategories" class="ghost-btn">None</button>
+                        <button id="select-all-subcategories" class="ghost-btn">Select all</button>
+                        <button id="deselect-all-subcategories" class="ghost-btn">Deselect all</button>
                     </div>
                     <div class="check-list compact" id="subcategory-filter-list"></div>
                 </div>
                 <div id="budget-filter-panel" class="filter-panel" style="display: none;">
-                    <h4>Filter Budgets</h4>
+                    <h4>Filter budgets</h4>
                     <div class="panel-actions">
-                        <button id="select-all-budgets" class="ghost-btn">All</button>
-                        <button id="deselect-all-budgets" class="ghost-btn">None</button>
+                        <button id="select-all-budgets" class="ghost-btn">Select all</button>
+                        <button id="deselect-all-budgets" class="ghost-btn">Deselect all</button>
                     </div>
                     <div class="check-list compact" id="budget-filter-list"></div>
                 </div>
@@ -122,8 +122,8 @@
             </div>
 
             <div class="save-widget-row">
-                <input type="text" id="sankey-widget-name" placeholder="Save as Widget — enter name..." aria-label="Widget name">
-                <button id="save-sankey-widget">Save as Widget</button>
+                <input type="text" id="sankey-widget-name" placeholder="Save as widget — enter name..." aria-label="Widget name">
+                <button id="save-sankey-widget">Save as widget</button>
             </div>
         </div>
 
@@ -376,11 +376,11 @@
 
     function getThemeColors() {
         const base = OxiUI.getChartColors();
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         return {
             textColor: base.textColor,
-            mutedText: isDark ? '#8a8a98' : '#6b7280',
-            nodeStroke: isDark ? 'rgba(255, 255, 255, 0.12)' : '#d1d5db',
+            mutedText: base.textColor,
+            nodeStroke: base.gridColor,
+            neutral: base.neutral,
         };
     }
 
@@ -429,7 +429,7 @@
 
         // Color palette for source nodes (accounts)
         const sourceNames = [...new Set(links.map(l => l.sourceName))];
-        const colorScale = d3.scaleOrdinal(d3.schemeTableau10).domain(sourceNames);
+        const colorScale = d3.scaleOrdinal(OxiUI.getSeriesPalette()).domain(sourceNames);
 
         const sankey = d3.sankey()
             .nodeWidth(14)
@@ -492,8 +492,7 @@
                 if (d.depth === 0) {
                     return colorScale(d.name);
                 }
-                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                return isDark ? '#8a8a98' : '#94a3b8';
+                return colors.neutral;
             })
             .attr('rx', 3)
             .attr('stroke', colors.nodeStroke);
