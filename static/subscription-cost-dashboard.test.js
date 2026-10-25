@@ -15,6 +15,7 @@ const dashboardSource = readFileSync(path.resolve(root, 'static/dashboard.js'), 
 
 beforeAll(() => {
     window.OXIDIZE_CONFIG = { accountTypes: [], autoFetchAccounts: false };
+    (0, eval)(readFileSync(path.resolve(root, 'static/ui.js'), 'utf8')); // window.OxiUI
     (0, eval)(dashboardSource); // indirect eval: top-level functions become globals
 });
 
@@ -118,6 +119,15 @@ describe('buildSubscriptionWidgetParams (GET /api/subscriptions/spend)', () => {
     });
 });
 
+
+function renderSettings(widget, context = {}) {
+    document.body.innerHTML = window.buildWidgetSettingsHtml(widget, {
+        exclusionOptions: { categories: ['Dining', 'Dining:Bars'], budgets: ['Groceries', 'Fun'] },
+        ...context
+    });
+    return document.getElementById(`${widget.id}-settings`);
+}
+
 describe('dashboard.js wiring', () => {
     it('fetches subscription cost from /api/subscriptions/spend', () => {
         expect(dashboardSource).toContain("widgetType === 'subscription_cost'");
@@ -129,8 +139,15 @@ describe('dashboard.js wiring', () => {
     });
 
     it('offers subscription + group pickers in the widget settings', () => {
-        expect(dashboardSource).toContain('id="${widget.id}-subscriptions"');
-        expect(dashboardSource).toContain('id="${widget.id}-subscription-groups"');
+        const panel = renderSettings(
+            { id: 's1', widget_type: 'subscription_cost', accounts: [], subscription_ids: ['b2'], subscription_group_ids: ['g1'] },
+            { subscriptionOptions: {
+                subscriptions: [{ id: 'b1', name: 'Netflix' }, { id: 'b2', name: 'Spotify' }],
+                groups: [{ id: 'g1', name: 'Streaming', bill_count: 2 }]
+            } }
+        );
+        expect(Array.from(panel.querySelector('#s1-subscriptions').selectedOptions).map(o => o.value)).toEqual(['b2']);
+        expect(Array.from(panel.querySelector('#s1-subscription-groups').selectedOptions).map(o => o.value)).toEqual(['g1']);
     });
 
     it('persists the selections on update', () => {
@@ -139,12 +156,18 @@ describe('dashboard.js wiring', () => {
     });
 
     it('offers a split-groups toggle in the widget settings and persists it', () => {
-        expect(dashboardSource).toContain('id="${widget.id}-subscription-split"');
-        expect(dashboardSource).toContain('Split selected groups into individual subscriptions');
-        expect(dashboardSource).toContain('widget.subscription_split_groups = subSplitEl.checked;');
+        const widget = { id: 's2', widget_type: 'subscription_cost', accounts: [] };
+        const panel = renderSettings(widget);
+        const split = panel.querySelector('#s2-subscription-split');
+        expect(split.closest('label').textContent).toContain('Split selected groups into individual subscriptions');
+        split.checked = true;
+        window.readWidgetSettings('s2', widget);
+        expect(widget.subscription_split_groups).toBe(true);
     });
 
     it('supports stacking and exclusions for subscription_cost', () => {
-        expect(dashboardSource).toContain("'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `");
+        const panel = renderSettings({ id: 's3', widget_type: 'subscription_cost', accounts: [] });
+        expect(panel.querySelector('#s3-stacked')).not.toBeNull();
+        expect(panel.querySelector('#s3-exclude-categories')).not.toBeNull();
     });
 });

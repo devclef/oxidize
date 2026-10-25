@@ -16,6 +16,10 @@
  *  - OxiUI.addTrendlineDatasets(..) trend lines for a set of datasets
  *  - OxiUI.applyStacking(ds, on)    Chart.js stack groups for line charts
  *  - OxiUI.applyStackedScales(s,on) stacked flag on all chart axes
+ *  - OxiUI.widgetOptionSupport(t,s) which chart options apply to a widget type
+ *  - OxiUI.applyLineStyle(ds, opts) points / fill / smoothness on series
+ *  - OxiUI.applyAxisOptions(sc, o)  tick limits / y-from-zero on scales
+ *  - OxiUI.computePercentChange(..) % change labels (from previous / first)
  */
 (function () {
     'use strict';
@@ -493,6 +497,114 @@
         return out;
     }
 
+    // ── Widget chart options ─────────────────────────────────────────
+    // Single source of truth for which chart options apply to which widget
+    // type, shared by the Graph Builder and the dashboard widget settings
+    // so both expose the same controls and every visible control works.
+    const MULTI_SERIES_TYPES = ['balance', 'budget_spent', 'expenses_by_category',
+        'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'];
+    const PIE_CAPABLE_TYPES = MULTI_SERIES_TYPES.concat(['earned_spent']);
+    const EXCLUSION_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category',
+        'category_subcat', 'sankey', 'label_spend', 'subscription_cost', 'budget_breakdown'];
+    const BUDGET_FILTER_TYPES = ['budget_spent', 'label_spend', 'budget_breakdown'];
+
+    // state: { chartType: 'line'|'pie', chartMode: 'combined'|'split',
+    //          variant: earned chart type ('bars'|'delta_line'|'delta_bar') }
+    function widgetOptionSupport(widgetType, state) {
+        const t = widgetType || 'balance';
+        state = state || {};
+        const pie = state.chartType === 'pie' && PIE_CAPABLE_TYPES.includes(t);
+        const lineChart = !pie && (MULTI_SERIES_TYPES.includes(t) || t === 'net_worth');
+        const earnedLine = !pie && t === 'earned_spent';
+        const variant = state.variant || 'bars';
+        return {
+            dateRange: t !== 'saved_this_month',
+            interval: !['saved_this_month', 'sankey', 'card_paydown'].includes(t),
+            accounts: t !== 'net_worth',
+            budgets: BUDGET_FILTER_TYPES.includes(t),
+            layout: t === 'balance' && !pie,
+            groupBy: t === 'expenses_by_category' || t === 'category_subcat',
+            variant: earnedLine,
+            chartType: PIE_CAPABLE_TYPES.includes(t),
+            stacked: lineChart && t !== 'net_worth' &&
+                !(t === 'balance' && (state.chartMode || 'combined') !== 'split'),
+            pct: lineChart,
+            comparison: t === 'balance' && !pie,
+            forecast: t === 'balance' && !pie,
+            trendline: lineChart || earnedLine,
+            lineStyle: lineChart,
+            ticks: lineChart || earnedLine,
+            beginAtZero: lineChart || (earnedLine && variant === 'delta_line'),
+            exclusions: EXCLUSION_TYPES.includes(t),
+            includeUnlabeled: t === 'label_spend',
+            breakdownBy: t === 'budget_breakdown',
+            subscriptions: t === 'subscription_cost',
+            sankeyFlow: t === 'sankey'
+        };
+    }
+
+    // Apply the line display options to every real series (trend lines and
+    // forecasts keep their own style). With stacking + fill each series
+    // fills down to the one below it (stacked area); otherwise to zero.
+    // opts: { showPoints, fillArea, tension, stacked, pointRadius }
+    function applyLineStyle(datasets, opts) {
+        if (!Array.isArray(datasets) || !opts) return datasets;
+        const radius = opts.pointRadius != null ? opts.pointRadius : 3;
+        let seriesIndex = 0;
+        datasets.forEach(function (ds) {
+            if (!ds || ds.isTrendline || ds.isForecast) return;
+            if (isFinite(opts.tension)) ds.tension = opts.tension;
+            ds.pointRadius = opts.showPoints ? radius : 0;
+            ds.pointHoverRadius = Math.max(radius, 4);
+            ds.fill = opts.fillArea
+                ? (opts.stacked && seriesIndex > 0 ? '-1' : 'origin')
+                : false;
+            // Overlapping fills stay light so lower series remain readable;
+            // stacked areas do not overlap and can be stronger
+            if (opts.fillArea && /^#[0-9a-f]{6}$/i.test(ds.borderColor || '')) {
+                ds.backgroundColor = ds.borderColor + (opts.stacked ? '59' : '1a');
+            }
+            seriesIndex++;
+        });
+        return datasets;
+    }
+
+    // Apply tick limits and the y-from-zero baseline to a Chart.js scales
+    // config (mutates and returns it). opts: { xAxisLimit, yAxisLimit, beginAtZero }
+    function applyAxisOptions(scales, opts) {
+        if (!scales || !opts) return scales;
+        if (scales.x) {
+            scales.x.ticks = Object.assign({}, scales.x.ticks);
+            if (opts.xAxisLimit > 0) {
+                scales.x.ticks.maxTicksLimit = opts.xAxisLimit;
+                scales.x.ticks.autoSkip = true;
+            }
+        }
+        if (scales.y) {
+            scales.y.ticks = Object.assign({}, scales.y.ticks);
+            if (opts.yAxisLimit > 0) scales.y.ticks.maxTicksLimit = opts.yAxisLimit;
+            if (opts.beginAtZero != null) scales.y.beginAtZero = !!opts.beginAtZero;
+        }
+        return scales;
+    }
+
+    // Percentage change per point: 'from_previous' (default) or 'from_first'.
+    // Divides by the magnitude of the base so a move from -100 to -50 reads
+    // +50% (an improvement), not -50%. Index 0 and zero/missing bases -> null.
+    function computePercentChange(data, mode) {
+        const values = Array.isArray(data) ? data : [];
+        const out = new Array(values.length).fill(null);
+        const usable = function (v) { return v !== null && v !== undefined && !isNaN(v); };
+        for (let i = 1; i < values.length; i++) {
+            const current = values[i];
+            if (!usable(current)) continue;
+            const base = mode === 'from_first' ? values[0] : values[i - 1];
+            if (!usable(base) || base === 0) continue;
+            out[i] = ((current - base) / Math.abs(base)) * 100;
+        }
+        return out;
+    }
+
     // ── Hover value guide (line charts) ───────────────────────────
     // Chart.js plugin: while the user hovers a point, draw a dotted
     // horizontal line across the full plot area at the hovered point's
@@ -562,6 +674,10 @@
         addTrendlineDatasets: addTrendlineDatasets,
         applyStacking: applyStacking,
         applyStackedScales: applyStackedScales,
+        widgetOptionSupport: widgetOptionSupport,
+        applyLineStyle: applyLineStyle,
+        applyAxisOptions: applyAxisOptions,
+        computePercentChange: computePercentChange,
         hoverValueGuidePlugin: hoverValueGuidePlugin
     };
 })();

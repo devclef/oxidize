@@ -98,8 +98,8 @@ describe('HTML wiring', () => {
     });
 
     it('dashboard.js renders per-widget exclusion selects and sends them to the API', () => {
-        expect(dashboardSource).toContain('${widget.id}-exclude-categories');
-        expect(dashboardSource).toContain('${widget.id}-exclude-budgets');
+        expect(dashboardSource).toContain('id="${id}-exclude-categories"');
+        expect(dashboardSource).toContain('id="${id}-exclude-budgets"');
         // Every category/budget-aware widget type must send exclusions
         const urlCount =
             (dashboardSource.match(/appendExclusionParams\(params, mergeExclusions\(dashboardExclusions, widget\)\);/g) || []).length;

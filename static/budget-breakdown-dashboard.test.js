@@ -15,6 +15,7 @@ const dashboardSource = readFileSync(path.resolve(root, 'static/dashboard.js'), 
 
 beforeAll(() => {
     window.OXIDIZE_CONFIG = { accountTypes: [], autoFetchAccounts: false };
+    (0, eval)(readFileSync(path.resolve(root, 'static/ui.js'), 'utf8')); // window.OxiUI
     (0, eval)(dashboardSource); // indirect eval: top-level functions become globals
 });
 
@@ -129,6 +130,15 @@ describe('buildBudgetBreakdownWidgetParams (GET /api/budgets/breakdown)', () => 
     });
 });
 
+
+function renderSettings(widget, context = {}) {
+    document.body.innerHTML = window.buildWidgetSettingsHtml(widget, {
+        exclusionOptions: { categories: ['Dining', 'Dining:Bars'], budgets: ['Groceries', 'Fun'] },
+        ...context
+    });
+    return document.getElementById(`${widget.id}-settings`);
+}
+
 describe('dashboard.js wiring', () => {
     it('fetches budget breakdowns from /api/budgets/breakdown', () => {
         expect(dashboardSource).toContain("widgetType === 'budget_breakdown'");
@@ -139,16 +149,19 @@ describe('dashboard.js wiring', () => {
         expect(dashboardSource).toContain('widget-type-badge budget-breakdown');
     });
 
-    it('renders budget_breakdown with the multi-series branch', () => {
-        expect(dashboardSource).toContain(
-            "widgetType === 'expenses_by_category' || widgetType === 'subscription_cost' || widgetType === 'budget_breakdown'"
-        );
+    it('renders budget_breakdown with the shared multi-series renderer', () => {
+        expect(dashboardSource).toMatch(/const MULTI_SERIES_WIDGET_TYPES = \[[^\]]*'budget_breakdown'/);
     });
 
     it('offers budget pickers + breakdown mode in the widget settings', () => {
-        expect(dashboardSource).toContain('id="${widget.id}-budgets"');
-        expect(dashboardSource).toContain('id="${widget.id}-budget-breakdown-by"');
-        expect(dashboardSource).toContain('<option value="main_category"');
+        const panel = renderSettings({
+            id: 'w1', widget_type: 'budget_breakdown', accounts: [],
+            budget_names: ['Fun'], budget_breakdown_by: 'main_category'
+        });
+        const budgets = panel.querySelector('#w1-budgets');
+        expect(Array.from(budgets.options).map(o => o.value)).toEqual(['Groceries', 'Fun']);
+        expect(Array.from(budgets.selectedOptions).map(o => o.value)).toEqual(['Fun']);
+        expect(panel.querySelector('#w1-budget-breakdown-by').value).toBe('main_category');
     });
 
     it('persists the budget selection and breakdown mode on update', () => {
@@ -157,8 +170,8 @@ describe('dashboard.js wiring', () => {
     });
 
     it('supports stacking for budget_breakdown', () => {
-        expect(dashboardSource).toContain(
-            "'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `"
-        );
+        const panel = renderSettings({ id: 'w2', widget_type: 'budget_breakdown', accounts: [] });
+        expect(panel.querySelector('#w2-stacked')).not.toBeNull();
+        expect(panel.querySelector('#w2-exclude-categories')).not.toBeNull();
     });
 });

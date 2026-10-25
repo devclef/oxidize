@@ -15,6 +15,7 @@ const dashboardSource = readFileSync(path.resolve(root, 'static/dashboard.js'), 
 
 beforeAll(() => {
     window.OXIDIZE_CONFIG = { accountTypes: [], autoFetchAccounts: false };
+    (0, eval)(readFileSync(path.resolve(root, 'static/ui.js'), 'utf8')); // window.OxiUI
     (0, eval)(dashboardSource); // indirect eval: top-level functions become globals
 });
 
@@ -118,6 +119,15 @@ describe('labelDatasetColor', () => {
     });
 });
 
+
+function renderSettings(widget, context = {}) {
+    document.body.innerHTML = window.buildWidgetSettingsHtml(widget, {
+        exclusionOptions: { categories: ['Dining', 'Dining:Bars'], budgets: ['Groceries', 'Fun'] },
+        ...context
+    });
+    return document.getElementById(`${widget.id}-settings`);
+}
+
 describe('dashboard.js wiring', () => {
     it('fetches label spend from the Spending Labels API', () => {
         expect(dashboardSource).toContain('const url = `/api/labels/spend?${params.toString()}`;');
@@ -130,17 +140,21 @@ describe('dashboard.js wiring', () => {
         );
     });
 
-    it('exposes the include-unlabeled control in widget settings', () => {
-        expect(dashboardSource).toContain('id="${widget.id}-include-unlabeled"');
-        expect(dashboardSource).toContain('widget.include_unlabeled = includeUnlabeledEl.checked');
+    it('exposes the include-unlabeled control in widget settings and persists it', () => {
+        const widget = { id: 'l1', widget_type: 'label_spend', accounts: [] };
+        const panel = renderSettings(widget);
+        const cb = panel.querySelector('#l1-include-unlabeled');
+        expect(cb.checked).toBe(true); // absent = include
+        cb.checked = false;
+        window.readWidgetSettings('l1', widget);
+        expect(widget.include_unlabeled).toBe(false);
     });
 
-    it('makes exclusions and stacking available for label_spend widgets', () => {
-        expect(dashboardSource).toMatch(
-            /\['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'\]/
-        );
-        expect(dashboardSource).toMatch(
-            /\['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost', 'budget_breakdown'\]/
-        );
+    it('makes exclusions, stacking and a budget filter available for label_spend widgets', () => {
+        const panel = renderSettings({ id: 'l2', widget_type: 'label_spend', accounts: [] });
+        expect(panel.querySelector('#l2-exclude-categories')).not.toBeNull();
+        expect(panel.querySelector('#l2-exclude-budgets')).not.toBeNull();
+        expect(panel.querySelector('#l2-stacked')).not.toBeNull();
+        expect(panel.querySelector('#l2-budgets')).not.toBeNull();
     });
 });

@@ -173,8 +173,8 @@
         <!-- Primary chart controls, grouped by purpose -->
         <div class="chart-controls">
             <!-- Date range group -->
-            <fieldset class="control-group" id="date-range-group">
-                <legend class="control-group-label">Date Range</legend>
+            <fieldset class="control-group" id="date-range-group" data-opt="dateRange">
+                <legend class="control-group-label">Date range</legend>
                 <div class="control-row time-range-controls">
                     <label for="time-range-select">Preset:</label>
                     <select id="time-range-select">
@@ -217,7 +217,7 @@
             <!-- Display group -->
             <fieldset class="control-group" id="display-group">
                 <legend class="control-group-label">Display</legend>
-                <div class="control-row">
+                <div class="control-row" data-opt="interval">
                     <label for="interval-select">Interval:</label>
                     <select id="interval-select">
                         <option value="auto">Auto</option>
@@ -229,7 +229,7 @@
                     </select>
                 </div>
                 <div class="control-row control-row-toggles">
-                    <div class="toggle-group" id="layout-toggle-group">
+                    <div class="toggle-group" id="layout-toggle-group" data-opt="layout">
                         <span class="control-caption">Layout</span>
                         <div class="chart-mode-toggle">
                             <label class="mode-label">
@@ -244,7 +244,7 @@
                     </div>
 
                     <!-- Category graph mode toggle (shown for category-related widget types) -->
-                    <div class="toggle-group" id="category-graph-mode-group" style="display: none;">
+                    <div class="toggle-group" id="category-graph-mode-group" data-opt="groupBy" style="display: none;">
                         <span class="control-caption">Group by</span>
                         <div id="category-graph-mode-selector" class="earned-chart-type-selector">
                         <label class="mode-label">
@@ -259,7 +259,7 @@
                     </div>
 
                     <!-- Earned/Spent chart type selector (only shown for earned_spent widget type) -->
-                    <div class="toggle-group" id="earned-chart-type-group" style="display: none;">
+                    <div class="toggle-group" id="earned-chart-type-group" data-opt="variant" style="display: none;">
                         <span class="control-caption">Variant</span>
                         <div id="earned-chart-type-selector" class="earned-chart-type-selector">
                             <label class="mode-label">
@@ -278,18 +278,18 @@
                     </div>
 
                     <!-- Label spend options (only shown for label_spend widget type) -->
-                    <div class="toggle-group" id="label-spend-options-group" style="display: none;">
+                    <div class="toggle-group" id="label-spend-options-group" data-opt="includeUnlabeled" style="display: none;">
                         <span class="control-caption">Labels</span>
                         <div class="earned-chart-type-selector">
                             <label class="mode-label" title="Also chart spend that matches no label as an 'Unlabeled' series (budgeted spend only)">
                                 <input type="checkbox" id="include-unlabeled-checkbox" checked>
-                                Include Unlabeled
+                                Include unlabeled
                             </label>
                         </div>
                     </div>
 
                     <!-- Budget breakdown options (only shown for budget_breakdown widget type) -->
-                    <div class="toggle-group" id="budget-breakdown-options-group" style="display: none;">
+                    <div class="toggle-group" id="budget-breakdown-options-group" data-opt="breakdownBy" style="display: none;">
                         <span class="control-caption">Break down by</span>
                         <div class="earned-chart-type-selector">
                             <label class="mode-label" title="One series per full category (Parent:Sub) the selected budgets are charged to">
@@ -308,18 +308,18 @@
                     </div>
 
                     <!-- Chart type selector (Line / Pie) + stacked toggle -->
-                    <div class="toggle-group">
+                    <div class="toggle-group" id="style-toggle-group">
                         <span class="control-caption">Style</span>
                         <div id="chart-type-selector" class="earned-chart-type-selector">
-                            <label class="mode-label">
+                            <label class="mode-label" data-opt="chartType">
                                 <input type="radio" name="chart-type" value="line" checked>
                                 Line
                             </label>
-                            <label class="mode-label">
+                            <label class="mode-label" data-opt="chartType">
                                 <input type="radio" name="chart-type" value="pie">
                                 Pie
                             </label>
-                            <label class="mode-label" id="stacked-toggle-wrap" title="Stack series values vertically (line charts only; per-series trend lines stay unstacked)">
+                            <label class="mode-label" id="stacked-toggle-wrap" data-opt="stacked" title="Stack series values vertically (line charts only; per-series trend lines stay unstacked)">
                                 <input type="checkbox" id="stacked-toggle">
                                 Stacked
                             </label>
@@ -336,55 +336,55 @@
             <button id="toggle-advanced-btn" class="more-options-toggle" type="button">Advanced options</button>
             <div id="advanced-options" class="advanced-options">
             <div class="advanced-row">
-                <div class="pct-toggle">
+                <div class="pct-toggle" data-opt="pct">
                     <label class="mode-label" style="border: none; background: none;">
                         <input type="checkbox" id="show-pct-toggle">
-                        Show % Change
+                        Show % change
                     </label>
-                    <select id="pct-mode-select" style="display: none;">
-                        <option value="from_previous">From Previous</option>
-                        <option value="from_first">From First Point</option>
+                    <select id="pct-mode-select" data-opt="pct" data-requires="show-pct-toggle" style="display: none;">
+                        <option value="from_previous">From previous</option>
+                        <option value="from_first">From first point</option>
                     </select>
                 </div>
-                <div class="advanced-group" id="comparison-group">
+                <div class="advanced-group" id="comparison-group" data-opt="comparison">
                     <label>
                         <input type="checkbox" id="enable-comparison">
                         Compare with previous period
                     </label>
                 </div>
             </div>
-            <div id="comparison-controls-wrapper" class="comparison-controls" style="display: none;">
-                <label for="comparison-start-date">Comparison Start:</label>
+            <div id="comparison-controls-wrapper" class="comparison-controls" data-opt="comparison" data-requires="enable-comparison" style="display: none;">
+                <label for="comparison-start-date">Comparison start:</label>
                 <input type="date" id="comparison-start-date">
-                <label for="comparison-end-date">Comparison End:</label>
+                <label for="comparison-end-date">Comparison end:</label>
                 <input type="date" id="comparison-end-date">
             </div>
             <div class="advanced-row display-row" id="display-options-row">
                 <div class="display-options-group">
-                    <label class="checkbox-label">
+                    <label class="checkbox-label" data-opt="lineStyle">
                         <input type="checkbox" id="show-points-toggle">
-                        Show Points
+                        Show points
                     </label>
-                    <label class="checkbox-label">
+                    <label class="checkbox-label" data-opt="lineStyle">
                         <input type="checkbox" id="fill-area-toggle" checked>
-                        Fill Area
+                        Fill area
                     </label>
-                    <label class="checkbox-label">
+                    <label class="checkbox-label" data-opt="beginAtZero">
                         <input type="checkbox" id="begin-zero-toggle">
-                        Y-Axis from Zero
+                        Y-axis from zero
                     </label>
-                    <label for="x-axis-limit">X-Axis Ticks:
+                    <label for="x-axis-limit" data-opt="ticks">X-axis ticks:
                         <input type="number" id="x-axis-limit" value="6" min="1" max="20" style="width:60px">
                     </label>
-                    <label for="y-axis-limit">Y-Axis Ticks:
+                    <label for="y-axis-limit" data-opt="ticks">Y-axis ticks:
                         <input type="number" id="y-axis-limit" value="4" min="1" max="10" style="width:60px">
                     </label>
-                    <label for="tension-range">Line Smoothness:
+                    <label for="tension-range" data-opt="lineStyle">Line smoothness:
                         <input type="range" id="tension-range" value="0.1" min="0" max="1" step="0.1" style="width:100px">
                     </label>
                 </div>
             </div>
-            <div class="advanced-row forecast-row" id="forecast-row">
+            <div class="advanced-row forecast-row" id="forecast-row" data-opt="forecast">
                 <div class="forecast-group">
                     <label>
                         <input type="checkbox" id="enable-forecast">
@@ -395,7 +395,7 @@
                     </label>
                 </div>
             </div>
-            <div class="advanced-row forecast-row">
+            <div class="advanced-row forecast-row" id="trendline-row" data-opt="trendline">
                 <div class="forecast-group">
                     <label>
                         <input type="checkbox" id="enable-trendline">
@@ -406,7 +406,7 @@
                     </label>
                 </div>
             </div>
-            <div class="advanced-row exclusions-row" id="exclusions-row">
+            <div class="advanced-row exclusions-row" id="exclusions-row" data-opt="exclusions">
                 <div class="exclusions-group">
                     <label>Exclude categories
                         <select multiple size="4" id="exclude-categories-select" class="exclusion-select"

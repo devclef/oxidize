@@ -267,11 +267,6 @@ function escapeHtmlAttr(str) {
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Widget types whose data supports category/budget exclusions — the same set
-// the dashboard widget settings offers them for (sankey only exists as a
-// dashboard widget type).
-const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'];
-
 function currentWidgetType() {
     const sel = document.getElementById('widget-type-select');
     return sel ? sel.value : 'balance';
@@ -279,13 +274,13 @@ function currentWidgetType() {
 
 function getExcludedCategories() {
     const sel = document.getElementById('exclude-categories-select');
-    if (!sel || !EXCLUDABLE_WIDGET_TYPES.includes(currentWidgetType())) return [];
+    if (!sel || !builderOptionSupport().exclusions) return [];
     return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
 function getExcludedBudgets() {
     const sel = document.getElementById('exclude-budgets-select');
-    if (!sel || !EXCLUDABLE_WIDGET_TYPES.includes(currentWidgetType())) return [];
+    if (!sel || !builderOptionSupport().exclusions) return [];
     return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
@@ -345,6 +340,9 @@ async function fetchChartData() {
         await fetchSavedThisMonthTile(selectedIds);
         return;
     }
+    // Leaving the tile: drop its preview so it does not linger under the chart
+    const tilePreview = document.getElementById('tile-preview');
+    if (tilePreview) tilePreview.style.display = 'none';
 
     try {
         const params = new URLSearchParams();
@@ -573,6 +571,8 @@ async function fetchChartData() {
                 const chartGridColor = chartColors().gridColor;
 
                 // Trend line: dotted moving average per series
+                // Points / fill / smoothness from the display options
+                OxiUI.applyLineStyle(datasets, Object.assign({ stacked: getStackingEnabled() }, displayOpts));
                 appendTrendlines(datasets);
 
                 // Stacking (#24): group series for stacked rendering
@@ -896,6 +896,8 @@ async function fetchChartData() {
                 const chartGridColor = chartColors().gridColor;
 
                 // Trend line: dotted moving average per series
+                // Points / fill / smoothness from the display options
+                OxiUI.applyLineStyle(datasets, Object.assign({ stacked: getStackingEnabled() }, displayOpts));
                 appendTrendlines(datasets);
 
                 // Stacking (#24): group series for stacked rendering
@@ -1165,7 +1167,8 @@ function formatPct(value) {
 const pctLabelPlugin = {
     id: 'percentLabels',
     afterDatasetsDraw(chart) {
-        if (!pctEnabled) return;
+        // Same scope as the dashboard: % labels only on line charts
+        if (!pctEnabled || !builderOptionSupport().pct) return;
 
         const { ctx, chartArea } = chart;
         if (!chartArea) return;
@@ -1243,18 +1246,44 @@ function getStackingEnabled() {
     return !!(el && el.checked);
 }
 
-// #24: widget types that have multi-series line charts a stacked toggle can affect
-const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'];
+// Current builder selection in the shape OxiUI.widgetOptionSupport expects
+function builderOptionState() {
+    return {
+        chartType: document.querySelector('input[name="chart-type"]:checked')?.value || 'line',
+        chartMode: document.querySelector('input[name="chart-mode"]:checked')?.value || 'combined',
+        variant: document.querySelector('input[name="earned-chart-type"]:checked')?.value || 'bars'
+    };
+}
 
-// Show/hide the Stacked pill based on the selected widget type and line/pie style.
-function updateStackedToggleVisibility() {
-    const wrap = document.getElementById('stacked-toggle-wrap');
-    if (!wrap) return;
-    const typeSel = document.getElementById('widget-type-select');
-    const widgetType = typeSel ? typeSel.value : 'balance';
-    const chartType = document.querySelector('input[name="chart-type"]:checked')?.value || 'line';
-    const visible = STACKABLE_WIDGET_TYPES.includes(widgetType) && chartType === 'line';
-    wrap.style.display = visible ? '' : 'none';
+function builderOptionSupport() {
+    return OxiUI.widgetOptionSupport(currentWidgetType(), builderOptionState());
+}
+
+// Hide a container when every option inside it is hidden
+function collapseIfEmpty(container) {
+    if (!container) return;
+    const options = Array.from(container.querySelectorAll('[data-opt]'));
+    if (options.length === 0) return; // an option itself, handled directly
+    container.style.display = options.every(el => el.style.display === 'none') ? 'none' : '';
+}
+
+// Show only the controls ([data-opt] in index.html) that apply to the
+// selected widget type, style, layout and variant - the same rules as the
+// dashboard widget settings (OxiUI.widgetOptionSupport). Dependent inputs
+// ([data-requires]) only show while their checkbox is on.
+function applyBuilderOptionVisibility() {
+    if (typeof OxiUI === 'undefined' || !OxiUI.widgetOptionSupport) return;
+    const support = builderOptionSupport();
+    document.querySelectorAll('[data-opt]').forEach(el => {
+        let visible = !!support[el.dataset.opt];
+        const requires = el.dataset.requires && document.getElementById(el.dataset.requires);
+        if (requires && !requires.checked) visible = false;
+        el.style.display = visible ? '' : 'none';
+    });
+    collapseIfEmpty(document.getElementById('style-toggle-group'));
+    document.querySelectorAll('#advanced-options .advanced-row').forEach(collapseIfEmpty);
+    collapseIfEmpty(document.getElementById('display-group'));
+    collapseIfEmpty(document.getElementById('advanced-section'));
 }
 
 // Display options shared with the dashboard widget settings (points, fill,
@@ -1535,6 +1564,7 @@ function renderDeltaLineChart(ctx, history) {
             maintainAspectRatio: false,
             scales: {
                 y: {
+                    beginAtZero: displayOpts.beginAtZero,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
@@ -1798,6 +1828,8 @@ function renderLabelSpendChart(ctx, datasets, colorMap) {
     }
 
     // Trend line: dotted moving average per label
+    // Points / fill / smoothness from the display options
+    OxiUI.applyLineStyle(chartDatasets, Object.assign({ stacked: getStackingEnabled() }, displayOpts));
     appendTrendlines(chartDatasets);
 
     // Stacking (#24): group series for stacked rendering
@@ -2094,6 +2126,8 @@ function renderExpensesByCategoryChart(ctx, datasets) {
     }
 
     // Trend line: dotted moving average per category
+    // Points / fill / smoothness from the display options
+    OxiUI.applyLineStyle(chartDatasets, Object.assign({ stacked: getStackingEnabled() }, displayOpts));
     appendTrendlines(chartDatasets);
 
     // Stacking (#24): group series for stacked rendering
@@ -4002,6 +4036,8 @@ async function saveGraphAsWidget() {
         show_pct: showPctToggle ? showPctToggle.checked : false,
         pct_mode: pctModeSelect ? pctModeSelect.value : 'from_previous',
         stacked: getStackingEnabled(),
+        show_trendline: getTrendlineSettings().enabled,
+        trendline_window: getTrendlineSettings().window,
         show_points: displayOpts.showPoints,
         fill_area: displayOpts.fillArea,
         begin_at_zero: displayOpts.beginAtZero,
@@ -4141,14 +4177,10 @@ function toggleComparisonControls() {
             const comparisonStartDateInput = document.getElementById('comparison-start-date');
             const comparisonEndDateInput = document.getElementById('comparison-end-date');
             
-            if (startDateInput.value && endDateInput.value) {
-                const start = new Date(startDateInput.value);
-                const end = new Date(endDateInput.value);
-                const diff = end - start;
-                const comparisonEnd = new Date(start.getTime() - (diff / 2));
-                const comparisonStart = new Date(comparisonEnd.getTime() - diff);
-                comparisonEndDateInput.valueAsDate = comparisonEnd;
-                comparisonStartDateInput.valueAsDate = comparisonStart;
+            const previous = calculatePreviousPeriod(startDateInput.value, endDateInput.value);
+            if (previous) {
+                comparisonStartDateInput.value = previous.start;
+                comparisonEndDateInput.value = previous.end;
             }
         } else {
             comparisonControls.style.display = 'none';
@@ -4191,8 +4223,9 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 2,
-            fill: false,
-            tension: displayOpts.tension
+            fill: displayOpts.fillArea,
+            tension: displayOpts.tension,
+            pointRadius: displayOpts.showPoints ? 4 : 0
         });
     });
     
@@ -4207,7 +4240,8 @@ function renderComparisonChart(ctx, primaryData, comparisonData) {
             borderWidth: 2,
             borderDash: [5, 5],
             fill: false,
-            tension: displayOpts.tension
+            tension: displayOpts.tension,
+            pointRadius: displayOpts.showPoints ? 4 : 0
         });
     });
     
@@ -5052,61 +5086,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
-            // Toggle earned chart type selector visibility
-            const earnedGroup = document.getElementById('earned-chart-type-group');
-            if (earnedGroup) {
-                earnedGroup.style.display = widgetType === 'earned_spent' ? 'flex' : 'none';
-            }
-            // Toggle chart type selector (line/pie) visibility - hide for card_paydown
-            const chartTypeGroup = document.getElementById('chart-type-selector')?.closest('.toggle-group');
-            if (chartTypeGroup) {
-                chartTypeGroup.style.display = widgetType === 'card_paydown' ? 'none' : 'flex';
-            }
-            updateStackedToggleVisibility();
-            // Options that only affect balance charts: scope them like the
-            // dashboard widget settings do (Chart Mode / Forecast / Compare).
-            const layoutGroup = document.getElementById('layout-toggle-group');
-            if (layoutGroup) {
-                layoutGroup.style.display = widgetType === 'balance' ? '' : 'none';
-            }
-            const forecastRow = document.getElementById('forecast-row');
-            if (forecastRow) {
-                forecastRow.style.display = widgetType === 'balance' ? '' : 'none';
-            }
-            const comparisonGroup = document.getElementById('comparison-group');
-            if (comparisonGroup) {
-                comparisonGroup.style.display = widgetType === 'balance' ? '' : 'none';
-            }
-            const comparisonControls = document.getElementById('comparison-controls-wrapper');
-            if (comparisonControls) {
-                comparisonControls.style.display =
-                    (widgetType === 'balance' && enableComparison) ? 'inline-flex' : 'none';
-            }
-            // Exclusions only apply to the types that support them (same as
-            // the dashboard widget settings)
-            const exclusionsRow = document.getElementById('exclusions-row');
-            if (exclusionsRow) {
-                exclusionsRow.style.display = EXCLUDABLE_WIDGET_TYPES.includes(widgetType) ? '' : 'none';
-            }
-            // Toggle advanced options visibility for card_paydown (some don't apply)
-            const advancedSection = document.getElementById('advanced-section');
-            if (advancedSection) {
-                advancedSection.style.display =
-                    (widgetType === 'card_paydown' || widgetType === 'saved_this_month') ? 'none' : '';
-            }
-            // Saved This Month is a stat tile: hide the graph-specific controls
-            // (it is always the current calendar month, so no date range/style options).
-            if (widgetType === 'saved_this_month') {
-                const dateRangeGroup = document.getElementById('date-range-group');
-                if (dateRangeGroup) dateRangeGroup.style.display = 'none';
-                const displayGroup = document.getElementById('display-group');
-                if (displayGroup) displayGroup.style.display = 'none';
-            } else {
-                const dateRangeGroup = document.getElementById('date-range-group');
-                if (dateRangeGroup) dateRangeGroup.style.display = '';
-                const displayGroup = document.getElementById('display-group');
-                if (displayGroup) displayGroup.style.display = '';
-            }
+            // Controls that apply to this type (same rules as the dashboard
+            // widget settings)
+            applyBuilderOptionVisibility();
             const updateChartBtn = document.getElementById('update-chart-btn');
             if (updateChartBtn) {
                 updateChartBtn.textContent = widgetType === 'saved_this_month' ? 'Update tile' : 'Update graph';
@@ -5156,21 +5138,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
-            // Show/hide category graph mode toggle (visible for expenses_by_category and category_subcat)
-            const graphModeGroup = document.getElementById('category-graph-mode-group');
-            if (graphModeGroup) {
-                graphModeGroup.style.display = (widgetType === 'expenses_by_category' || widgetType === 'category_subcat') ? 'flex' : 'none';
-            }
-            // Show/hide label spend options (visible for label_spend only)
-            const labelSpendOptionsGroup = document.getElementById('label-spend-options-group');
-            if (labelSpendOptionsGroup) {
-                labelSpendOptionsGroup.style.display = widgetType === 'label_spend' ? 'flex' : 'none';
-            }
-            // Show/hide budget breakdown options (visible for budget_breakdown only)
-            const budgetBreakdownOptionsGroup = document.getElementById('budget-breakdown-options-group');
-            if (budgetBreakdownOptionsGroup) {
-                budgetBreakdownOptionsGroup.style.display = widgetType === 'budget_breakdown' ? 'flex' : 'none';
-            }
             fetchChartData();
         });
     }
@@ -5186,8 +5153,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle earned chart type change
     document.querySelectorAll('input[name="earned-chart-type"]').forEach(radio => {
         radio.addEventListener('change', () => {
+            applyBuilderOptionVisibility();
             fetchChartData();
         });
+    });
+
+    // Layout (combined / split) decides whether stacking applies
+    document.querySelectorAll('input[name="chart-mode"]').forEach(radio => {
+        radio.addEventListener('change', applyBuilderOptionVisibility);
     });
 
     // Handle budget breakdown mode change (update the title too)
@@ -5204,7 +5177,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle chart type (line/pie) change
     document.querySelectorAll('input[name="chart-type"]').forEach(radio => {
         radio.addEventListener('change', () => {
-            updateStackedToggleVisibility();
+            applyBuilderOptionVisibility();
             fetchChartData();
         });
     });
@@ -5232,9 +5205,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (showPctToggle) {
         showPctToggle.addEventListener('change', () => {
             pctEnabled = showPctToggle.checked;
-            if (pctModeSelect) {
-                pctModeSelect.style.display = pctEnabled ? 'inline-block' : 'none';
-            }
+            applyBuilderOptionVisibility();
             if (balanceChart) {
                 balanceChart.update();
             }
@@ -5391,5 +5362,5 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    updateStackedToggleVisibility();
+    applyBuilderOptionVisibility();
 });

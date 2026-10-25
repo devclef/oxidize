@@ -118,3 +118,21 @@ if (typeof window !== 'undefined') {
     window.roundEndDate = roundEndDate;
     window.applyDateRange = applyDateRange;
 }
+
+// The period of the same length immediately before start..end (inclusive
+// YYYY-MM-DD dates), used as the default "compare with previous period"
+// range. Returns null for missing or inverted dates.
+function calculatePreviousPeriod(start, end) {
+    if (!start || !end) return null;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const s = Date.parse(start + 'T00:00:00Z');
+    const e = Date.parse(end + 'T00:00:00Z');
+    if (isNaN(s) || isNaN(e) || e < s) return null;
+    const lengthDays = Math.round((e - s) / dayMs) + 1;
+    const prevEnd = new Date(s - dayMs);
+    const prevStart = new Date(s - lengthDays * dayMs);
+    return {
+        start: prevStart.toISOString().split('T')[0],
+        end: prevEnd.toISOString().split('T')[0]
+    };
+}

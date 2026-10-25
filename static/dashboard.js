@@ -573,30 +573,7 @@ const PCT_ENABLED_KEY = 'show_pct';
 const PCT_MODE_KEY = 'pct_mode';
 
 function computePercentChange(data, mode) {
-    const labels = new Array(data.length).fill(null);
-
-    for (let i = 1; i < data.length; i++) {
-        const current = data[i];
-        if (current === null || current === undefined || isNaN(current)) continue;
-
-        if (mode === 'from_first') {
-            const first = data[0];
-            if (first === null || first === undefined || isNaN(first) || first === 0) {
-                labels[i] = null;
-            } else {
-                labels[i] = ((current - first) / first) * 100;
-            }
-        } else {
-            const previous = data[i - 1];
-            if (previous === null || previous === undefined || isNaN(previous) || previous === 0) {
-                labels[i] = null;
-            } else {
-                labels[i] = ((current - previous) / previous) * 100;
-            }
-        }
-    }
-
-    return labels;
+    return OxiUI.computePercentChange(data, mode);
 }
 
 function formatPct(value) {
@@ -689,7 +666,7 @@ async function persistPctSettings(widgetId, showPct, pctMode) {
 
 // Normalize chart_options to include pct defaults for old widgets
 function normalizeChartOptions(opts) {
-    if (!opts) return { show_pct: false, pct_mode: 'from_previous' };
+    opts = opts || {};
     return {
         show_points: opts.show_points ?? false,
         x_axis_limit: opts.x_axis_limit ?? 6,
@@ -909,70 +886,62 @@ function toggleWidgetSettings(id) {
     }
 }
 
-async function updateWidgetDateRange(widgetId) {
-    const startDate = document.getElementById(`${widgetId}-start`).value;
-    const endDate = document.getElementById(`${widgetId}-end`).value;
-    const interval = document.getElementById(`${widgetId}-interval`).value;
-    const chartModeEl = document.getElementById(`${widgetId}-chart-mode`);
-    const chartMode = chartModeEl ? chartModeEl.value : undefined;
+// Apply the values of a widget's settings panel to the widget object
+// (mutates and returns it). Controls missing from the panel - options that
+// do not apply to the widget type - leave their field untouched.
+function readWidgetSettings(widgetId, widget) {
+    const el = (suffix) => document.getElementById(`${widgetId}-${suffix}`);
+    const selectedValues = (suffix) => Array.from(el(suffix).selectedOptions).map(o => o.value);
 
-    const widgets = await getDashboardWidgets();
-    const widgetIndex = widgets.findIndex(w => w.id === widgetId);
-
-    if (widgetIndex === -1) return;
-
-    const widget = widgets[widgetIndex];
-    // Read date_range_source from the radio toggle
     const dateSourceRadio = document.querySelector(`input[name="${widgetId}-date-source"]:checked`);
     if (dateSourceRadio) {
         widget.date_range_source = dateSourceRadio.value === 'dashboard' ? 'dashboard' : 'custom';
     }
-    widget.start_date = startDate || null;
-    widget.end_date = endDate || null;
-    widget.interval = interval || null;
-    if (chartMode !== undefined) widget.chart_mode = chartMode;
-    widget.updated_at = new Date().toISOString();
+    if (el('start')) widget.start_date = el('start').value || null;
+    if (el('end')) widget.end_date = el('end').value || null;
+    if (el('interval')) widget.interval = el('interval').value || null;
+    if (el('chart-mode')) widget.chart_mode = el('chart-mode').value;
+    if (el('accounts')) widget.accounts = selectedValues('accounts');
+    if (el('groups')) widget.group_ids = selectedValues('groups');
 
     // Update chart options — read from DOM with null guards
-    const el = (id) => document.getElementById(id);
-    if (widget.chart_options === undefined) {
-        widget.chart_options = {};
-    }
-    const showPoints = el(`${widgetId}-show-points`);
+    const byId = (id) => document.getElementById(id);
+    widget.chart_options = normalizeChartOptions(widget.chart_options);
+    const showPoints = byId(`${widgetId}-show-points`);
     if (showPoints) widget.chart_options.show_points = showPoints.checked;
-    const xLimit = el(`${widgetId}-x-limit`);
+    const xLimit = byId(`${widgetId}-x-limit`);
     if (xLimit) widget.chart_options.x_axis_limit = parseInt(xLimit.value);
-    const yLimit = el(`${widgetId}-y-limit`);
+    const yLimit = byId(`${widgetId}-y-limit`);
     if (yLimit) widget.chart_options.y_axis_limit = parseInt(yLimit.value);
-    const fillArea = el(`${widgetId}-fill-area`);
+    const fillArea = byId(`${widgetId}-fill-area`);
     if (fillArea) widget.chart_options.fill_area = fillArea.checked;
-    const tension = el(`${widgetId}-tension`);
+    const tension = byId(`${widgetId}-tension`);
     if (tension) widget.chart_options.tension = parseFloat(tension.value);
-    const beginZero = el(`${widgetId}-begin-zero`);
+    const beginZero = byId(`${widgetId}-begin-zero`);
     if (beginZero) widget.chart_options.begin_at_zero = beginZero.checked;
-    const showPct = el(`${widgetId}-show-pct`);
+    const showPct = byId(`${widgetId}-show-pct`);
     if (showPct) widget.chart_options[PCT_ENABLED_KEY] = showPct.checked;
-    const pctMode = el(`${widgetId}-pct-mode`);
+    const pctMode = byId(`${widgetId}-pct-mode`);
     if (pctMode) widget.chart_options[PCT_MODE_KEY] = pctMode.value;
-    const enableForecastEl = el(`${widgetId}-enable-forecast`);
-    const forecastDaysEl = el(`${widgetId}-forecast-days`);
+    const enableForecastEl = byId(`${widgetId}-enable-forecast`);
+    const forecastDaysEl = byId(`${widgetId}-forecast-days`);
     if (enableForecastEl) widget.chart_options.enable_forecast = enableForecastEl.checked;
     if (forecastDaysEl) widget.chart_options.forecast_days = parseInt(forecastDaysEl.value, 10) || 30;
-    const enableTrendlineEl = el(`${widgetId}-enable-trendline`);
-    const trendlineWindowEl = el(`${widgetId}-trendline-window`);
+    const enableTrendlineEl = byId(`${widgetId}-enable-trendline`);
+    const trendlineWindowEl = byId(`${widgetId}-trendline-window`);
     if (enableTrendlineEl) widget.chart_options.show_trendline = enableTrendlineEl.checked;
     if (trendlineWindowEl) widget.chart_options.trendline_window = parseInt(trendlineWindowEl.value, 10) || 7;
-    const stackedEl = el(`${widgetId}-stacked`);
+    const stackedEl = byId(`${widgetId}-stacked`);
     if (stackedEl) widget.chart_options.stacked = stackedEl.checked;
 
     const graphModeEl = document.getElementById(`${widgetId}-graph-mode`);
     if (graphModeEl) widget.category_graph_mode = graphModeEl.value;
 
-    const enableComparisonEl = el(`${widgetId}-enable-comparison`);
+    const enableComparisonEl = byId(`${widgetId}-enable-comparison`);
     if (enableComparisonEl) {
         widget.chart_options.enable_comparison = enableComparisonEl.checked;
-        const compStartEl = el(`${widgetId}-comparison-start`);
-        const compEndEl = el(`${widgetId}-comparison-end`);
+        const compStartEl = byId(`${widgetId}-comparison-start`);
+        const compEndEl = byId(`${widgetId}-comparison-end`);
         widget.chart_options.comparison_start_date = enableComparisonEl.checked ? (compStartEl ? (compStartEl.value || null) : null) : null;
         widget.chart_options.comparison_end_date = enableComparisonEl.checked ? (compEndEl ? (compEndEl.value || null) : null) : null;
     }
@@ -1016,6 +985,30 @@ async function updateWidgetDateRange(widgetId) {
         widget.exclude_budgets = Array.from(exclBudgetsEl.selectedOptions).map(o => o.value);
     }
 
+    return widget;
+}
+
+async function updateWidgetDateRange(widgetId) {
+    const widgets = await getDashboardWidgets();
+    const widget = widgets.find(w => w.id === widgetId);
+    if (!widget) return;
+
+    readWidgetSettings(widgetId, widget);
+    widget.updated_at = new Date().toISOString();
+
+    // Same requirement as the Graph Builder: balance and card paydown
+    // widgets chart accounts, so they need at least one account or group
+    const widgetType = widget.widget_type || 'balance';
+    if ((widgetType === 'balance' || widgetType === 'card_paydown') &&
+        (widget.accounts || []).length === 0 && (widget.group_ids || []).length === 0) {
+        OxiUI.toast('Please select at least one account or group', 'error');
+        return;
+    }
+    if (widgetType === 'budget_breakdown' && (widget.budget_names || []).length === 0) {
+        OxiUI.toast('Please select at least one budget', 'error');
+        return;
+    }
+
     try {
         const response = await fetch(`/api/widgets/${widgetId}`, {
             method: 'PUT',
@@ -1027,6 +1020,11 @@ async function updateWidgetDateRange(widgetId) {
             const errorText = await response.text();
             throw new Error(errorText || `HTTP ${response.status}`);
         }
+
+        // Keep the cached copy in sync: width / height edits PUT the cached
+        // widget and would otherwise revert these settings
+        const cacheIndex = widgetsCache.findIndex(w => w.id === widgetId);
+        if (cacheIndex !== -1) widgetsCache[cacheIndex] = widget;
 
         // Close settings panel
         document.getElementById(`${widgetId}-settings`).style.display = 'none';
@@ -1439,6 +1437,7 @@ function renderDeltaLineChartDashboard(ctx, widget, labels, history) {
             maintainAspectRatio: false,
             scales: {
                 y: {
+                    beginAtZero: opts.beginAtZero,
                     grid: { color: chartGridColor },
                     ticks: {
                         color: chartTextColor,
@@ -2247,7 +2246,7 @@ function renderBalanceComparisonChart(ctx, widget, history, comparisonHistory) {
             borderWidth: 2,
             fill: opts.fillArea,
             tension: opts.tension,
-            pointRadius: 0
+            pointRadius: opts.showPoints ? 4 : 0
         },
         {
             label: 'Total Balance (prev period)',
@@ -2258,7 +2257,7 @@ function renderBalanceComparisonChart(ctx, widget, history, comparisonHistory) {
             borderDash: [5, 5],
             fill: false,
             tension: opts.tension,
-            pointRadius: 0
+            pointRadius: opts.showPoints ? 4 : 0
         }
     ];
 
@@ -2436,6 +2435,7 @@ function renderNetWorthChartDashboard(ctx, widget, history) {
             }
         }
     });
+    widgetCharts[widget.id].__pctOpts = { enabled: opts.showPct, mode: opts.pctMode };
 }
 
 function formatTileMoney(value, symbol) {
@@ -2683,11 +2683,154 @@ function getSubscriptionOptions() {
     return subscriptionOptionsPromise;
 }
 
+// Widget types rendered by renderMultiSeriesWidget without extra filtering
+const MULTI_SERIES_WIDGET_TYPES = ['expenses_by_category', 'category_subcat', 'subscription_cost', 'budget_breakdown'];
+
+// Show a message in place of a widget's chart (no data, feature disabled,
+// ...) and drop the previous chart so stale data is not left on screen.
+function showWidgetMessage(widgetId, message) {
+    const errorEl = document.getElementById(`${widgetId}-error`);
+    if (errorEl) errorEl.textContent = message;
+    if (widgetCharts[widgetId]) {
+        widgetCharts[widgetId].destroy();
+        delete widgetCharts[widgetId];
+    }
+}
+
+// One ChartLine entry ({value} object or plain number) as a magnitude
+// (spend series are charted as positive amounts).
+function entryMagnitude(v) {
+    const num = typeof v === 'object' && v !== null ? parseFloat(v.value) : parseFloat(v);
+    return isNaN(num) ? 0 : Math.abs(num);
+}
+
+// Shared renderer for the multi-series widgets (budget spent, labels,
+// categories, subscriptions, budget breakdown): a pie of per-series totals,
+// or one line per series honoring every display option of the widget
+// settings and the legend's saved selection.
+function renderMultiSeriesWidget(ctx, widget, history, colorFor = null) {
+    const palette = generateColors(history.length);
+    const colorAt = (ds, i) => (colorFor && colorFor(ds, i)) || palette[i];
+
+    if ((widget.chart_type || 'line') === 'pie') {
+        const totals = history.map(ds =>
+            Object.values(ds.entries || {}).reduce((sum, v) => sum + entryMagnitude(v), 0));
+        renderPieChartWidget(ctx, widget, history.map(ds => ds.label), totals,
+            colorFor ? history.map(colorAt) : null);
+        return;
+    }
+
+    const opts = getChartOptions(widget);
+    const chartTextColor = chartColors().textColor;
+    const chartGridColor = chartColors().gridColor;
+
+    const dateSet = new Set();
+    history.forEach(ds => {
+        if (ds.entries && typeof ds.entries === 'object') {
+            Object.keys(ds.entries).forEach(date => dateSet.add(date));
+        }
+    });
+    const allDates = Array.from(dateSet).sort();
+
+    const savedVisibility = widgetDatasetVisibility[widget.id] || {};
+    const datasets = history.map((ds, i) => {
+        const data = allDates.map(date => entryMagnitude(ds.entries?.[date]));
+        const color = colorAt(ds, i);
+        return {
+            label: ds.label,
+            data: data,
+            absoluteData: data,
+            borderColor: color,
+            backgroundColor: color + '33',
+            borderWidth: 2,
+            order: 1,
+            hidden: savedVisibility[i] === false
+        };
+    });
+    const legendInfo = history.map(ds => ({ name: ds.label }));
+
+    OxiUI.applyLineStyle(datasets, opts);
+    appendWidgetTrendlines(datasets, opts);
+    datasets.forEach(ds => {
+        if (ds.isTrendline && savedVisibility[ds.trendOf] === false) ds.hidden = true;
+    });
+    const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
+
+    if (widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+    }
+
+    const scales = OxiUI.applyAxisOptions({
+        y: {
+            grid: { color: chartGridColor },
+            ticks: {
+                color: chartTextColor,
+                callback: function(value) {
+                    return value.toLocaleString();
+                }
+            }
+        },
+        x: {
+            grid: { color: chartGridColor },
+            ticks: {
+                color: chartTextColor,
+                maxRotation: 45,
+                callback: function(value) {
+                    const label = this.getLabelForValue(value);
+                    const date = parseChartLabel(label);
+                    return date.toLocaleDateString();
+                }
+            }
+        }
+    }, opts);
+
+    widgetCharts[widget.id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: allDates,
+            datasets: stackedDatasets
+        },
+        plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    itemSort: (a, b) => {
+                        const va = Math.abs(a.parsed.y || 0);
+                        const vb = Math.abs(b.parsed.y || 0);
+                        return vb - va;
+                    },
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: OxiUI.applyStackedScales(scales, opts.stacked)
+        }
+    });
+    widgetCharts[widget.id].__pctOpts = { enabled: opts.showPct, mode: opts.pctMode };
+
+    renderSplitLegend(widget.id, legendInfo, stackedDatasets);
+}
+
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
     // Compute effective dates: use dashboard dates if the widget is set to inherit
     const source = widget.date_range_source || 'custom';
     const effectiveStart = source === 'dashboard' ? (dashboardDates.start || widget.start_date) : widget.start_date;
     const effectiveEnd = source === 'dashboard' ? (dashboardDates.end || widget.end_date) : widget.end_date;
+
+    // Clear the previous render's message and legend; renderers that need
+    // a legend show it again
+    const errorEl = document.getElementById(`${canvasId}-error`);
+    if (errorEl) errorEl.textContent = '';
+    const legendEl = document.getElementById(`${canvasId}-legend`);
+    if (legendEl) legendEl.style.display = 'none';
 
     try {
         // Determine widget type (default to "balance" for backwards compatibility)
@@ -2833,8 +2976,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             const url = `/api/labels/spend?${params.toString()}`;
             const response = await fetch(url);
             if (response.status === 404) {
-                document.getElementById(`${canvasId}-error`).textContent =
-                    'Spending Labels is disabled. Enable it under Settings.';
+                showWidgetMessage(canvasId, 'Spending Labels is disabled. Enable it under Settings.');
                 return;
             }
             if (!response.ok) {
@@ -2846,7 +2988,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 const msg = (labelDefs && labelDefs.length === 0)
                     ? 'No labels defined yet - create some on the Spending Labels page.'
                     : 'No budgeted spend found for this range. Labels only count spend charged to a budget.';
-                document.getElementById(`${canvasId}-error`).textContent = msg;
+                showWidgetMessage(canvasId, msg);
                 return;
             }
             history = labelData;
@@ -2873,9 +3015,9 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 } catch (e) {
                     // keep the generic message
                 }
-                document.getElementById(`${canvasId}-error`).textContent = hasAnySubscriptions
+                showWidgetMessage(canvasId, hasAnySubscriptions
                     ? 'No subscription spend found for this range.'
-                    : 'No subscriptions found in Firefly III.';
+                    : 'No subscriptions found in Firefly III.');
                 return;
             }
             history = subData;
@@ -2892,8 +3034,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             }
             const bdData = await response.json();
             if (!bdData || bdData.length === 0) {
-                document.getElementById(`${canvasId}-error`).textContent =
-                    'No budgeted spend found for this range.';
+                showWidgetMessage(canvasId, 'No budgeted spend found for this range.');
                 return;
             }
             history = bdData;
@@ -2914,7 +3055,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
         }
 
         if (!history || history.length === 0) {
-            document.getElementById(`${canvasId}-error`).textContent = 'No data available';
+            showWidgetMessage(canvasId, 'No data available');
             return;
         }
 
@@ -2944,594 +3085,35 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             return;
         }
 
-        // Handle budget_spent widget type
+        // Multi-series widgets: one line (or pie slice) per budget, label,
+        // category or subscription
         if (widgetType === 'budget_spent') {
             const budgetNames = widget.budget_names || [];
-            let filteredHistory = history;
-            if (budgetNames.length > 0) {
-                filteredHistory = filterChartLineByNames(history, budgetNames);
-            }
-
+            const filteredHistory = budgetNames.length > 0
+                ? filterChartLineByNames(history, budgetNames)
+                : history;
             if (!filteredHistory || filteredHistory.length === 0) {
-                document.getElementById(`${canvasId}-error`).textContent = 'No budget data available';
+                showWidgetMessage(canvasId, 'No budget data available');
                 return;
             }
-
-            // Collect all unique dates across all budget datasets
-            const dateSet = new Set();
-            filteredHistory.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            const chartType = widget.chart_type || 'line';
-
-            // Pie chart mode: aggregate total spent per budget
-            if (chartType === 'pie') {
-                const pieLabels = [];
-                const pieData = [];
-                filteredHistory.forEach(ds => {
-                    let sum = 0;
-                    if (typeof ds.entries === 'object') {
-                        Object.values(ds.entries).forEach(v => {
-                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
-                        });
-                    }
-                    pieLabels.push(ds.label);
-                    pieData.push(sum);
-                });
-                renderPieChartWidget(ctx, widget, pieLabels, pieData);
-                return;
-            }
-
-            const opts = getChartOptions(widget);
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = chartColors().textColor;
-            const chartGridColor = chartColors().gridColor;
-
-            // Generate colors for budgets
-            const colors = generateColors(filteredHistory.length);
-
-            // Build Chart.js datasets - one per budget
-            const datasets = [];
-            const legendInfo = [];
-
-            filteredHistory.forEach((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                datasets.push({
-                    label: ds.label,
-                    data: data,
-                    absoluteData: data,
-                    borderColor: colors[i],
-                    backgroundColor: colors[i] + '33',
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                    order: 1
-                });
-                legendInfo.push({ name: ds.label });
-            });
-
-            // Trend line: dotted moving average per series
-            appendWidgetTrendlines(datasets, opts);
-
-            // Stacking (#24): group series for stacked rendering
-            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
-
-            if (widgetCharts[widget.id]) {
-                widgetCharts[widget.id].destroy();
-            }
-
-            widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: stackedDatasets
-                },
-                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            itemSort: (a, b) => {
-                                const va = Math.abs(a.parsed.y || 0);
-                                const vb = Math.abs(b.parsed.y || 0);
-                                return vb - va;
-                            },
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: OxiUI.applyStackedScales({
-                        y: {
-                            beginAtZero: opts.beginAtZero,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
-                                }
-                            }
-                        },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45,
-                                callback: function(value) {
-                                    const label = this.getLabelForValue(value);
-                                    const date = parseChartLabel(label);
-                                    return date.toLocaleDateString();
-                                }
-                            }
-                        }
-                    }, opts.stacked)
-                }
-            });
-
-            // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
+            renderMultiSeriesWidget(ctx, widget, filteredHistory);
             return;
         }
 
-        // Handle label_spend widget type
         if (widgetType === 'label_spend') {
-            const labelDefs = await fetchLabelDefinitions();
-            const colorMap = labelColorMap(labelDefs);
-            const chartType = widget.chart_type || 'line';
-
-            // Pie chart mode: aggregate total spent per label
-            if (chartType === 'pie') {
-                const pieLabels = [];
-                const pieData = [];
-                const pieColors = [];
-                history.forEach(ds => {
-                    let sum = 0;
-                    if (typeof ds.entries === 'object') {
-                        Object.values(ds.entries).forEach(v => {
-                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
-                        });
-                    }
-                    pieLabels.push(ds.label);
-                    pieData.push(sum);
-                    pieColors.push(labelDatasetColor(ds.label, colorMap));
-                });
-                renderPieChartWidget(ctx, widget, pieLabels, pieData, pieColors);
-                return;
-            }
-
-            const opts = getChartOptions(widget);
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = chartColors().textColor;
-            const chartGridColor = chartColors().gridColor;
-
-            // Collect all unique dates across all label datasets
-            const dateSet = new Set();
-            history.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            // Build Chart.js datasets - one per label (user colors, gray Unlabeled)
-            const datasets = [];
-            const legendInfo = [];
-            const palette = generateColors(history.length);
-            history.forEach((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                const color = labelDatasetColor(ds.label, colorMap) || palette[i];
-                datasets.push({
-                    label: ds.label,
-                    data: data,
-                    absoluteData: data,
-                    borderColor: color,
-                    backgroundColor: color + '33',
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                    order: 1
-                });
-                legendInfo.push({ name: ds.label });
-            });
-
-            // Trend line: dotted moving average per series
-            appendWidgetTrendlines(datasets, opts);
-
-            // Stacking (#24): group series for stacked rendering
-            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
-
-            if (widgetCharts[widget.id]) {
-                widgetCharts[widget.id].destroy();
-            }
-
-            widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: stackedDatasets
-                },
-                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            itemSort: (a, b) => {
-                                const va = Math.abs(a.parsed.y || 0);
-                                const vb = Math.abs(b.parsed.y || 0);
-                                return vb - va;
-                            },
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: OxiUI.applyStackedScales({
-                        y: {
-                            beginAtZero: opts.beginAtZero,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
-                                }
-                            }
-                        },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45,
-                                callback: function(value) {
-                                    const label = this.getLabelForValue(value);
-                                    const date = parseChartLabel(label);
-                                    return date.toLocaleDateString();
-                                }
-                            }
-                        }
-                    }, opts.stacked)
-                }
-            });
-
-            // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
+            const colorMap = labelColorMap(await fetchLabelDefinitions());
+            renderMultiSeriesWidget(ctx, widget, history, ds => labelDatasetColor(ds.label, colorMap));
             return;
         }
 
-        // Handle expenses_by_category / subscription_cost / budget_breakdown
-        // widget types (all are one-line-per-series multi-dataset charts)
-        if (widgetType === 'expenses_by_category' || widgetType === 'subscription_cost' || widgetType === 'budget_breakdown') {
-            if (!history || history.length === 0) {
-                document.getElementById(`${canvasId}-error`).textContent = widgetType === 'subscription_cost'
-                    ? 'No subscription cost data available'
-                    : widgetType === 'budget_breakdown'
-                        ? 'No budget breakdown data available'
-                        : 'No category expense data available';
-                return;
-            }
-
-            // Collect all unique dates across all category datasets
-            const dateSet = new Set();
-            history.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            const chartType = widget.chart_type || 'line';
-
-            // Pie chart mode: aggregate total spent per category
-            if (chartType === 'pie') {
-                const pieLabels = [];
-                const pieData = [];
-                history.forEach(ds => {
-                    let sum = 0;
-                    if (typeof ds.entries === 'object') {
-                        Object.values(ds.entries).forEach(v => {
-                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
-                        });
-                    }
-                    pieLabels.push(ds.label);
-                    pieData.push(sum);
-                });
-                renderPieChartWidget(ctx, widget, pieLabels, pieData);
-                return;
-            }
-
-            const opts = getChartOptions(widget);
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = chartColors().textColor;
-            const chartGridColor = chartColors().gridColor;
-
-            // Generate colors for categories
-            const colors = generateColors(history.length);
-
-            // Build Chart.js datasets - one per category
-            const datasets = [];
-            const legendInfo = [];
-
-            history.forEach((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                datasets.push({
-                    label: ds.label,
-                    data: data,
-                    borderColor: colors[i],
-                    backgroundColor: colors[i] + '33',
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                    order: 1
-                });
-                legendInfo.push({ name: ds.label });
-            });
-
-            // Trend line: dotted moving average per series
-            appendWidgetTrendlines(datasets, opts);
-
-            // Stacking (#24): group series for stacked rendering
-            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
-
-            if (widgetCharts[widget.id]) {
-                widgetCharts[widget.id].destroy();
-            }
-
-            widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: stackedDatasets
-                },
-                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            itemSort: (a, b) => {
-                                const va = Math.abs(a.parsed.y || 0);
-                                const vb = Math.abs(b.parsed.y || 0);
-                                return vb - va;
-                            },
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: OxiUI.applyStackedScales({
-                        y: {
-                            beginAtZero: opts.beginAtZero,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
-                                }
-                            }
-                        },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45,
-                                callback: function(value) {
-                                    const label = this.getLabelForValue(value);
-                                    const date = parseChartLabel(label);
-                                    return date.toLocaleDateString();
-                                }
-                            }
-                        }
-                    }, opts.stacked)
-                }
-            });
-
-            // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
+        if (MULTI_SERIES_WIDGET_TYPES.includes(widgetType)) {
+            renderMultiSeriesWidget(ctx, widget, history);
             return;
         }
+
         // Handle net_worth widget type
         if (widgetType === 'net_worth') {
             renderNetWorthChartDashboard(ctx, widget, history);
-            return;
-        }
-
-        // Handle category_subcat widget type
-        if (widgetType === 'category_subcat') {
-            const parentCategories = widget.parent_categories || [];
-            let filteredHistory = history;
-
-            if (!filteredHistory || filteredHistory.length === 0) {
-                document.getElementById(`${canvasId}-error`).textContent = 'No subcategory data available';
-                return;
-            }
-
-            // Collect all unique dates across all subcategory datasets
-            const dateSet = new Set();
-            filteredHistory.forEach(ds => {
-                if (ds.entries && typeof ds.entries === 'object') {
-                    Object.keys(ds.entries).forEach(date => dateSet.add(date));
-                }
-            });
-            const allDates = Array.from(dateSet).sort();
-
-            const chartType = widget.chart_type || 'line';
-
-            // Pie chart mode: aggregate total spent per subcategory
-            if (chartType === 'pie') {
-                const pieLabels = [];
-                const pieData = [];
-                filteredHistory.forEach(ds => {
-                    let sum = 0;
-                    if (typeof ds.entries === 'object') {
-                        Object.values(ds.entries).forEach(v => {
-                            sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
-                        });
-                    }
-                    pieLabels.push(ds.label);
-                    pieData.push(sum);
-                });
-                renderPieChartWidget(ctx, widget, pieLabels, pieData);
-                return;
-            }
-
-            const opts = getChartOptions(widget);
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const chartTextColor = chartColors().textColor;
-            const chartGridColor = chartColors().gridColor;
-
-            // Generate colors for subcategories
-            const colors = generateColors(filteredHistory.length);
-
-            // Build Chart.js datasets - one per subcategory
-            const datasets = [];
-            const legendInfo = [];
-
-            filteredHistory.forEach((ds, i) => {
-                const data = allDates.map(date => {
-                    const val = ds.entries?.[date];
-                    if (val === undefined || val === null) return 0;
-                    let num = 0;
-                    if (typeof val === 'object' && val !== null && val.value !== undefined) {
-                        num = parseFloat(val.value);
-                    } else {
-                        num = parseFloat(val);
-                    }
-                    return isNaN(num) ? 0 : Math.abs(num);
-                });
-                datasets.push({
-                    label: ds.label,
-                    data: data,
-                    absoluteData: data,
-                    borderColor: colors[i],
-                    backgroundColor: colors[i] + '33',
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                    order: 1
-                });
-                legendInfo.push({ name: ds.label });
-            });
-
-            // Trend line: dotted moving average per series
-            appendWidgetTrendlines(datasets, opts);
-
-            // Stacking (#24): group series for stacked rendering
-            const stackedDatasets = OxiUI.applyStacking(datasets, opts.stacked);
-
-            if (widgetCharts[widget.id]) {
-                widgetCharts[widget.id].destroy();
-            }
-
-            widgetCharts[widget.id] = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: allDates,
-                    datasets: stackedDatasets
-                },
-                plugins: [OxiUI.hoverValueGuidePlugin, tooltipSortAndLegendPlugin],
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            itemSort: (a, b) => {
-                                const va = Math.abs(a.parsed.y || 0);
-                                const vb = Math.abs(b.parsed.y || 0);
-                                return vb - va;
-                            },
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: OxiUI.applyStackedScales({
-                        y: {
-                            beginAtZero: opts.beginAtZero,
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                callback: function(value) {
-                                    return value.toLocaleString();
-                                }
-                            }
-                        },
-                        x: {
-                            grid: { color: chartGridColor },
-                            ticks: {
-                                color: chartTextColor,
-                                maxRotation: 45,
-                                callback: function(value) {
-                                    const label = this.getLabelForValue(value);
-                                    const date = parseChartLabel(label);
-                                    return date.toLocaleDateString();
-                                }
-                            }
-                        }
-                    }, opts.stacked)
-                }
-            });
-
-            // Render interactive split legend below chart
-            renderSplitLegend(widget.id, legendInfo, stackedDatasets);
             return;
         }
 
@@ -3591,7 +3173,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             return;
         }
 
-        if (widget.chart_mode === 'combined') {
+        if ((widget.chart_mode || 'combined') === 'combined') {
             // Aggregate all datasets
             const totalFlowData = new Array(labels.length).fill(0);
 
@@ -4014,6 +3596,372 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
     }
 }
 
+// Every option a widget type can expose in its settings panel (the union
+// over line/pie, combined/split and all earned variants); which of them are
+// visible for the current selection is decided by
+// updateWidgetSettingsVisibility.
+function widgetSettingsCapabilities(widgetType) {
+    return OxiUI.widgetOptionSupport(widgetType, { chartType: 'line', chartMode: 'split', variant: 'delta_line' });
+}
+
+// Settings panel of one dashboard widget. Mirrors the Graph Builder's
+// controls (same names, order and per-type rules via
+// OxiUI.widgetOptionSupport) so a widget can be edited with the options it
+// was built with.
+function buildWidgetSettingsHtml(widget, context) {
+    const {
+        allAccounts = [], allGroups = [],
+        exclusionOptions = { categories: [], budgets: [] },
+        subscriptionOptions = { subscriptions: [], groups: [] },
+        startDate = '', endDate = ''
+    } = context || {};
+    const id = widget.id;
+    const widgetType = widget.widget_type || 'balance';
+    const caps = widgetSettingsCapabilities(widgetType);
+    const chartOpts = getChartOptions(widget);
+    const interval = widget.interval || 'auto';
+    const sel = (cond) => cond ? 'selected' : '';
+    const chk = (cond) => cond ? 'checked' : '';
+
+    // Accounts the widget references but the account list does not contain
+    // (e.g. a type outside ACCOUNT_TYPES) stay selectable so saving the
+    // settings never silently drops them.
+    const accountOptions = allAccounts.map(a => ({ id: a.id, name: a.name }));
+    (widget.accounts || []).forEach(accId => {
+        if (!accountOptions.some(a => a.id === accId)) accountOptions.push({ id: accId, name: `Account #${accId}` });
+    });
+    const groupOptions = allGroups.map(g => ({ id: g.id, name: g.name }));
+    (widget.group_ids || []).forEach(gid => {
+        if (!groupOptions.some(g => g.id === gid)) groupOptions.push({ id: gid, name: `Group ${gid}` });
+    });
+
+    const dataControls = [];
+    if (caps.accounts) {
+        dataControls.push(`
+                        <label data-opt="accounts">Accounts:
+                            <select multiple size="5" id="${id}-accounts" class="exclusion-select">
+                                ${accountOptions.map(a => `<option value="${escapeHtml(a.id)}" ${sel((widget.accounts || []).includes(a.id))}>${escapeHtml(a.name)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label data-opt="accounts">Groups:
+                            <select multiple size="5" id="${id}-groups" class="exclusion-select">
+                                ${groupOptions.map(g => `<option value="${escapeHtml(g.id)}" ${sel((widget.group_ids || []).includes(g.id))}>${escapeHtml(g.name)}</option>`).join('')}
+                            </select>
+                        </label>`);
+    }
+    if (caps.budgets) {
+        dataControls.push(`
+                        <label data-opt="budgets">Budgets:
+                            <select multiple size="5" id="${id}-budgets" class="exclusion-select">
+                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${sel((widget.budget_names || []).includes(b))}>${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </label>`);
+    }
+    if (caps.subscriptions) {
+        dataControls.push(`
+                        <label data-opt="subscriptions">Subscriptions:
+                            <select multiple size="5" id="${id}-subscriptions" class="exclusion-select">
+                                ${subscriptionOptions.subscriptions.map(sub => `<option value="${escapeHtml(sub.id)}" ${sel((widget.subscription_ids || []).includes(sub.id))}>${escapeHtml(sub.name)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label data-opt="subscriptions">Subscription groups:
+                            <select multiple size="4" id="${id}-subscription-groups" class="exclusion-select">
+                                ${subscriptionOptions.groups.map(g => `<option value="${escapeHtml(g.id)}" ${sel((widget.subscription_group_ids || []).includes(g.id))}>${escapeHtml(g.name)} (${g.bill_count})</option>`).join('')}
+                            </select>
+                        </label>
+                        <label class="checkbox-label" data-opt="subscriptions" title="By default each selected group is one series showing the group's total cost; enable to show each subscription in the group as its own series instead.">
+                            <input type="checkbox" id="${id}-subscription-split" ${chk(widget.subscription_split_groups)}>
+                            Split selected groups into individual subscriptions
+                        </label>`);
+    }
+    if (caps.breakdownBy) {
+        const by = widget.budget_breakdown_by === 'destination' || widget.budget_breakdown_by === 'main_category'
+            ? widget.budget_breakdown_by : 'category';
+        dataControls.push(`
+                        <label data-opt="breakdownBy">Break down by:
+                            <select id="${id}-budget-breakdown-by">
+                                <option value="category" ${sel(by === 'category')}>Full categories</option>
+                                <option value="main_category" ${sel(by === 'main_category')}>Main categories</option>
+                                <option value="destination" ${sel(by === 'destination')}>Destination accounts</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.groupBy) {
+        dataControls.push(`
+                        <label data-opt="groupBy">Group by:
+                            <select id="${id}-graph-mode">
+                                <option value="subcategory" ${sel(widget.category_graph_mode !== 'parent')}>Subcategories</option>
+                                <option value="parent" ${sel(widget.category_graph_mode === 'parent')}>Main categories</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.includeUnlabeled) {
+        dataControls.push(`
+                        <label class="checkbox-label" data-opt="includeUnlabeled" title="Also chart budgeted spend that matches no label as an 'Unlabeled' series"><input type="checkbox" id="${id}-include-unlabeled" ${chk(widget.include_unlabeled !== false)}> Include unlabeled</label>`);
+    }
+    if (caps.sankeyFlow) {
+        const flow = widget.sankey_flow_type || 'destination';
+        dataControls.push(`
+                        <label data-opt="sankeyFlow">Flow type:
+                            <select id="${id}-sankey-flow-type">
+                                <option value="destination" ${sel(flow === 'destination')}>By destination account</option>
+                                <option value="category" ${sel(flow === 'category')}>By category</option>
+                                <option value="subcategory" ${sel(flow === 'subcategory')}>By subcategory</option>
+                                <option value="budget" ${sel(flow === 'budget')}>By budget</option>
+                            </select>
+                        </label>`);
+    }
+
+    const dateSection = caps.dateRange ? `
+                    <div class="widget-settings-section" data-section="date-range">
+                        <strong>Date range</strong>
+                        <div class="widget-date-range-source">
+                            <label>
+                                <input type="radio" name="${id}-date-source" value="dashboard" ${chk(widget.date_range_source === 'dashboard')}>
+                                Use dashboard range
+                            </label>
+                            <label>
+                                <input type="radio" name="${id}-date-source" value="custom" ${chk(widget.date_range_source !== 'dashboard')}>
+                                Custom
+                            </label>
+                        </div>
+                        <label>Preset:
+                            <select id="${id}-time-range">
+                                <option value="__none__">Custom</option>
+                            </select>
+                        </label>
+                        <button id="${id}-apply-time-range">Apply</button>
+                        <div id="${id}-custom-range" style="display: none;">
+                            <label>Last
+                                <input type="number" id="${id}-custom-count" value="1" min="1" max="999" style="width:60px">
+                                <select id="${id}-custom-unit">
+                                    <option value="days">days</option>
+                                    <option value="weeks">weeks</option>
+                                    <option value="months" selected>months</option>
+                                    <option value="years">years</option>
+                                </select>
+                            </label>
+                            <button id="${id}-apply-custom-range">Apply</button>
+                        </div>
+                        <label>
+                            <input type="checkbox" id="${id}-round-end"> Round end date to month boundary
+                            <select id="${id}-round-end-mode" style="display: none;">
+                                <option value="start_of_current_month">Start of current month</option>
+                                <option value="end_of_current_month" selected>End of current month</option>
+                                <option value="start_of_next_month">Start of next month</option>
+                            </select>
+                        </label>
+                        <label>Start: <input type="date" id="${id}-start" value="${startDate}"></label>
+                        <label>End: <input type="date" id="${id}-end" value="${endDate}"></label>
+                        ${caps.interval ? `
+                        <label data-opt="interval">Interval:
+                            <select id="${id}-interval">
+                                <option value="auto" ${sel(interval === 'auto')}>Auto</option>
+                                <option value="1D" ${sel(interval === '1D')}>Day</option>
+                                <option value="1W" ${sel(interval === '1W')}>Week</option>
+                                <option value="1M" ${sel(interval === '1M')}>Month</option>
+                                <option value="1Q" ${sel(interval === '1Q')}>Quarter</option>
+                                <option value="1Y" ${sel(interval === '1Y')}>Year</option>
+                            </select>
+                        </label>` : ''}
+                    </div>` : '';
+
+    const display = [];
+    if (caps.layout) {
+        display.push(`
+                        <label data-opt="layout">Layout:
+                            <select id="${id}-chart-mode">
+                                <option value="combined" ${sel((widget.chart_mode || 'combined') === 'combined')}>Combined</option>
+                                <option value="split" ${sel(widget.chart_mode === 'split')}>Split</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.chartType) {
+        display.push(`
+                        <label data-opt="chartType">Style:
+                            <select id="${id}-chart-type">
+                                <option value="line" ${sel(widget.chart_type !== 'pie')}>Line</option>
+                                <option value="pie" ${sel(widget.chart_type === 'pie')}>Pie</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.variant) {
+        const variant = widget.earned_chart_type || 'bars';
+        display.push(`
+                        <label data-opt="variant">Variant:
+                            <select id="${id}-earned-chart-type">
+                                <option value="bars" ${sel(variant === 'bars')}>Earned vs Spent</option>
+                                <option value="delta_line" ${sel(variant === 'delta_line')}>Delta Line</option>
+                                <option value="delta_bar" ${sel(variant === 'delta_bar')}>Delta Bar</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.stacked) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="stacked" title="Stack series values vertically (line charts only; per-series trend lines stay unstacked)"><input type="checkbox" id="${id}-stacked" ${chk(chartOpts.stacked)}> Stacked</label>`);
+    }
+    if (caps.pct) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="pct"><input type="checkbox" id="${id}-show-pct" ${chk(chartOpts.showPct)}> Show % change</label>
+                        <label data-opt="pct" data-requires="${id}-show-pct">Mode:
+                            <select id="${id}-pct-mode">
+                                <option value="from_previous" ${sel(chartOpts.pctMode === 'from_previous')}>From previous</option>
+                                <option value="from_first" ${sel(chartOpts.pctMode === 'from_first')}>From first point</option>
+                            </select>
+                        </label>`);
+    }
+    if (caps.comparison) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="comparison"><input type="checkbox" id="${id}-enable-comparison" ${chk(chartOpts.enableComparison)}> Compare with previous period</label>
+                        <div id="${id}-comparison-dates" data-opt="comparison" data-requires="${id}-enable-comparison">
+                            <label>Comparison start: <input type="date" id="${id}-comparison-start" value="${chartOpts.comparisonStartDate || ''}"></label>
+                            <label>Comparison end: <input type="date" id="${id}-comparison-end" value="${chartOpts.comparisonEndDate || ''}"></label>
+                        </div>`);
+    }
+    if (caps.lineStyle) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="lineStyle"><input type="checkbox" id="${id}-show-points" ${chk(chartOpts.showPoints)}> Show points</label>
+                        <label class="checkbox-label" data-opt="lineStyle"><input type="checkbox" id="${id}-fill-area" ${chk(chartOpts.fillArea)}> Fill area</label>`);
+    }
+    if (caps.beginAtZero) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="beginAtZero"><input type="checkbox" id="${id}-begin-zero" ${chk(chartOpts.beginAtZero)}> Y-axis from zero</label>`);
+    }
+    if (caps.ticks) {
+        display.push(`
+                        <label data-opt="ticks">X-axis ticks: <input type="number" id="${id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
+                        <label data-opt="ticks">Y-axis ticks: <input type="number" id="${id}-y-limit" value="${chartOpts.yAxisLimit}" min="1" max="10" style="width: 60px;"></label>`);
+    }
+    if (caps.lineStyle) {
+        display.push(`
+                        <label data-opt="lineStyle">Line smoothness: <input type="range" id="${id}-tension" value="${chartOpts.tension}" min="0" max="1" step="0.1" style="width: 100px;"></label>`);
+    }
+    if (caps.forecast) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="forecast"><input type="checkbox" id="${id}-enable-forecast" ${chk(chartOpts.enableForecast)}> Forecast trend</label>
+                        <label data-opt="forecast">Days: <input type="number" id="${id}-forecast-days" value="${chartOpts.forecastDays}" min="1" max="365" style="width: 60px;"></label>`);
+    }
+    if (caps.trendline) {
+        display.push(`
+                        <label class="checkbox-label" data-opt="trendline"><input type="checkbox" id="${id}-enable-trendline" ${chk(chartOpts.showTrendline)}> Trend line (moving average)</label>
+                        <label data-opt="trendline">Window (points): <input type="number" id="${id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>`);
+    }
+
+    return `
+                <div class="widget-settings" id="${id}-settings" style="display: none;">
+                    ${dataControls.length ? `
+                    <div class="widget-settings-section" data-section="data">
+                        <strong>Data</strong>
+                        ${dataControls.join('')}
+                    </div>` : ''}
+                    ${dateSection}
+                    ${display.length ? `
+                    <div class="widget-settings-section" data-section="display">
+                        <strong>Display</strong>
+                        ${display.join('')}
+                    </div>` : ''}
+                    ${caps.exclusions ? `
+                    <div class="widget-settings-section" data-section="exclusions">
+                        <strong>Exclusions</strong>
+                        <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>
+                        <label>Exclude categories:
+                            <select multiple size="5" id="${id}-exclude-categories" class="exclusion-select">
+                                ${exclusionOptions.categories.map(c => `<option value="${escapeHtml(c)}" ${sel((widget.exclude_categories || []).includes(c))}>${escapeHtml(c)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label>Exclude budgets:
+                            <select multiple size="5" id="${id}-exclude-budgets" class="exclusion-select">
+                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${sel((widget.exclude_budgets || []).includes(b))}>${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </label>
+                    </div>` : ''}
+                    <div class="widget-settings-section" data-section="width">
+                        <strong>Width</strong>
+                        <label>
+                            <select id="${id}-width" style="width: 120px;">
+                                <option value="12" ${sel(widget.width === undefined || widget.width === 12)}>Full (12)</option>
+                                <option value="6" ${sel(widget.width === 6)}>Half (6)</option>
+                                <option value="4" ${sel(widget.width === 4)}>Third (4)</option>
+                                <option value="3" ${sel(widget.width === 3)}>Quarter (3)</option>
+                                <option value="2" ${sel(widget.width === 2)}>Half third (2)</option>
+                                <option value="1" ${sel(widget.width === 1)}>Narrow (1)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="widget-settings-section" data-section="dashboards">
+                        <strong>Assign to dashboards</strong>
+                        ${buildDashboardCheckboxes(widget)}
+                        <button class="widget-dash-save-btn" onclick="saveWidgetDashboardAssignment('${id}')">Save assignment</button>
+                    </div>
+                    <button id="${id}-update-btn" onclick="updateWidgetDateRange('${id}')">Update</button>
+                </div>`;
+}
+
+// Current line/pie, layout and variant picked in a widget's settings panel
+function widgetSettingsState(widgetId) {
+    const val = (suffix, fallback) => document.getElementById(`${widgetId}-${suffix}`)?.value || fallback;
+    return {
+        chartType: val('chart-type', 'line'),
+        chartMode: val('chart-mode', 'combined'),
+        variant: val('earned-chart-type', 'bars')
+    };
+}
+
+// Show only the settings that apply to the current selection (e.g. no
+// line options for a pie, no stacking for a combined balance line), and
+// dependent inputs (% mode, comparison dates) only while enabled.
+function updateWidgetSettingsVisibility(widgetId, widgetType) {
+    const panel = document.getElementById(`${widgetId}-settings`);
+    if (!panel) return;
+    const support = OxiUI.widgetOptionSupport(widgetType, widgetSettingsState(widgetId));
+    panel.querySelectorAll('[data-opt]').forEach(el => {
+        let visible = !!support[el.dataset.opt];
+        const requires = el.dataset.requires && document.getElementById(el.dataset.requires);
+        if (requires && !requires.checked) visible = false;
+        el.style.display = visible ? '' : 'none';
+    });
+}
+
+// Wire the controls that change which settings apply
+function wireWidgetSettingsVisibility(widgetId, widgetType) {
+    ['chart-type', 'chart-mode', 'earned-chart-type', 'show-pct', 'enable-comparison'].forEach(suffix => {
+        document.getElementById(`${widgetId}-${suffix}`)
+            ?.addEventListener('change', () => updateWidgetSettingsVisibility(widgetId, widgetType));
+    });
+    // Like the Graph Builder: enabling the comparison pre-fills the period
+    // right before the widget's range when no comparison dates are set
+    const comparisonEl = document.getElementById(`${widgetId}-enable-comparison`);
+    comparisonEl?.addEventListener('change', () => {
+        const startEl = document.getElementById(`${widgetId}-comparison-start`);
+        const endEl = document.getElementById(`${widgetId}-comparison-end`);
+        if (!comparisonEl.checked || !startEl || !endEl || startEl.value || endEl.value) return;
+        const previous = calculatePreviousPeriod(startInputValue(widgetId), endInputValue(widgetId));
+        if (previous) {
+            startEl.value = previous.start;
+            endEl.value = previous.end;
+        }
+    });
+    updateWidgetSettingsVisibility(widgetId, widgetType);
+}
+
+// Preset key (e.g. '30d') whose relative range equals start/end, else '__none__'
+function matchingTimeRangePreset(timeRanges, start, end) {
+    if (!start || !end || typeof calculateRelativeDates !== 'function') return '__none__';
+    const match = (timeRanges || []).find(key => {
+        const dates = calculateRelativeDates(key);
+        return dates && dates.start === start && dates.end === end;
+    });
+    return match || '__none__';
+}
+
+function startInputValue(widgetId) {
+    return document.getElementById(`${widgetId}-start`)?.value || '';
+}
+
+function endInputValue(widgetId) {
+    return document.getElementById(`${widgetId}-end`)?.value || '';
+}
+
 async function renderDashboard() {
     const container = document.getElementById('dashboard-container');
     const widgets = await getWidgetsForDashboard(currentDashboardId);
@@ -4092,11 +4040,6 @@ async function renderDashboard() {
         const endDate = dateSource === 'dashboard'
             ? (dashboardDates.end || widget.end_date || '')
             : (widget.end_date || '');
-        const interval = widget.interval || 'auto';
-
-        // Get chart options with defaults
-        const chartOpts = getChartOptions(widget);
-
         // Widget type badge
         let widgetTypeBadge;
         if (widgetType === 'earned_spent') {
@@ -4146,214 +4089,9 @@ async function renderDashboard() {
                         <button onclick="deleteWidget('${widget.id}')">Delete</button>
                     </div>
                 </div>
-                <div class="widget-settings" id="${widget.id}-settings" style="display: none;">
-                    <div class="widget-settings-section">
-                        <strong>Date Range</strong>
-                        <div class="widget-date-range-source">
-                            <label>
-                                <input type="radio" name="${widget.id}-date-source" value="dashboard" ${widget.date_range_source === 'dashboard' ? 'checked' : ''}>
-                                Use dashboard range
-                            </label>
-                            <label>
-                                <input type="radio" name="${widget.id}-date-source" value="custom" ${widget.date_range_source !== 'dashboard' ? 'checked' : ''}>
-                                Custom
-                            </label>
-                        </div>
-                        <label>Time Range:
-                            <select id="${widget.id}-time-range">
-                                <option value="__none__">Custom</option>
-                            </select>
-                        </label>
-                        <button id="${widget.id}-apply-time-range" style="margin-bottom: 0.5rem;">Apply</button>
-                        <div id="${widget.id}-custom-range" style="display: none; margin-bottom: 0.5rem;">
-                            <label>Last
-                                <input type="number" id="${widget.id}-custom-count" value="1" min="1" max="999" style="width:60px">
-                                <select id="${widget.id}-custom-unit">
-                                    <option value="days">days</option>
-                                    <option value="weeks">weeks</option>
-                                    <option value="months" selected>months</option>
-                                    <option value="years">years</option>
-                                </select>
-                            </label>
-                            <button id="${widget.id}-apply-custom-range">Apply</button>
-                        </div>
-                        <label style="display: block; margin-bottom: 0.5rem;">
-                            <input type="checkbox" id="${widget.id}-round-end"> Round end date to month boundary
-                            <select id="${widget.id}-round-end-mode" style="display: none; margin-left: 0.5rem;">
-                                <option value="start_of_current_month">Start of current month</option>
-                                <option value="end_of_current_month" selected>End of current month</option>
-                                <option value="start_of_next_month">Start of next month</option>
-                            </select>
-                        </label>
-                        <label>Start: <input type="date" id="${widget.id}-start" value="${startDate}"></label>
-                        <label>End: <input type="date" id="${widget.id}-end" value="${endDate}"></label>
-                        <label>Interval:
-                            <select id="${widget.id}-interval">
-                                <option value="auto" ${interval === 'auto' ? 'selected' : ''}>Auto</option>
-                                <option value="1D" ${interval === '1D' ? 'selected' : ''}>Day</option>
-                                <option value="1W" ${interval === '1W' ? 'selected' : ''}>Week</option>
-                                <option value="1M" ${interval === '1M' ? 'selected' : ''}>Month</option>
-                                <option value="1Q" ${interval === '1Q' ? 'selected' : ''}>Quarter</option>
-                                <option value="1Y" ${interval === '1Y' ? 'selected' : ''}>Year</option>
-                            </select>
-                        </label>
-                        ${widgetType === 'balance' ? `
-                        <label>Chart Mode:
-                            <select id="${widget.id}-chart-mode">
-                                <option value="combined" ${widget.chart_mode === 'combined' || !widget.chart_mode ? 'selected' : ''}>Combined</option>
-                                <option value="split" ${widget.chart_mode === 'split' ? 'selected' : ''}>Split</option>
-                            </select>
-                        </label>
-                        ` : ''}
-
-                        ${['expenses_by_category', 'category_subcat'].includes(widgetType) ? `
-                        <label>Group By:
-                            <select id="${widget.id}-graph-mode">
-                                <option value="subcategory" ${widget.category_graph_mode !== 'parent' ? 'selected' : ''}>Subcategories</option>
-                                <option value="parent" ${widget.category_graph_mode === 'parent' ? 'selected' : ''}>Main Categories</option>
-                            </select>
-                        </label>
-                        ` : ''}
-
-                        ${widgetType !== 'sankey' ? `
-                        <label>Chart Type:
-                            <select id="${widget.id}-chart-type">
-                                <option value="line" ${widget.chart_type !== 'pie' ? 'selected' : ''}>Line</option>
-                                <option value="pie" ${widget.chart_type === 'pie' ? 'selected' : ''}>Pie</option>
-                            </select>
-                        </label>
-                        ` : ''}
-                        ${widgetType === 'earned_spent' ? `
-                        <label>Earned Chart Type:
-                            <select id="${widget.id}-earned-chart-type">
-                                <option value="bars" ${widget.earned_chart_type === 'bars' || !widget.earned_chart_type ? 'selected' : ''}>Earned vs Spent</option>
-                                <option value="delta_line" ${widget.earned_chart_type === 'delta_line' ? 'selected' : ''}>Delta Line</option>
-                                <option value="delta_bar" ${widget.earned_chart_type === 'delta_bar' ? 'selected' : ''}>Delta Bar</option>
-                            </select>
-                        </label>
-                        ` : ''}
-                        ${widgetType === 'sankey' ? `
-                        <label>Flow Type:
-                            <select id="${widget.id}-sankey-flow-type">
-                                <option value="destination" ${widget.sankey_flow_type === 'destination' || !widget.sankey_flow_type ? 'selected' : ''}>By Destination Account</option>
-                                <option value="category" ${widget.sankey_flow_type === 'category' ? 'selected' : ''}>By Category</option>
-                                <option value="subcategory" ${widget.sankey_flow_type === 'subcategory' ? 'selected' : ''}>By Subcategory</option>
-                                <option value="budget" ${widget.sankey_flow_type === 'budget' ? 'selected' : ''}>By Budget</option>
-                            </select>
-                        </label>
-                        ` : ''}
-                    </div>
-                    <div class="widget-settings-section">
-                        <strong>Display Options</strong>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-pct" ${chartOpts.showPct ? 'checked' : ''}> Show % Change</label>
-                        <label>Percentage Mode:
-                            <select id="${widget.id}-pct-mode">
-                                <option value="from_previous" ${chartOpts.pctMode === 'from_previous' ? 'selected' : ''}>From Previous</option>
-                                <option value="from_first" ${chartOpts.pctMode === 'from_first' ? 'selected' : ''}>From First Point</option>
-                            </select>
-                        </label>
-                        ${widgetType === 'balance' ? `
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-comparison" ${chartOpts.enableComparison ? 'checked' : ''}> Compare with previous period</label>
-                        <div id="${widget.id}-comparison-dates" style="${chartOpts.enableComparison ? '' : 'display: none;'}">
-                            <label>Comparison Start: <input type="date" id="${widget.id}-comparison-start" value="${chartOpts.comparisonStartDate || ''}"></label>
-                            <label>Comparison End: <input type="date" id="${widget.id}-comparison-end" value="${chartOpts.comparisonEndDate || ''}"></label>
-                        </div>
-                        ` : ''}
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-show-points" ${chartOpts.showPoints ? 'checked' : ''}> Show Points</label>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-fill-area" ${chartOpts.fillArea ? 'checked' : ''}> Fill Area</label>
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-begin-zero" ${chartOpts.beginAtZero ? 'checked' : ''}> Y-Axis from Zero</label>
-                        <label>X-Axis Ticks: <input type="number" id="${widget.id}-x-limit" value="${chartOpts.xAxisLimit}" min="1" max="20" style="width: 60px;"></label>
-                        <label>Y-Axis Ticks: <input type="number" id="${widget.id}-y-limit" value="${chartOpts.yAxisLimit}" min="1" max="10" style="width: 60px;"></label>
-                        <label>Line Smoothness: <input type="range" id="${widget.id}-tension" value="${chartOpts.tension}" min="0" max="1" step="0.1" style="width: 100px;"></label>
-                        ${widgetType === 'balance' ? `
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-forecast" ${chartOpts.enableForecast ? 'checked' : ''}> Forecast Trend</label>
-                        <label>Forecast Days: <input type="number" id="${widget.id}-forecast-days" value="${chartOpts.forecastDays}" min="1" max="365" style="width: 60px;"></label>
-                        ` : ''}
-                        ${widgetType !== 'sankey' ? `
-                        <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
-                        <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
-                        ` : ''}
-                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `
-                        <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
-                        ` : ''}
-                        ${widgetType === 'label_spend' ? `
-                        <label class="checkbox-label" title="Also chart budgeted spend that matches no label as an 'Unlabeled' series"><input type="checkbox" id="${widget.id}-include-unlabeled" ${widget.include_unlabeled !== false ? 'checked' : ''}> Include Unlabeled</label>
-                        ` : ''}
-                    </div>
-                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `
-                    <div class="widget-settings-section">
-                        <strong>Exclusions</strong>
-                        <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>
-                        <label>Exclude categories:
-                            <select multiple size="5" id="${widget.id}-exclude-categories" class="exclusion-select">
-                                ${exclusionOptions.categories.map(c => `<option value="${escapeHtml(c)}" ${(widget.exclude_categories || []).includes(c) ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-                            </select>
-                        </label>
-                        <label>Exclude budgets:
-                            <select multiple size="5" id="${widget.id}-exclude-budgets" class="exclusion-select">
-                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${(widget.exclude_budgets || []).includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
-                            </select>
-                        </label>
-                    </div>
-                    ` : ''}
-                    ${widgetType === 'subscription_cost' ? `
-                    <div class="widget-settings-section">
-                        <strong>Subscriptions</strong>
-                        <div class="exclusions-hint">Empty selection charts every subscription. Each selected group is charted as one total of the whole group.</div>
-                        <label>Subscriptions:
-                            <select multiple size="5" id="${widget.id}-subscriptions" class="exclusion-select">
-                                ${subscriptionOptions.subscriptions.map(sub => `<option value="${escapeHtml(sub.id)}" ${(widget.subscription_ids || []).includes(sub.id) ? 'selected' : ''}>${escapeHtml(sub.name)}</option>`).join('')}
-                            </select>
-                        </label>
-                        <label>Subscription groups:
-                            <select multiple size="4" id="${widget.id}-subscription-groups" class="exclusion-select">
-                                ${subscriptionOptions.groups.map(g => `<option value="${escapeHtml(g.id)}" ${(widget.subscription_group_ids || []).includes(g.id) ? 'selected' : ''}>${escapeHtml(g.name)} (${g.bill_count})</option>`).join('')}
-                            </select>
-                        </label>
-                        <label style="display: flex; gap: 6px; align-items: center;" title="By default each selected group is one series showing the group's total cost; enable to show each subscription in the group as its own series instead.">
-                            <input type="checkbox" id="${widget.id}-subscription-split" ${widget.subscription_split_groups ? 'checked' : ''}>
-                            Split selected groups into individual subscriptions
-                        </label>
-                    </div>
-                    ` : ''}
-                    ${widgetType === 'budget_breakdown' ? `
-                    <div class="widget-settings-section">
-                        <strong>Budgets</strong>
-                        <div class="exclusions-hint">One series per category (or destination account) that the selected budgets are charged to.</div>
-                        <label>Budgets:
-                            <select multiple size="5" id="${widget.id}-budgets" class="exclusion-select">
-                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${(widget.budget_names || []).includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
-                            </select>
-                        </label>
-                        <label>Break down by:
-                            <select id="${widget.id}-budget-breakdown-by">
-                                <option value="category" ${widget.budget_breakdown_by !== 'destination' && widget.budget_breakdown_by !== 'main_category' ? 'selected' : ''}>Full categories (Parent:Sub)</option>
-                                <option value="main_category" ${widget.budget_breakdown_by === 'main_category' ? 'selected' : ''}>Main categories</option>
-                                <option value="destination" ${widget.budget_breakdown_by === 'destination' ? 'selected' : ''}>Destination accounts</option>
-                            </select>
-                        </label>
-                    </div>
-                    ` : ''}
-                    <div class="widget-settings-section">
-                        <strong>Width</strong>
-                        <label>
-                            <select id="${widget.id}-width" style="width: 120px;">
-                                <option value="12" ${widget.width === undefined || widget.width === 12 ? 'selected' : ''}>Full (12)</option>
-                                <option value="6" ${widget.width === 6 ? 'selected' : ''}>Half (6)</option>
-                                <option value="4" ${widget.width === 4 ? 'selected' : ''}>Third (4)</option>
-                                <option value="3" ${widget.width === 3 ? 'selected' : ''}>Quarter (3)</option>
-                                <option value="2" ${widget.width === 2 ? 'selected' : ''}>Half Third (2)</option>
-                                <option value="1" ${widget.width === 1 ? 'selected' : ''}>Narrow (1)</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="widget-settings-section">
-                        <strong>Assign to Dashboards</strong>
-                        ${buildDashboardCheckboxes(widget)}
-                        <button class="widget-dash-save-btn" onclick="saveWidgetDashboardAssignment('${widget.id}')">Save Assignment</button>
-                    </div>
-                    <button onclick="updateWidgetDateRange('${widget.id}')">Update</button>
-                </div>
+                ${buildWidgetSettingsHtml(widget, {
+                    allAccounts, allGroups, exclusionOptions, subscriptionOptions, startDate, endDate
+                })}
                 <div class="widget-body">
                     <div id="${widget.id}-error" class="widget-error"></div>
                     <div class="widget-chart" style="height: ${widget.chart_height || 300}px;">
@@ -4368,7 +4106,7 @@ async function renderDashboard() {
                         ${widgetType === 'balance' ? `<div class="widget-accounts">${accountTags}</div>` : ''}
                         <div class="widget-mode">
                             ${widgetTypeBadge}
-                            ${widgetType === 'balance' ? `<span class="widget-mode-badge">${widget.chart_mode}</span>` : ''}
+                            ${widgetType === 'balance' ? `<span class="widget-mode-badge">${widget.chart_mode || 'combined'}</span>` : ''}
                             ${dashBadges ? `<div class="widget-dash-badges">${dashBadges}</div>` : ''}
                         </div>
                     </div>
@@ -4385,47 +4123,24 @@ async function renderDashboard() {
         await renderWidgetChart(widget, widget.id, allAccounts, allGroups);
     }
 
-    // Wire up percentage change controls for each widget
+    // Settings visibility + live % change preview for each widget
     widgets.forEach(widget => {
+        wireWidgetSettingsVisibility(widget.id, widget.widget_type || 'balance');
+
         const showPctCheckbox = document.getElementById(`${widget.id}-show-pct`);
         const pctModeSelect = document.getElementById(`${widget.id}-pct-mode`);
-
-        // Compare-with-previous-period date inputs follow the checkbox
-        const enableComparisonCheckbox = document.getElementById(`${widget.id}-enable-comparison`);
-        if (enableComparisonCheckbox) {
-            const comparisonDates = document.getElementById(`${widget.id}-comparison-dates`);
-            enableComparisonCheckbox.addEventListener('change', () => {
-                if (comparisonDates) {
-                    comparisonDates.style.display = enableComparisonCheckbox.checked ? '' : 'none';
-                }
-            });
-        }
-
-        if (showPctCheckbox) {
-            showPctCheckbox.addEventListener('change', async () => {
-                if (widgetCharts[widget.id]) {
-                    widgetCharts[widget.id].__pctOpts = {
-                        enabled: showPctCheckbox.checked,
-                        mode: widgetCharts[widget.id].__pctOpts?.mode || 'from_previous'
-                    };
-                    widgetCharts[widget.id].update();
-                }
-                await persistPctSettings(widget.id, showPctCheckbox.checked, widgetCharts[widget.id].__pctOpts.mode);
-            });
-        }
-
-        if (pctModeSelect) {
-            pctModeSelect.addEventListener('change', async () => {
-                if (widgetCharts[widget.id]) {
-                    widgetCharts[widget.id].__pctOpts = {
-                        enabled: widgetCharts[widget.id].__pctOpts?.enabled ?? false,
-                        mode: pctModeSelect.value
-                    };
-                    widgetCharts[widget.id].update();
-                }
-                await persistPctSettings(widget.id, widgetCharts[widget.id].__pctOpts.enabled, pctModeSelect.value);
-            });
-        }
+        const previewPct = async () => {
+            const enabled = !!showPctCheckbox?.checked;
+            const mode = pctModeSelect?.value || 'from_previous';
+            const chart = widgetCharts[widget.id];
+            if (chart) {
+                chart.__pctOpts = { enabled, mode };
+                chart.update();
+            }
+            await persistPctSettings(widget.id, enabled, mode);
+        };
+        showPctCheckbox?.addEventListener('change', previewPct);
+        pctModeSelect?.addEventListener('change', previewPct);
     });
 
     // Wire up width selector for each widget
@@ -4474,6 +4189,8 @@ async function renderDashboard() {
         const roundEndCheckbox = document.getElementById(`${widget.id}-round-end`);
         const roundEndMode = document.getElementById(`${widget.id}-round-end-mode`);
         const ROLL_END_KEY = `oxidize_widget_${widget.id}_round_end`;
+        // Widgets without a date range (Saved This Month tile) have no controls
+        if (!timeRangeSelect) return;
 
         // Build time range dropdown
         timeRanges.forEach(key => {
@@ -4488,9 +4205,13 @@ async function renderDashboard() {
             } else {
                 option.textContent = key.toUpperCase();
             }
-            if (key === defaultTimeRange) option.selected = true;
             timeRangeSelect.appendChild(option);
         });
+        // The widget stores absolute dates: preselect the preset they match
+        // (if any) instead of the default, so the dropdown never contradicts
+        // the start/end shown below it.
+        timeRangeSelect.value = matchingTimeRangePreset(timeRanges, startInputValue(widget.id), endInputValue(widget.id));
+        applyTimeRangeBtn.style.display = timeRangeSelect.value === '__none__' ? 'none' : '';
 
         // Apply preset time range to widget
         function applyPreset(key) {
@@ -4577,16 +4298,17 @@ async function renderDashboard() {
         const startInput = document.getElementById(`${widget.id}-start`);
         const endInput = document.getElementById(`${widget.id}-end`);
 
+        // With the dashboard range the widget's own range controls are inert
         function updateDateInputsForSource(source) {
-            if (source === 'dashboard') {
+            const inherit = source === 'dashboard';
+            if (inherit) {
                 startInput.value = dashboardDates.start || '';
                 endInput.value = dashboardDates.end || '';
-                startInput.disabled = true;
-                endInput.disabled = true;
-            } else {
-                startInput.disabled = false;
-                endInput.disabled = false;
             }
+            [startInput, endInput, timeRangeSelect, applyTimeRangeBtn, customCount, customUnit,
+                applyCustomRangeBtn, roundEndCheckbox, roundEndMode].forEach(el => {
+                if (el) el.disabled = inherit;
+            });
         }
 
         // Initialize disabled state

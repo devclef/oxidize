@@ -16,6 +16,7 @@ const indexHtml = readFileSync(path.resolve(root, 'static/index.html'), 'utf8');
 
 beforeAll(() => {
     window.OXIDIZE_CONFIG = { accountTypes: [], autoFetchAccounts: false };
+    (0, eval)(readFileSync(path.resolve(root, 'static/ui.js'), 'utf8')); // window.OxiUI
     (0, eval)(appSource); // indirect eval: top-level functions become globals
 });
 
@@ -96,9 +97,12 @@ describe('builder UI wiring (index.html)', () => {
         expect(indexHtml).toContain('name="budget-breakdown-by" value="destination"');
     });
 
-    it('registers budget_breakdown as excludable and stackable in app.js', () => {
-        expect(appSource).toMatch(/const EXCLUDABLE_WIDGET_TYPES = \[[^\]]*'budget_breakdown'\];/);
-        expect(appSource).toMatch(/const STACKABLE_WIDGET_TYPES = \[[^\]]*'budget_breakdown'\];/);
+    it('supports exclusions and stacking for budget_breakdown (shared option matrix)', () => {
+        const support = window.OxiUI.widgetOptionSupport('budget_breakdown', { chartType: 'line' });
+        expect(support.exclusions).toBe(true);
+        expect(support.stacked).toBe(true);
+        expect(support.breakdownBy).toBe(true);
+        expect(support.budgets).toBe(true);
     });
 
     it('shows the budgets section for budget_breakdown', () => {

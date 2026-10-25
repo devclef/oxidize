@@ -279,6 +279,47 @@ mod tests {
     }
 
     #[test]
+    fn chart_options_round_trips_every_option() {
+        // Every option the Graph Builder / dashboard widget settings save
+        // must come back unchanged (non-default values for all fields).
+        let json = serde_json::json!({
+            "show_points": true,
+            "x_axis_limit": 9,
+            "y_axis_limit": 3,
+            "fill_area": false,
+            "tension": 0.5,
+            "begin_at_zero": true,
+            "show_pct": true,
+            "pct_mode": "from_first",
+            "enable_forecast": true,
+            "forecast_days": 45,
+            "show_trendline": true,
+            "trendline_window": 12,
+            "stacked": true,
+            "enable_comparison": true,
+            "comparison_start_date": "2025-01-01",
+            "comparison_end_date": "2025-01-31"
+        });
+        let opts: ChartOptions = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&opts).unwrap(), json);
+    }
+
+    #[test]
+    fn chart_options_defaults_for_empty_object() {
+        let opts: ChartOptions = serde_json::from_str("{}").unwrap();
+        assert!(!opts.show_points);
+        assert_eq!(opts.x_axis_limit, 6);
+        assert_eq!(opts.y_axis_limit, 4);
+        assert!(opts.fill_area);
+        assert_eq!(opts.tension, 0.1);
+        assert!(!opts.begin_at_zero);
+        assert!(!opts.show_pct);
+        assert_eq!(opts.pct_mode, "from_previous");
+        assert!(!opts.enable_forecast);
+        assert_eq!(opts.forecast_days, 30);
+    }
+
+    #[test]
     fn chart_options_round_trips_comparison_fields() {
         let json = r#"{"enable_comparison": true, "comparison_start_date": "2025-01-01", "comparison_end_date": "2025-06-30"}"#;
         let opts: ChartOptions = serde_json::from_str(json).unwrap();

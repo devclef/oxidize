@@ -122,7 +122,7 @@ describe('index.html wiring', () => {
     });
 
     it('has the include-unlabeled control (hidden group, checked by default)', () => {
-        expect(indexHtml).toContain('id="label-spend-options-group" style="display: none;"');
+        expect(indexHtml).toMatch(/id="label-spend-options-group" data-opt="includeUnlabeled" style="display: none;"/);
         expect(indexHtml).toContain('id="include-unlabeled-checkbox" checked');
     });
 });
