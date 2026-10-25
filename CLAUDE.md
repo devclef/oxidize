@@ -490,13 +490,13 @@ No build step or bundler — plain JavaScript files served from `/static/`.
 
 **`theme.js`** — Dark/light mode toggle, persisted to localStorage; also keeps the PWA `<meta name="theme-color">` in sync with the active theme
 
-**`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors (`OxiUI.getChartColors()` — text/grid/tooltip, `accent`, `earned`/`spent`, `neutral`, and an ordered colorblind-validated `series` palette; `OxiUI.getSeriesPalette()` for the full ordered list), and the shared spinner. Tested by `ui.test.js`. Never hardcode chart hex colors in page scripts — `app.js`/`dashboard.js` go through their `chartColors()` / `seriesColor(i)` helpers, inline page scripts call `OxiUI` directly. The values mirror the `--chart-*` tokens in `style.css`; change both together.
+**`ui.js`** — Shared UI kit loaded on every page: stacked dismissible toasts (`OxiUI.toast`), promise-based `OxiUI.confirm` / `OxiUI.prompt` dialogs (replacing all native `alert`/`confirm`/`prompt`), `OxiUI.formatCurrency` (plain grouped numbers, no symbol), theme-aware chart colors (`OxiUI.getChartColors()` — text/grid/tooltip, `accent`, `earned`/`spent`, `neutral`, and an ordered colorblind-validated `series` palette; `OxiUI.getSeriesPalette()` for the full ordered list), the per-browser chart grid preference (`OxiUI.isChartGridEnabled()` / `setChartGridEnabled(on)`, localStorage `oxidize_chart_grid`, toggled under Settings → Appearance; when off `getChartColors().gridColor` is `transparent` and live charts plus Chart.js defaults are re-colored), and the shared spinner. Tested by `ui.test.js`. Never hardcode chart hex colors in page scripts — `app.js`/`dashboard.js` go through their `chartColors()` / `seriesColor(i)` helpers, inline page scripts call `OxiUI` directly. The values mirror the `--chart-*` tokens in `style.css`; change both together.
 
 The tool pages (`avg-cost.html`, `budget-comparison.html`, `sankey.html`) keep their page logic in inline `<script>` blocks rather than separate files.
 
 **`style.css`** — Uses CSS custom properties (variables) for theming:
 - `:root` for light mode defaults ("Slate & Teal": slate neutrals, teal `--accent-color`)
-- `[data-theme="dark"]` selector for dark mode overrides
+- `[data-theme="dark"]` selector for dark mode overrides (deliberately soft contrast: charcoal `#12171d` background, muted teal accent — avoid pure black/white and neon tints)
 - `--on-accent` is the foreground for anything on a solid accent/status fill (white in light, dark ink in dark) — never hardcode `#fff`
 - `--chart-*` tokens hold chart text/grid/earned/spent and the 8 categorical series colors
 - When modifying styles, always use the existing CSS variables

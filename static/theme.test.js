@@ -76,14 +76,14 @@ describe('theme init', () => {
         storage.setItem('oxidize_theme', 'dark');
         (0, eval)(themeSource);
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#0b1015');
+        expect(metaColor()).toBe('#12171d');
     });
 
     it('falls back to prefers-color-scheme when nothing is saved', () => {
         mockMatchMedia(true);
         (0, eval)(themeSource);
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#0b1015');
+        expect(metaColor()).toBe('#12171d');
     });
 });
 
@@ -91,7 +91,7 @@ describe('theme toggle', () => {
     it('switches to dark and updates the theme-color meta', () => {
         document.querySelector('#theme-toggle').click();
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-        expect(metaColor()).toBe('#0b1015');
+        expect(metaColor()).toBe('#12171d');
         expect(storage.getItem('oxidize_theme')).toBe('dark');
     });
 

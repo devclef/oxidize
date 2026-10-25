@@ -1787,7 +1787,7 @@ function renderSankeyChart(container, data) {
     const colors = {
         textColor: chartColors().tooltipText,
         mutedText: chartColors().textColor,
-        nodeStroke: chartColors().gridColor,
+        nodeStroke: chartColors().tooltipBorder,
     };
     const width = container.clientWidth || 1100;
     const height = container.clientHeight || Math.max(400, Math.min(600, width * 0.5));

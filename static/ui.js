@@ -8,6 +8,8 @@
  *  - OxiUI.formatCurrency(v, opts)   consistent amount formatting (no currency symbol)
  *  - OxiUI.getChartColors()          theme-aware chart colors
  *  - OxiUI.getSeriesPalette()        ordered categorical series colors
+ *  - OxiUI.isChartGridEnabled()      chart grid lines preference (default on)
+ *  - OxiUI.setChartGridEnabled(on)   save it and update live charts
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
  *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
  *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
@@ -287,28 +289,80 @@
             seriesExtra: ['#0e7490', '#a16207', '#9d174d', '#475569', '#4d7c0f', '#7c3aed', '#b45309']
         },
         dark: {
-            textColor: '#b4c0ce',
-            gridColor: 'rgba(148, 163, 184, 0.14)',
-            tooltipBg: '#1a232d',
-            tooltipBorder: 'rgba(148, 163, 184, 0.24)',
-            tooltipText: '#e2e8f0',
-            accent: '#2dd4bf',
-            earned: '#4ade80',
-            spent: '#f87171',
-            neutral: '#64748b',
+            textColor: '#aab6c3',
+            gridColor: 'rgba(148, 163, 184, 0.12)',
+            tooltipBg: '#212a33',
+            tooltipBorder: 'rgba(148, 163, 184, 0.22)',
+            tooltipText: '#d3dbe4',
+            accent: '#4fb8aa',
+            earned: '#5cc98a',
+            spent: '#ef8a8a',
+            neutral: '#6b7888',
             series: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'],
             seriesExtra: ['#22d3ee', '#facc15', '#f472b6', '#94a3b8', '#a3e635', '#c084fc', '#fb923c']
         }
     };
 
+    // Chart grid lines are a per-browser preference (Settings page);
+    // when off, every chart's grid color resolves to transparent.
+    const CHART_GRID_KEY = 'oxidize_chart_grid';
+
+    function isChartGridEnabled() {
+        try {
+            return localStorage.getItem(CHART_GRID_KEY) !== 'off';
+        } catch (e) {
+            return true;
+        }
+    }
+
     function getChartColors() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         const theme = CHART_THEMES[isDark ? 'dark' : 'light'];
+        const showGrid = isChartGridEnabled();
         return Object.assign({}, theme, {
+            showGrid: showGrid,
+            gridColor: showGrid ? theme.gridColor : 'transparent',
             series: theme.series.slice(),
             seriesExtra: theme.seriesExtra.slice()
         });
     }
+
+    // Re-color the grid of every live Chart.js chart on the page.
+    function applyChartGridDefault() {
+        if (typeof Chart === 'undefined' || !Chart.defaults || !Chart.defaults.scale) return;
+        Chart.defaults.scale.grid.color = getChartColors().gridColor;
+    }
+
+    function refreshChartGrids() {
+        applyChartGridDefault();
+        if (typeof Chart === 'undefined' || !Chart.instances) return;
+        const gridColor = getChartColors().gridColor;
+        Object.values(Chart.instances).forEach((chart) => {
+            const scales = (chart.options && chart.options.scales) || {};
+            Object.values(scales).forEach((scale) => {
+                if (scale && scale.grid) scale.grid.color = gridColor;
+            });
+            chart.update('none');
+        });
+    }
+
+    function setChartGridEnabled(enabled) {
+        try {
+            localStorage.setItem(CHART_GRID_KEY, enabled ? 'on' : 'off');
+        } catch (e) {
+            // Storage unavailable: the preference just won't persist.
+        }
+        refreshChartGrids();
+        window.dispatchEvent(new CustomEvent('chartGridChanged', { detail: !!enabled }));
+    }
+
+    // Another tab changed the preference.
+    window.addEventListener('storage', (e) => {
+        if (e.key === CHART_GRID_KEY) refreshChartGrids();
+    });
+    // Theme switches change the grid color of charts that rely on defaults.
+    window.addEventListener('themeChanged', applyChartGridDefault);
+    applyChartGridDefault();
 
     // Full ordered series palette (validated slots first, then extras).
     function getSeriesPalette() {
@@ -500,6 +554,8 @@
         formatCurrency: formatCurrency,
         getChartColors: getChartColors,
         getSeriesPalette: getSeriesPalette,
+        isChartGridEnabled: isChartGridEnabled,
+        setChartGridEnabled: setChartGridEnabled,
         spinnerHtml: spinnerHtml,
         movingAverage: movingAverage,
         trendlineDataset: trendlineDataset,

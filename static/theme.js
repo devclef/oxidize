@@ -3,7 +3,7 @@ const THEME_KEY = 'oxidize_theme';
 // Browser chrome colors per theme (PWA <meta name="theme-color">)
 const THEME_COLORS = {
     light: '#f4f6f8',
-    dark: '#0b1015',
+    dark: '#12171d',
 };
 
 function updateThemeColor(theme) {

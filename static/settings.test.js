@@ -34,6 +34,7 @@ describe('settings page switch markup', () => {
             'avg-cost-toggle',
             'labels-toggle',
             'auto-fetch-toggle',
+            'chart-grid-toggle',
         ];
 
         const switches = doc.querySelectorAll('.switch');
