@@ -19,7 +19,7 @@ COPY src ./src
 COPY static ./static
 
 # Build for release
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo build --release --locked
 
 # Final stage
 FROM debian:bookworm-slim

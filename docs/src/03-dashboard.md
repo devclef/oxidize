@@ -10,13 +10,15 @@ You have two ways to add widgets:
 
 1. **From the main page**: After configuring a chart on the home page (`/`), click **"Save as Widget"**.
 
-2. **From the dashboard**: Click **"Add Widget"** and configure:
-   - Widget type (Balance or Earned & Spent)
-   - Name
-   - Accounts (or use a group)
-   - Date range
-   - Period (1D, 1W, 1M, 3M)
-   - Chart display settings
+2. **From the Sankey page** (`/sankey`): click **"Save as widget"** (the Widget
+   Builder can build Sankey widgets too).
+
+Every widget's **Settings** panel can change everything it was built with:
+its type, accounts/groups, categories, budgets, subscriptions, date range
+(a relative preset, "last N", fixed dates or the dashboard's range, with
+optional end-of-month rounding), interval, display options and exclusions.
+Changes are saved with **Update**; the card's tags and badges update right
+away.
 
 ### Widget Types
 

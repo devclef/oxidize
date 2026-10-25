@@ -44,7 +44,7 @@
         <button id="refresh-data-btn" class="ghost-btn" title="Clear cache and fetch fresh data from Firefly III">Refresh data</button>
     </header>
 
-    <section class="section-card account-section">
+    <section id="account-section" class="section-card account-section" data-opt="accounts">
         <div class="section-header">
             <h3 class="section-title">Accounts<span id="account-count" class="account-count-badge"></span></h3>
             <div class="section-actions">
@@ -71,7 +71,7 @@
         </div>
     </section>
 
-    <section id="groups-section" class="section-card groups-section">
+    <section id="groups-section" class="section-card groups-section" data-opt="accounts">
         <div class="section-header">
             <h3 class="section-title">My groups</h3>
             <div class="section-actions">
@@ -81,7 +81,7 @@
         <div id="groups-list"></div>
     </section>
 
-    <section id="categories-section" class="section-card categories-section" style="display: none;">
+    <section id="categories-section" class="section-card categories-section" data-opt="categories" style="display: none;">
         <div class="section-header">
             <h3 class="section-title">Categories <span id="categories-count-badge" class="account-count-badge"></span></h3>
             <div class="section-actions">
@@ -107,7 +107,7 @@
         <div id="categories-list"></div>
     </section>
 
-    <section id="budgets-section" class="section-card budgets-section" style="display: none;">
+    <section id="budgets-section" class="section-card budgets-section" data-opt="budgets" style="display: none;">
         <div class="section-header">
             <h3 class="section-title">Budgets</h3>
             <div class="section-actions">
@@ -124,7 +124,7 @@
         <div id="budgets-list"></div>
     </section>
 
-    <section id="subscriptions-section" class="section-card subscriptions-section" style="display: none;">
+    <section id="subscriptions-section" class="section-card subscriptions-section" data-opt="subscriptions" style="display: none;">
         <div class="section-header">
             <h3 class="section-title">Subscriptions<span id="subscription-count" class="account-count-badge"></span></h3>
             <div class="section-actions">
@@ -167,6 +167,7 @@
                 <option value="label_spend">Spending by Label</option>
                 <option value="subscription_cost">Subscription Cost</option>
                 <option value="budget_breakdown">Budget Breakdown</option>
+                <option value="sankey">Sankey Flow</option>
             </select>
         </div>
 
@@ -178,7 +179,8 @@
                 <div class="control-row time-range-controls">
                     <label for="time-range-select">Preset:</label>
                     <select id="time-range-select">
-                        <option value="__none__">Custom</option>
+                        <option value="__fixed__">Fixed dates</option>
+                        <option value="__none__">Custom (last N)</option>
                     </select>
                     <button id="apply-time-range-btn">Apply</button>
                     <!-- Custom relative range inputs (hidden by default) -->
@@ -201,7 +203,7 @@
                     <input type="date" id="end-date">
                 </div>
                 <!-- Round end date controls (hidden by default) -->
-                <div id="round-end-controls" class="round-end-controls" style="display: none;">
+                <div id="round-end-controls" class="round-end-controls">
                     <label>
                         <input type="checkbox" id="round-end-checkbox">
                         Round end date to month boundary
@@ -305,6 +307,17 @@
                                 Destination accounts
                             </label>
                         </div>
+                    </div>
+
+                    <!-- Sankey flow grouping (only shown for the sankey widget type) -->
+                    <div class="toggle-group" id="sankey-flow-options-group" data-opt="sankeyFlow" style="display: none;">
+                        <label class="control-caption" for="sankey-flow-type-select">Flow type</label>
+                        <select id="sankey-flow-type-select">
+                            <option value="destination">By destination account</option>
+                            <option value="category">By category</option>
+                            <option value="subcategory">By subcategory</option>
+                            <option value="budget">By budget</option>
+                        </select>
                     </div>
 
                     <!-- Chart type selector (Line / Pie) + stacked toggle -->
@@ -422,6 +435,10 @@
                     </label>
                 </div>
             </div>
+            <div class="advanced-row reset-row">
+                <button id="reset-display-options-btn" class="ghost-btn" type="button"
+                        title="The builder remembers these options in this browser; put them back to the defaults">Reset to defaults</button>
+            </div>
             </div>
         </div>
 
@@ -430,6 +447,8 @@
             <canvas id="balanceChart"></canvas>
         </div>
         <div id="tile-preview" class="tile-preview" style="display: none;"></div>
+        <div id="sankey-preview" class="sankey-preview" style="display: none;"></div>
+        <div id="sankey-tooltip" class="sankey-tooltip" style="display: none;"></div>
         <div id="split-legend" class="chart-legend" style="display: none;">
             <div class="legend-container" id="legend-items"></div>
         </div>
@@ -481,6 +500,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="/static/date-utils.js"></script>
     <script src="/static/ui.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3"></script>
+    <script src="/static/sankey-chart.js"></script>
     <script src="/static/app.js"></script>
     <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/static/sw.js', { scope: '/' }); }); }</script>
 </body>

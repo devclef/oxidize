@@ -13,7 +13,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-// ui.js defines window.OxiUI (trendline/stacking helpers used by dashboard.js)
+// ui.js defines window.OxiUI (trendline/stacking helpers used by dashboard.js);
+// date-utils.js the date helpers (loaded before dashboard.js on the page)
+(0, eval)(readFileSync(path.resolve(process.cwd(), 'static/date-utils.js'), 'utf8'));
 (0, eval)(readFileSync(path.resolve(process.cwd(), 'static/ui.js'), 'utf8'));
 
 // Chart.js stub: keep dataset object identity so `hidden` mutations on

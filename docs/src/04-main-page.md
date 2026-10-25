@@ -29,10 +29,19 @@ Use the date range picker to select the start and end dates for your chart. Comm
 
 | Preset | Range |
 |--------|-------|
-| Last 30 days | Today − 30 days → Today |
-| Last 90 days | Today − 90 days → Today |
-| This year | January 1 → Today |
-| Custom | Any start/end combination |
+| 7 Days, 30 Days, 3 Months, … | Today − N → Today (configurable under Settings) |
+| YTD | January 1 → Today |
+| Custom (last N) | The last N days, weeks, months or years |
+| Fixed dates | Exactly the start/end dates you type |
+
+A widget saved with a preset or a "last N" range **keeps following it**: a
+"30 Days" widget always shows the last 30 days, worked out each time the
+dashboard loads. Typing a date (or picking "Fixed dates") pins the widget to
+those exact dates instead.
+
+**Round end date to month boundary** moves the end of a relative range to the
+start of the current month, the end of the current month or the start of the
+next month. The choice is saved with the widget.
 
 The Firefly III API handles date ranges up to 90 days at a time. Oxidize automatically splits longer ranges into chunks behind the scenes.
 

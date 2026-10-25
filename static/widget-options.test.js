@@ -42,7 +42,7 @@ beforeAll(() => {
     (0, eval)(read('static/app.js') + `
 ;window.__oxiApp = {
     applyBuilderOptionVisibility, saveGraphAsWidget, renderExpensesByCategoryChart,
-    getDisplayOptions, toggleComparisonControls, fetchChartData, renderCardPaydownPreview,
+    getDisplayOptions, toggleComparisonControls, fetchChartData, renderCardPaydownPreview, renderComparisonChart,
     get balanceChart() { return balanceChart; }
 };`);
     (0, eval)(read('static/dashboard.js') + `
@@ -120,10 +120,14 @@ describe('OxiUI.widgetOptionSupport (shared option matrix)', () => {
     it('treats card paydown, sankey and the saved tile as fixed-style views', () => {
         for (const t of ['card_paydown', 'saved_this_month', 'sankey']) {
             const s = support(t);
-            for (const key of ['stacked', 'pct', 'trendline', 'lineStyle', 'ticks', 'beginAtZero', 'interval']) {
+            for (const key of ['stacked', 'pct', 'trendline', 'lineStyle', 'beginAtZero', 'interval']) {
                 expect(s[key], `${t}.${key}`).toBe(false);
             }
         }
+        // Card paydown has axes, so its tick counts can be tuned (audit O9)
+        expect(support('card_paydown').ticks).toBe(true);
+        expect(support('sankey').ticks).toBe(false);
+        expect(support('saved_this_month').ticks).toBe(false);
         expect(support('saved_this_month').dateRange).toBe(false);
         expect(support('sankey').exclusions).toBe(true);
         expect(support('sankey').sankeyFlow).toBe(true);
@@ -154,6 +158,8 @@ describe('OxiUI.widgetOptionSupport (shared option matrix)', () => {
         expect(ALL_TYPES.filter(t => support(t).includeUnlabeled)).toEqual(['label_spend']);
         expect(ALL_TYPES.filter(t => support(t).breakdownBy)).toEqual(['budget_breakdown']);
         expect(ALL_TYPES.filter(t => support(t).subscriptions)).toEqual(['subscription_cost']);
+        expect(ALL_TYPES.filter(t => support(t).categories)).toEqual(['category_subcat']);
+        expect(ALL_TYPES.filter(t => !support(t).accounts)).toEqual(['net_worth']);
     });
 
     it('defaults missing types to balance', () => {
@@ -248,7 +254,12 @@ const CONTROL_MAP = {
     grid: { dash: 'show-grid', builder: 'show-grid-toggle' },
     beginAtZero: { dash: 'begin-zero', builder: 'begin-zero-toggle' },
     ticks: { dash: 'x-limit', builder: 'x-axis-limit' },
-    exclusions: { dash: 'exclude-categories', builder: 'exclude-categories-select' }
+    exclusions: { dash: 'exclude-categories', builder: 'exclude-categories-select' },
+    accounts: { dash: 'accounts', builder: 'account-section' },
+    budgets: { dash: 'budgets', builder: 'budgets-section' },
+    categories: { dash: 'categories', builder: 'categories-section' },
+    subscriptions: { dash: 'subscriptions', builder: 'subscriptions-section' },
+    sankeyFlow: { dash: 'sankey-flow-type', builder: 'sankey-flow-options-group' }
 };
 
 function isShown(el) {
@@ -275,7 +286,12 @@ function dashControlShown(widgetId, suffix) {
 
 const BUILDER_TYPES = ['balance', 'earned_spent', 'expenses_by_category', 'net_worth', 'budget_spent',
     'category_subcat', 'card_paydown', 'saved_this_month', 'label_spend', 'subscription_cost',
-    'budget_breakdown'];
+    'budget_breakdown', 'sankey'];
+
+it('the builder offers every dashboard widget type (audit O8)', () => {
+    const offered = Array.from(indexHtml.matchAll(/<option value="([a-z_]+)">/g)).map(m => m[1]);
+    for (const t of ALL_TYPES) expect(offered, t).toContain(t);
+});
 const STATES = [
     { chartType: 'line', chartMode: 'combined', variant: 'bars' },
     { chartType: 'line', chartMode: 'split', variant: 'delta_line' },
@@ -383,12 +399,12 @@ describe('Graph Builder controls follow the same option matrix', () => {
         }
     }
 
-    it('leaves only the grid lines option for card paydown', () => {
+    it('leaves only the grid lines and tick options for card paydown', () => {
         setBuilderState('card_paydown', STATES[0]);
         expect(isShown(document.getElementById('display-group'))).toBe(false);
         const shown = Array.from(document.querySelectorAll('#advanced-section [data-opt]'))
             .filter(isShown).map(el => el.dataset.opt);
-        expect(shown).toEqual(['grid']);
+        expect(shown).toEqual(['grid', 'ticks', 'ticks']);
     });
 
     it('drops the Saved This Month preview when another type is charted', async () => {
@@ -583,6 +599,26 @@ describe('card paydown widget', () => {
         expect(shape(dashChart)).toEqual(shape(builderChart));
     });
 
+    it('applies the saved tick counts on both pages (audit O9)', async () => {
+        const config = window.OxiUI.cardPaydownChartConfig(PAYDOWN, { xAxisLimit: 3, yAxisLimit: 5 });
+        expect(config.options.scales.x.ticks.maxTicksLimit).toBe(3);
+        expect(config.options.scales.y.ticks.maxTicksLimit).toBe(5);
+        expect(config.options.scales.y1.ticks.maxTicksLimit).toBe(5);
+        // Without options the defaults stay
+        expect(window.OxiUI.cardPaydownChartConfig(PAYDOWN).options.scales.x.ticks.maxTicksLimit).toBe(8);
+
+        document.body.innerHTML = '<div id="cp3-error"></div><canvas id="cp3"></canvas>';
+        global.fetch = vi.fn(async () => ({ ok: true, json: async () => PAYDOWN }));
+        await dash.renderCardPaydownWidget({ id: 'cp3', accounts: ['1'], chart_options: { x_axis_limit: 2, y_axis_limit: 7 } }, 'cp3', [], null, null);
+        expect(dash.widgetCharts.cp3.options.scales.x.ticks.maxTicksLimit).toBe(2);
+        expect(dash.widgetCharts.cp3.options.scales.y.ticks.maxTicksLimit).toBe(7);
+
+        loadBuilderDom();
+        document.getElementById('x-axis-limit').value = '4';
+        window.__oxiApp.renderCardPaydownPreview({}, PAYDOWN);
+        expect(window.__oxiApp.balanceChart.options.scales.x.ticks.maxTicksLimit).toBe(4);
+    });
+
     it('shows a message instead of a chart when there is no card activity', async () => {
         document.body.innerHTML = '<div id="cp2-error"></div><canvas id="cp2"></canvas>';
         global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ monthly_activity: [] }) }));
@@ -598,9 +634,65 @@ describe('compare with previous period honors the display options', () => {
         const hist = [{ label: 'Checking', entries: { '2026-03-01': 1, '2026-03-02': 2 } }];
         dash.renderBalanceComparisonChart({}, { id: 'cmp', chart_options: { show_points: true, fill_area: true, tension: 0.6 } }, hist, hist);
         const [primary, prev] = dash.widgetCharts.cmp.data.datasets;
-        expect(primary).toMatchObject({ pointRadius: 4, fill: true, tension: 0.6 });
-        expect(prev).toMatchObject({ pointRadius: 4, fill: false, borderDash: [5, 5] });
+        expect(primary).toMatchObject({ pointRadius: 3, fill: 'origin', tension: 0.6 });
+        expect(prev).toMatchObject({ pointRadius: 3, fill: false, borderDash: [5, 5], tension: 0.6 });
     });
+});
+
+describe('compare with previous period: same series on both pages (audit O5)', () => {
+    const CURRENT = [
+        { label: 'Checking', entries: { '2026-03-01': 100, '2026-03-02': 110, '2026-03-03': 120 } },
+        { label: 'Savings', entries: { '2026-03-01': 10, '2026-03-02': 20, '2026-03-03': 30 } }
+    ];
+    // The previous period has different dates: values align by position
+    const PREVIOUS = [
+        { label: 'Checking', entries: { '2026-02-26': 50, '2026-02-27': 60, '2026-02-28': 70 } },
+        { label: 'Savings', entries: { '2026-02-26': 1, '2026-02-27': 2, '2026-02-28': 3 } }
+    ];
+
+    it('combined: one total line plus the previous total, aligned by position', () => {
+        const { labels, datasets } = window.OxiUI.balanceComparisonChart(CURRENT, PREVIOUS, { split: false });
+        expect(labels).toEqual(['2026-03-01', '2026-03-02', '2026-03-03']);
+        expect(datasets.map(d => d.label)).toEqual(['Total balance', 'Total balance (prev period)']);
+        expect(datasets[0].data).toEqual([110, 130, 150]);
+        expect(datasets[1].data).toEqual([51, 62, 73]); // was all zeros before
+        expect(datasets[1].isComparison).toBe(true);
+    });
+
+    it('split: one line per account plus that account\'s previous period', () => {
+        const { datasets } = window.OxiUI.balanceComparisonChart(CURRENT, PREVIOUS, { split: true });
+        expect(datasets.map(d => d.label)).toEqual(
+            ['Checking', 'Savings', 'Checking (prev period)', 'Savings (prev period)']);
+        expect(datasets[2].data).toEqual([50, 60, 70]);
+        expect(datasets[2].borderColor).toBe(datasets[0].borderColor);
+    });
+
+    it('pads a shorter previous period and skips trend lines for it', () => {
+        const short = [{ label: 'Checking', entries: { '2026-02-27': 5 } }];
+        const { datasets } = window.OxiUI.balanceComparisonChart([CURRENT[0]], short, { split: true });
+        expect(datasets[1].data).toEqual([5, null, null]);
+        expect(window.OxiUI.addTrendlineDatasets(datasets, { window: 2 }).map(t => t.label))
+            .toEqual(['Checking (avg)']);
+    });
+
+    it('returns nothing to draw without data', () => {
+        expect(window.OxiUI.balanceComparisonChart([], [], {})).toEqual({ labels: [], datasets: [] });
+    });
+
+    for (const mode of ['combined', 'split']) {
+        it(`builder preview and dashboard widget draw the same series (${mode})`, () => {
+            loadBuilderDom();
+            setBuilderState('balance', { chartType: 'line', chartMode: mode, variant: 'bars' });
+            window.__oxiApp.renderComparisonChart({}, CURRENT, PREVIOUS);
+            const builder = window.__oxiApp.balanceChart.data.datasets;
+
+            widgetDom('cmp2');
+            dash.renderBalanceComparisonChart({}, { id: 'cmp2', chart_mode: mode, chart_options: {} }, CURRENT, PREVIOUS);
+            const widget = dash.widgetCharts.cmp2.data.datasets;
+            const view = (ds) => ds.map(d => ({ label: d.label, data: d.data, dash: !!d.borderDash }));
+            expect(view(builder)).toEqual(view(widget));
+        });
+    }
 });
 
 describe('dashboard widget rendering state', () => {
@@ -748,8 +840,8 @@ describe('dashboard date preset matches the stored range', () => {
     it('selects the preset whose range equals the widget dates', () => {
         const d = window.calculateRelativeDates('30d');
         expect(dash.matchingTimeRangePreset(['7d', '30d'], d.start, d.end)).toBe('30d');
-        expect(dash.matchingTimeRangePreset(['7d', '30d'], '2020-01-01', '2020-02-01')).toBe('__none__');
-        expect(dash.matchingTimeRangePreset(['7d'], '', '')).toBe('__none__');
+        expect(dash.matchingTimeRangePreset(['7d', '30d'], '2020-01-01', '2020-02-01')).toBe('__fixed__');
+        expect(dash.matchingTimeRangePreset(['7d'], '', '')).toBe('__fixed__');
     });
 });
 

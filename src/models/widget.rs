@@ -58,6 +58,20 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_range_source: Option<String>,
+    /// Relative range the widget's dates follow, worked out at render time:
+    /// a preset key ("30d", "3m", "1y", "ytd", ...) or "custom:<count>:<unit>"
+    /// (unit = days/weeks/months/years). `None` means the widget keeps its
+    /// fixed `start_date`/`end_date`, which are also kept up to date as a
+    /// fallback.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relative_range: Option<String>,
+    /// Round the end of a relative range to a month boundary:
+    /// "start_of_current_month", "end_of_current_month" or
+    /// "start_of_next_month". `None` = no rounding.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round_end_mode: Option<String>,
     /// Sankey flow grouping type: "destination", "budget", "category", or "subcategory".
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,6 +111,53 @@ pub struct Widget {
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+}
+
+pub const ROUND_END_MODES: [&str; 3] = [
+    "start_of_current_month",
+    "end_of_current_month",
+    "start_of_next_month",
+];
+
+/// Whether `range` is a valid `Widget::relative_range`: a preset key
+/// (`<n>d|w|m|y` or `ytd`) or `custom:<count>:<unit>` with a count of
+/// 1-999 and a unit of days/weeks/months/years.
+pub fn is_valid_relative_range(range: &str) -> bool {
+    if range == "ytd" {
+        return true;
+    }
+    if let Some(rest) = range.strip_prefix("custom:") {
+        let mut parts = rest.splitn(2, ':');
+        let count = parts.next().and_then(|c| c.parse::<u32>().ok());
+        let unit = parts.next();
+        return matches!(count, Some(1..=999))
+            && matches!(unit, Some("days" | "weeks" | "months" | "years"));
+    }
+    match range.char_indices().last() {
+        Some((i, unit)) if "dwmy".contains(unit) && i > 0 => {
+            matches!(range[..i].parse::<u32>(), Ok(1..=999))
+                && range[..i].bytes().all(|b| b.is_ascii_digit())
+        }
+        _ => false,
+    }
+}
+
+impl Widget {
+    /// Reject relative ranges and end-date rounding modes the frontend
+    /// cannot work out, so a bad value never reaches the dashboard.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(range) = &self.relative_range {
+            if !is_valid_relative_range(range) {
+                return Err(format!("Invalid relative_range: {range}"));
+            }
+        }
+        if let Some(mode) = &self.round_end_mode {
+            if !ROUND_END_MODES.contains(&mode.as_str()) {
+                return Err(format!("Invalid round_end_mode: {mode}"));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -244,6 +305,78 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn relative_range_validation() {
+        use super::is_valid_relative_range as ok;
+        for valid in [
+            "7d",
+            "30d",
+            "3m",
+            "12m",
+            "1y",
+            "2w",
+            "ytd",
+            "custom:6:months",
+            "custom:1:days",
+            "custom:999:years",
+        ] {
+            assert!(ok(valid), "{valid} should be valid");
+        }
+        for invalid in [
+            "",
+            "d",
+            "30",
+            "30x",
+            "-3m",
+            "+3m",
+            "0d",
+            "1000d",
+            "YTD",
+            "custom:",
+            "custom:0:days",
+            "custom:6",
+            "custom:6:fortnights",
+            "custom:x:days",
+            "custom:1000:days",
+        ] {
+            assert!(!ok(invalid), "{invalid:?} should be invalid");
+        }
+    }
+
+    #[test]
+    fn widget_validate_checks_range_and_round_mode() {
+        let mut w: super::Widget =
+            serde_json::from_str(r#"{"id":"w","name":"W","accounts":[]}"#).unwrap();
+        assert!(w.validate().is_ok());
+        w.relative_range = Some("30d".into());
+        w.round_end_mode = Some("end_of_current_month".into());
+        assert!(w.validate().is_ok());
+        w.round_end_mode = Some("end_of_year".into());
+        assert!(w.validate().unwrap_err().contains("round_end_mode"));
+        w.round_end_mode = None;
+        w.relative_range = Some("forever".into());
+        assert!(w.validate().unwrap_err().contains("relative_range"));
+    }
+
+    #[test]
+    fn relative_range_fields_round_trip_and_default_to_none() {
+        let w: super::Widget = serde_json::from_str(
+            r#"{"id":"w","name":"W","accounts":[],"relative_range":"custom:2:weeks","round_end_mode":"start_of_next_month"}"#,
+        )
+        .unwrap();
+        assert_eq!(w.relative_range.as_deref(), Some("custom:2:weeks"));
+        assert_eq!(w.round_end_mode.as_deref(), Some("start_of_next_month"));
+        let json: serde_json::Value = serde_json::to_value(&w).unwrap();
+        assert_eq!(json["relative_range"], "custom:2:weeks");
+
+        let legacy: super::Widget =
+            serde_json::from_str(r#"{"id":"w","name":"W","accounts":[]}"#).unwrap();
+        assert_eq!(legacy.relative_range, None);
+        assert_eq!(legacy.round_end_mode, None);
+        let json: serde_json::Value = serde_json::to_value(&legacy).unwrap();
+        assert!(json.get("relative_range").is_none());
+    }
+
     use super::*;
 
     #[test]

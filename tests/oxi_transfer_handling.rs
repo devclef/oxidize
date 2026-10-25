@@ -7,7 +7,6 @@
 ///
 /// Also verifies that transfers between two selected accounts are excluded
 /// (internal transfers should not count as spending).
-
 #[cfg(test)]
 mod tests {
     use oxidize::client::FireflyClient;

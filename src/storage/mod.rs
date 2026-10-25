@@ -237,6 +237,10 @@ fn init_db(conn: &Connection) {
         "ALTER TABLE widgets ADD COLUMN budget_breakdown_by TEXT",
         [],
     );
+    // Migration: Add relative date range columns to widgets if they do not
+    // exist. NULL = fixed start/end dates, no end-date rounding.
+    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN relative_range TEXT", []);
+    let _ = conn.execute("ALTER TABLE widgets ADD COLUMN round_end_mode TEXT", []);
     // Migration: Add exclusion columns to dashboards if they do not exist
     let _ = conn.execute(
         "ALTER TABLE dashboards ADD COLUMN exclude_categories TEXT NOT NULL DEFAULT '[]'",
@@ -309,7 +313,7 @@ impl Storage {
                     "SELECT id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval, chart_mode,
                             widget_type, chart_options, display_order, width, chart_height, created_at, updated_at, earned_chart_type, dashboard_ids, date_range_source, sankey_flow_type, chart_type,
                             exclude_categories, exclude_budgets, include_unlabeled, subscription_ids, subscription_group_ids,
-                            subscription_split_groups, budget_breakdown_by
+                            subscription_split_groups, budget_breakdown_by, relative_range, round_end_mode
                      FROM widgets ORDER BY display_order ASC, created_at DESC",
                 )
                 .map_err(|e| e.to_string())?;
@@ -348,6 +352,8 @@ impl Storage {
                     let subscription_group_ids_json: String = row.get(29)?;
                     let subscription_split_groups: Option<bool> = row.get(30)?;
                     let budget_breakdown_by: Option<String> = row.get(31)?;
+                    let relative_range: Option<String> = row.get(32)?;
+                    let round_end_mode: Option<String> = row.get(33)?;
 
                     let accounts: Vec<String> =
                         serde_json::from_str(&accounts_json).unwrap_or_default();
@@ -398,6 +404,8 @@ impl Storage {
                         chart_height,
                         dashboard_ids,
                         date_range_source,
+                        relative_range,
+                        round_end_mode,
                         subscription_ids,
                         subscription_group_ids,
                         subscription_split_groups,
@@ -475,8 +483,8 @@ impl Storage {
                 "INSERT INTO widgets (id, name, accounts, group_ids, budget_ids, budget_names, parent_categories, subcategories, category_graph_mode, start_date, end_date, interval,
                                       chart_mode, widget_type, chart_options, earned_chart_type, display_order, width, chart_height, dashboard_ids, sankey_flow_type, chart_type,
                                       exclude_categories, exclude_budgets, include_unlabeled, subscription_ids, subscription_group_ids, subscription_split_groups,
-                                      budget_breakdown_by, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)",
+                                      budget_breakdown_by, date_range_source, relative_range, round_end_mode, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
                 params![
                     &widget.id,
                     &widget.name,
@@ -507,6 +515,9 @@ impl Storage {
                     &subscription_group_ids_json,
                     &widget.subscription_split_groups,
                     &widget.budget_breakdown_by,
+                    &widget.date_range_source,
+                    &widget.relative_range,
+                    &widget.round_end_mode,
                     &now,
                     &now
                 ],
@@ -556,9 +567,9 @@ impl Storage {
                     display_order = ?16, width = ?17, chart_height = ?18, dashboard_ids = ?19, date_range_source = ?20, sankey_flow_type = ?21, chart_type = ?22,
                     exclude_categories = ?23, exclude_budgets = ?24, include_unlabeled = ?25,
                     subscription_ids = ?26, subscription_group_ids = ?27, subscription_split_groups = ?28,
-                    budget_breakdown_by = ?29,
-                    updated_at = ?30
-                 WHERE id = ?31",
+                    budget_breakdown_by = ?29, relative_range = ?30, round_end_mode = ?31,
+                    updated_at = ?32
+                 WHERE id = ?33",
                     params![
                         &widget.name,
                         &accounts_json,
@@ -589,6 +600,8 @@ impl Storage {
                         &subscription_group_ids_json,
                         &widget.subscription_split_groups,
                         &widget.budget_breakdown_by,
+                        &widget.relative_range,
+                        &widget.round_end_mode,
                         &now,
                         &widget.id
                     ],

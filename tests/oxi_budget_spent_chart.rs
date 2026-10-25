@@ -153,7 +153,7 @@ mod tests {
         let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
         // Filter to only Groceries and Dining Out
-        let selected = vec!["Groceries".to_string(), "Dining Out".to_string()];
+        let selected = ["Groceries".to_string(), "Dining Out".to_string()];
         let filtered: oxidize::models::ChartLine = chart_line
             .into_iter()
             .filter(|ds| selected.contains(&ds.label))
@@ -213,7 +213,7 @@ mod tests {
 
         let chart_line: oxidize::models::ChartLine = serde_json::from_value(json_response).unwrap();
 
-        let selected = vec!["Nonexistent".to_string()];
+        let selected = ["Nonexistent".to_string()];
         let filtered: oxidize::models::ChartLine = chart_line
             .into_iter()
             .filter(|ds| selected.contains(&ds.label))

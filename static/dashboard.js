@@ -41,12 +41,17 @@ function getExclusionOptions() {
         ])
             .then(([categories, budgets]) => ({
                 categories: buildCategoryOptionNames(categories),
+                // Main categories with their subcategories (category picker)
+                categoryTree: (categories || [])
+                    .filter(c => c && c.name)
+                    .map(c => ({ name: c.name, subcategories: (c.subcategories || []).slice().sort((a, b) => a.localeCompare(b)) }))
+                    .sort((a, b) => a.name.localeCompare(b.name)),
                 budgets: (budgets || []).map(b => b.name).sort((a, b) => a.localeCompare(b))
             }))
             .catch(e => {
                 console.error('Failed to load exclusion options:', e);
                 exclusionOptionsPromise = null; // allow retry on next open
-                return { categories: [], budgets: [] };
+                return { categories: [], categoryTree: [], budgets: [] };
             });
     }
     return exclusionOptionsPromise;
@@ -645,25 +650,6 @@ function computeForecast(absoluteData, labels, forecastDays) {
 }
 
 // Persist pct settings for a widget to the server
-async function persistPctSettings(widgetId, showPct, pctMode) {
-    try {
-        const widgets = await getDashboardWidgets();
-        const w = widgets.find(w => w.id === widgetId);
-        if (!w) return;
-        w.chart_options = normalizeChartOptions(w.chart_options);
-        w.chart_options[PCT_ENABLED_KEY] = showPct;
-        w.chart_options[PCT_MODE_KEY] = pctMode;
-        w.updated_at = new Date().toISOString();
-        await fetch(`/api/widgets/${widgetId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(w)
-        });
-    } catch (e) {
-        console.error('Failed to persist % settings:', e);
-    }
-}
-
 // Normalize chart_options to include pct defaults for old widgets
 function normalizeChartOptions(opts) {
     opts = opts || {};
@@ -890,8 +876,18 @@ function readWidgetSettings(widgetId, widget) {
     if (dateSourceRadio) {
         widget.date_range_source = dateSourceRadio.value === 'dashboard' ? 'dashboard' : 'custom';
     }
+    if (el('widget-type')) widget.widget_type = el('widget-type').value;
     if (el('start')) widget.start_date = el('start').value || null;
     if (el('end')) widget.end_date = el('end').value || null;
+    if (el('time-range')) {
+        widget.relative_range = el('time-range').dataset.relativeRange || null;
+        widget.round_end_mode = widget.relative_range && el('round-end')?.checked
+            ? (el('round-end-mode')?.value || null) : null;
+    }
+    if (el('categories')) {
+        widget.subcategories = selectedValues('categories');
+        widget.parent_categories = [...new Set(widget.subcategories.map(full => full.split(':')[0]))];
+    }
     if (el('interval')) widget.interval = el('interval').value || null;
     if (el('chart-mode')) widget.chart_mode = el('chart-mode').value;
     if (el('accounts')) widget.accounts = selectedValues('accounts');
@@ -995,16 +991,20 @@ async function updateWidgetDateRange(widgetId) {
     readWidgetSettings(widgetId, widget);
     widget.updated_at = new Date().toISOString();
 
-    // Same requirement as the Graph Builder: balance and card paydown
-    // widgets chart accounts, so they need at least one account or group
+    // Same requirement as the Graph Builder: balance, card paydown and
+    // sankey widgets chart accounts, so they need at least one account or group
     const widgetType = widget.widget_type || 'balance';
-    if ((widgetType === 'balance' || widgetType === 'card_paydown') &&
+    if ((widgetType === 'balance' || widgetType === 'card_paydown' || widgetType === 'sankey') &&
         (widget.accounts || []).length === 0 && (widget.group_ids || []).length === 0) {
         OxiUI.toast('Please select at least one account or group', 'error');
         return;
     }
     if (widgetType === 'budget_breakdown' && (widget.budget_names || []).length === 0) {
         OxiUI.toast('Please select at least one budget', 'error');
+        return;
+    }
+    if (widgetType === 'category_subcat' && (widget.subcategories || []).length === 0) {
+        OxiUI.toast('Please select at least one category', 'error');
         return;
     }
 
@@ -1025,8 +1025,9 @@ async function updateWidgetDateRange(widgetId) {
         const cacheIndex = widgetsCache.findIndex(w => w.id === widgetId);
         if (cacheIndex !== -1) widgetsCache[cacheIndex] = widget;
 
-        // Close settings panel
-        document.getElementById(`${widgetId}-settings`).style.display = 'none';
+        // Header tags, badges and the (closed) settings panel follow the
+        // saved widget right away
+        refreshWidgetCard(widget);
 
         // Re-render the chart
         const allAccounts = await fetchAccounts();
@@ -1709,6 +1710,17 @@ async function renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, e
         return;
     }
 
+    // d3 comes from a CDN: say so instead of failing with a vague error
+    // when it is blocked
+    if (typeof OxiSankey === 'undefined' || !OxiSankey.available()) {
+        if (errorDiv) {
+            errorDiv.textContent = typeof OxiSankey === 'undefined'
+                ? 'The Sankey chart script could not be loaded. Refresh the page.'
+                : OxiSankey.unavailableMessage;
+        }
+        return;
+    }
+
     const flowType = widget.sankey_flow_type || 'destination';
     const params = new URLSearchParams();
     params.append('flow_type', flowType);
@@ -1722,163 +1734,10 @@ async function renderSankeyWidget(widget, canvasId, allGroups, effectiveStart, e
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
         widgetSankeyData[widget.id] = data;
-        renderSankeyChart(sankeyDiv, data);
+        OxiSankey.render(sankeyDiv, data, { tooltip: document.getElementById('sankey-tooltip') });
     } catch (e) {
         if (errorDiv) errorDiv.textContent = 'Failed to load Sankey data: ' + e.message;
     }
-}
-
-function renderSankeyChart(container, data) {
-    const tooltip = document.getElementById('sankey-tooltip');
-
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const colors = {
-        textColor: chartColors().tooltipText,
-        mutedText: chartColors().textColor,
-        nodeStroke: chartColors().tooltipBorder,
-    };
-    const width = container.clientWidth || 1100;
-    const height = container.clientHeight || Math.max(400, Math.min(600, width * 0.5));
-
-    // Build unique nodes from links
-    const nodeNames = new Set();
-    data.links.forEach(l => {
-        nodeNames.add(l.source);
-        nodeNames.add(l.target);
-    });
-    const nodeNameList = Array.from(nodeNames);
-    const nodeIndex = {};
-    nodeNameList.forEach((name, i) => { nodeIndex[name] = i; });
-
-    const nodes = nodeNameList.map(name => ({ name }));
-    const links = data.links.map(l => ({
-        source: nodeIndex[l.source],
-        target: nodeIndex[l.target],
-        value: l.amount,
-        sourceName: l.source,
-        targetName: l.target,
-    }));
-
-    if (nodes.length === 0 || links.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">No flow data for the selected filters.</div>';
-        return;
-    }
-
-    const svg = d3.select(container)
-        .append('svg')
-        .attr('viewBox', [0, 0, width, height])
-        .attr('preserveAspectRatio', 'xMidYMid meet');
-
-    // Color palette for source nodes
-    const sourceNames = [...new Set(links.map(l => l.sourceName))];
-    const colorScale = d3.scaleOrdinal(seriesPalette()).domain(sourceNames);
-
-    const sankey = d3.sankey()
-        .nodeWidth(14)
-        .nodePadding(12)
-        .extent([[10, 10], [width - 10, height - 10]])
-        .nodeAlign(d3.sankeyLeft);
-
-    const graph = sankey({
-        nodes: nodes.map(d => Object.assign({}, d)),
-        links: links.map(d => Object.assign({}, d)),
-    });
-
-    function formatSankeyAmount(amount) {
-        const abs = Math.abs(amount);
-        let formatted;
-        if (abs >= 1000000) formatted = (abs / 1000000).toFixed(1) + 'M';
-        else if (abs >= 1000) formatted = abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        else formatted = abs.toFixed(2);
-        return (amount < 0 ? '-' : '') + formatted;
-    }
-
-    // Draw links
-    svg.append('g')
-        .attr('fill', 'none')
-        .attr('stroke-width', 1)
-        .selectAll('path')
-        .data(graph.links)
-        .join('path')
-        .attr('class', 'sankey-link')
-        .attr('d', d3.sankeyLinkHorizontal())
-        .attr('stroke', d => {
-            const c = colorScale(d.source.name);
-            const r = parseInt(c.slice(1, 3), 16);
-            const g = parseInt(c.slice(3, 5), 16);
-            const b = parseInt(c.slice(5, 7), 16);
-            return 'rgba(' + r + ',' + g + ',' + b + ',0.35)';
-        })
-        .attr('stroke-width', d => Math.max(1, d.width))
-        .style('cursor', 'pointer')
-        .on('mouseover', function(event, d) {
-            d3.select(this).attr('stroke-opacity', 0.7);
-            if (tooltip) {
-                tooltip.style.display = 'block';
-                tooltip.innerHTML = '<strong>' + d.source.name + '</strong><br>' +
-                    '→ ' + d.target.name + '<br>' +
-                    formatSankeyAmount(d.value);
-                tooltip.style.left = (event.clientX + 12) + 'px';
-                tooltip.style.top = (event.clientY - 10) + 'px';
-            }
-        })
-        .on('mousemove', function(event) {
-            if (tooltip) {
-                tooltip.style.left = (event.clientX + 12) + 'px';
-                tooltip.style.top = (event.clientY - 10) + 'px';
-            }
-        })
-        .on('mouseout', function() {
-            d3.select(this).attr('stroke-opacity', 0.35);
-            if (tooltip) tooltip.style.display = 'none';
-        });
-
-    // Draw nodes
-    const nodeGroup = svg.append('g')
-        .selectAll('g')
-        .data(graph.nodes)
-        .join('g')
-        .attr('class', 'sankey-node');
-
-    nodeGroup.append('rect')
-        .attr('height', d => Math.max(d.y1 - d.y0, 4))
-        .attr('width', 14)
-        .attr('fill', d => {
-            if (d.depth === 0) return colorScale(d.name);
-            return chartColors().neutral;
-        })
-        .attr('rx', 3)
-        .attr('stroke', colors.nodeStroke)
-        .style('cursor', 'pointer');
-
-    // Node labels
-    nodeGroup.append('text')
-        .attr('class', 'sankey-label')
-        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
-        .attr('y', d => d.y0 + 4)
-        .attr('dy', '0.35em')
-        .attr('fill', colors.textColor)
-        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-        .attr('font-size', '11px')
-        .attr('pointer-events', 'none')
-        .text(d => d.name.length > 25 ? d.name.substring(0, 25) + '…' : d.name);
-
-    // Node amount labels
-    nodeGroup.append('text')
-        .attr('class', 'sankey-amount')
-        .attr('fill', colors.mutedText)
-        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
-        .attr('y', d => d.y1 - 2)
-        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-        .attr('font-size', '10px')
-        .attr('pointer-events', 'none')
-        .text(d => {
-            const val = d.value || 0;
-            const short = val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
-                : val >= 1000 ? (val / 1000).toFixed(1) + 'K'
-                : val.toFixed(0);
-            return short;
-        });
 }
 
 // ── Card Paydown Widget ──────────────────────────────────────────────────
@@ -1923,7 +1782,7 @@ function renderCardPaydownChart(ctx, widget, data, canvasId) {
         widgetCharts[canvasId].destroy();
     }
     // Same chart as the Widget Builder preview (OxiUI.cardPaydownChartConfig)
-    widgetCharts[canvasId] = new Chart(ctx, OxiUI.cardPaydownChartConfig(data));
+    widgetCharts[canvasId] = new Chart(ctx, OxiUI.cardPaydownChartConfig(data, getChartOptions(widget)));
 }
 
 // Compare-with-previous-period view for balance widgets: primary line plus a
@@ -1934,61 +1793,14 @@ function renderBalanceComparisonChart(ctx, widget, history, comparisonHistory) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const chartTextColor = chartColors().textColor;
     const chartGridColor = chartColors().gridColor;
-    const chartColor = chartColors().accent;
-    const comparisonColor = chartColors().neutral;
 
-    const labels = extractChartLabels(history);
+    // Same series as the builder preview: total or per account (following
+    // the layout), each with its previous period
+    const { labels, datasets } = OxiUI.balanceComparisonChart(
+        history, comparisonHistory, { split: (widget.chart_mode || 'combined') === 'split' });
     if (labels.length === 0) return;
-
-    const aggregate = (chartLine) => {
-        const total = new Array(labels.length).fill(0);
-        (chartLine || []).forEach(ds => {
-            const flowData = Array.isArray(ds.entries)
-                ? ds.entries.map(e => parseFloat(e.value || 0))
-                : labels.map(label => {
-                    const v = ds.entries ? ds.entries[label] : undefined;
-                    return parseFloat(typeof v === 'object' && v !== null ? (v.value || 0) : (v || 0)) || 0;
-                });
-            flowData.forEach((val, i) => {
-                if (i < total.length) total[i] += val;
-            });
-        });
-        return total;
-    };
-
-    const datasets = [
-        {
-            label: 'Total Balance',
-            data: aggregate(history),
-            borderColor: chartColor,
-            backgroundColor: chartColor + '20',
-            borderWidth: 2,
-            fill: opts.fillArea,
-            tension: opts.tension,
-            pointRadius: opts.showPoints ? 4 : 0
-        },
-        {
-            label: 'Total Balance (prev period)',
-            data: aggregate(comparisonHistory),
-            borderColor: comparisonColor,
-            backgroundColor: comparisonColor + '10',
-            borderWidth: 2,
-            borderDash: [5, 5],
-            fill: false,
-            tension: opts.tension,
-            pointRadius: opts.showPoints ? 4 : 0
-        }
-    ];
-
-    // Trend line: dotted moving average over the real (non-comparison) data
-    if (opts.showTrendline) {
-        const trendDs = OxiUI.trendlineDataset('Total Balance', aggregate(history), {
-            window: opts.trendlineWindow,
-            sourceColor: chartColor
-        });
-        trendDs.trendOf = 0;
-        datasets.push(trendDs);
-    }
+    OxiUI.styleComparisonDatasets(datasets, opts);
+    appendWidgetTrendlines(datasets, opts);
 
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
@@ -2539,10 +2351,9 @@ function renderMultiSeriesWidget(ctx, widget, history, colorFor = null) {
 }
 
 async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) {
-    // Compute effective dates: use dashboard dates if the widget is set to inherit
-    const source = widget.date_range_source || 'custom';
-    const effectiveStart = source === 'dashboard' ? (dashboardDates.start || widget.start_date) : widget.start_date;
-    const effectiveEnd = source === 'dashboard' ? (dashboardDates.end || widget.end_date) : widget.end_date;
+    // Effective dates: the dashboard's range if the widget inherits it, else
+    // the widget's relative range (worked out for today), else its fixed dates
+    const { start: effectiveStart, end: effectiveEnd } = widgetEffectiveDates(widget, dashboardDates);
 
     // Clear the previous render's message and legend; renderers that need
     // a legend show it again
@@ -3354,7 +3165,35 @@ function buildWidgetSettingsHtml(widget, context) {
         if (!groupOptions.some(g => g.id === gid)) groupOptions.push({ id: gid, name: `Group ${gid}` });
     });
 
-    const dataControls = [];
+    const dataControls = [`
+                        <label>Type:
+                            <select id="${id}-widget-type">
+                                ${Object.entries(WIDGET_TYPE_LABELS).map(([value, label]) => `<option value="${value}" ${sel(value === widgetType)}>${label}</option>`).join('')}
+                            </select>
+                        </label>`];
+    if (caps.categories) {
+        // Subcategories grouped by main category; selections the category
+        // list no longer has stay selectable so saving never drops them
+        const tree = (exclusionOptions.categoryTree || []).map(c => ({ name: c.name, subcategories: c.subcategories.slice() }));
+        (widget.subcategories || []).forEach(full => {
+            const idx = full.indexOf(':');
+            if (idx < 0) return;
+            const parent = full.slice(0, idx);
+            const sub = full.slice(idx + 1);
+            let node = tree.find(c => c.name === parent);
+            if (!node) tree.push(node = { name: parent, subcategories: [] });
+            if (!node.subcategories.includes(sub)) node.subcategories.push(sub);
+        });
+        dataControls.push(`
+                        <label data-opt="categories">Categories:
+                            <select multiple size="8" id="${id}-categories" class="exclusion-select">
+                                ${tree.filter(c => c.subcategories.length).map(c => `<optgroup label="${escapeHtml(c.name)}">${c.subcategories.map(sub => {
+                                    const full = `${c.name}:${sub}`;
+                                    return `<option value="${escapeHtml(full)}" ${sel((widget.subcategories || []).includes(full))}>${escapeHtml(sub)}</option>`;
+                                }).join('')}</optgroup>`).join('')}
+                            </select>
+                        </label>`);
+    }
     if (caps.accounts) {
         dataControls.push(`
                         <label data-opt="accounts">Accounts:
@@ -3446,7 +3285,8 @@ function buildWidgetSettingsHtml(widget, context) {
                         </div>
                         <label>Preset:
                             <select id="${id}-time-range">
-                                <option value="__none__">Custom</option>
+                                <option value="__fixed__">Fixed dates</option>
+                                <option value="__none__">Custom (last N)</option>
                             </select>
                         </label>
                         <button id="${id}-apply-time-range">Apply</button>
@@ -3667,14 +3507,14 @@ function wireWidgetSettingsVisibility(widgetId, widgetType) {
     updateWidgetSettingsVisibility(widgetId, widgetType);
 }
 
-// Preset key (e.g. '30d') whose relative range equals start/end, else '__none__'
+// Preset key (e.g. '30d') whose relative range equals start/end, else '__fixed__'
 function matchingTimeRangePreset(timeRanges, start, end) {
-    if (!start || !end || typeof calculateRelativeDates !== 'function') return '__none__';
+    if (!start || !end) return '__fixed__';
     const match = (timeRanges || []).find(key => {
-        const dates = calculateRelativeDates(key);
+        const dates = resolveRelativeRange(key);
         return dates && dates.start === start && dates.end === end;
     });
-    return match || '__none__';
+    return match || '__fixed__';
 }
 
 function startInputValue(widgetId) {
@@ -3685,6 +3525,349 @@ function endInputValue(widgetId) {
     return document.getElementById(`${widgetId}-end`)?.value || '';
 }
 
+// ── Widget cards ─────────────────────────────────────────────────────
+
+// Lists the settings panels are built from (accounts, groups, exclusion /
+// category / budget options, subscriptions); kept so a single card can be
+// rebuilt after an update or a type change.
+let widgetSettingsContext = { allAccounts: [], allGroups: [] };
+
+// Widget types in the order of the Graph Builder's type list
+const WIDGET_TYPE_LABELS = {
+    balance: 'Balance',
+    earned_spent: 'Earned vs Spent',
+    expenses_by_category: 'Expenses by Category',
+    net_worth: 'Net Worth',
+    budget_spent: 'Budget Spent',
+    category_subcat: 'Category Subcategories',
+    card_paydown: 'Card Paydown',
+    saved_this_month: 'Saved This Month',
+    label_spend: 'Spending by Label',
+    subscription_cost: 'Subscription Cost',
+    budget_breakdown: 'Budget Breakdown',
+    sankey: 'Sankey Flow'
+};
+
+function widgetTypeBadgeHtml(widget) {
+    const widgetType = widget.widget_type || 'balance';
+    const badge = (cls, text) => `<span class="widget-type-badge ${cls}">${escapeHtml(text)}</span>`;
+    switch (widgetType) {
+        case 'earned_spent': return badge('earned-spent', 'Earned vs Spent');
+        case 'budget_spent': return badge('budget-spent', 'Budget Spent');
+        case 'expenses_by_category':
+            return badge('category-subcat', widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Expenses');
+        case 'category_subcat':
+            return badge('category-subcat', widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Subcategories');
+        case 'sankey': return badge('sankey', 'Sankey Flow');
+        case 'card_paydown': return badge('card-paydown', 'Card Paydown');
+        case 'net_worth': return badge('net-worth', 'Net Worth');
+        case 'saved_this_month': return badge('saved', 'Saved This Month');
+        case 'label_spend': return badge('label-spend', 'Spending by Label');
+        case 'subscription_cost': return badge('subscription-cost', 'Subscription Cost');
+        case 'budget_breakdown': {
+            const mode = widget.budget_breakdown_by === 'destination' ? 'Destinations'
+                : widget.budget_breakdown_by === 'main_category' ? 'Main Categories' : 'Categories';
+            return badge('budget-breakdown', `Budget: ${mode}`);
+        }
+        default: return badge('balance', 'Balance');
+    }
+}
+
+// Tags and badges under a widget's chart (accounts, budgets, type, layout,
+// dashboards)
+function buildWidgetInfoHtml(widget, context) {
+    const { allAccounts = [], allGroups = [] } = context || {};
+    const widgetType = widget.widget_type || 'balance';
+    const widgetGroups = (widget.group_ids || []).map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
+    const individualAccounts = (widget.accounts || [])
+        .map(id => allAccounts.find(a => a.id === id))
+        .filter(Boolean);
+    const tag = (text, extra = '') => `<span class="widget-account-tag${extra}">${escapeHtml(text)}</span>`;
+    const accountTags = [
+        ...widgetGroups.map(g => tag(g.name)),
+        ...individualAccounts.map(a => tag(a.name)),
+        ...(widget.budget_names || []).map(b => tag(b, ' budget-tag'))
+    ].join('');
+    const dashBadges = (widget.dashboard_ids || []).map(did => {
+        const d = dashboardsCache.find(dd => dd.id === did);
+        return d ? `<span class="widget-dash-badge ${did === currentDashboardId ? 'active' : ''}">${escapeHtml(d.name)}</span>` : '';
+    }).join('');
+    return `
+                        ${widgetType === 'balance' ? `<div class="widget-accounts">${accountTags}</div>` : ''}
+                        <div class="widget-mode">
+                            ${widgetTypeBadgeHtml(widget)}
+                            ${widgetType === 'balance' ? `<span class="widget-mode-badge">${escapeHtml(widget.chart_mode || 'combined')}</span>` : ''}
+                            ${dashBadges ? `<div class="widget-dash-badges">${dashBadges}</div>` : ''}
+                        </div>`;
+}
+
+function buildWidgetCardHtml(widget, context) {
+    const widgetType = widget.widget_type || 'balance';
+    const dates = widgetEffectiveDates(widget, dashboardDates);
+    return `
+            <div class="widget" data-widget-id="${widget.id}" data-cols="${widget.width || 12}">
+                <div class="widget-header">
+                    <span class="widget-title">${escapeHtml(widget.name)}</span>
+                    <div class="widget-actions">
+                        <button class="refresh-btn" onclick="refreshWidget('${widget.id}')">⟳ Refresh</button>
+                        <button class="settings-toggle" onclick="toggleWidgetSettings('${widget.id}')">▼ Settings</button>
+                        <button onclick="deleteWidget('${widget.id}')">Delete</button>
+                    </div>
+                </div>
+                ${buildWidgetSettingsHtml(widget, Object.assign({}, context, { startDate: dates.start || '', endDate: dates.end || '' }))}
+                <div class="widget-body">
+                    <div id="${widget.id}-error" class="widget-error"></div>
+                    <div class="widget-chart" data-grid="${getChartOptions(widget).showGrid ? 'on' : 'off'}" style="height: ${widget.chart_height || 300}px;">
+                        <canvas id="${widget.id}" ${widgetType === 'sankey' ? 'style="display:none"' : ''}></canvas>
+                        <div id="${widget.id}-sankey" ${widgetType === 'sankey' ? '' : 'style="display:none"'}></div>
+                        <div class="widget-chart-resize-handle"></div>
+                    </div>
+                    <div class="chart-legend" id="${widget.id}-legend" style="display: none;">
+                        <div class="legend-container" id="${widget.id}-legend-items"></div>
+                    </div>
+                    <div class="widget-info">${buildWidgetInfoHtml(widget, context)}
+                    </div>
+                </div>
+            </div>
+        `;
+}
+
+// Load the option lists a widget type's settings need but the dashboard
+// did not (it only fetches subscriptions when it has such a widget)
+async function ensureWidgetSettingsContext(widgetType) {
+    const ctx = widgetSettingsContext;
+    if (!ctx.exclusionOptions) ctx.exclusionOptions = await getExclusionOptions();
+    if (widgetType === 'subscription_cost' && !(ctx.subscriptionOptions?.subscriptions || []).length) {
+        ctx.subscriptionOptions = await getSubscriptionOptions();
+    }
+    return ctx;
+}
+
+// Rebuild one widget's settings panel (after an update, or to show the
+// controls of another widget type) and wire it
+function rebuildWidgetSettingsPanel(widget, keepOpen) {
+    const panel = document.getElementById(`${widget.id}-settings`);
+    if (!panel) return;
+    const dates = widgetEffectiveDates(widget, dashboardDates);
+    const holder = document.createElement('div');
+    holder.innerHTML = buildWidgetSettingsHtml(widget, Object.assign({}, widgetSettingsContext, {
+        startDate: dates.start || '', endDate: dates.end || ''
+    }));
+    const fresh = holder.firstElementChild;
+    if (keepOpen) fresh.style.display = 'flex';
+    panel.replaceWith(fresh);
+    wireWidgetSettings(widget, widgetSettingsContext);
+}
+
+// After a successful update: refresh the card's header tags, badges and
+// settings panel so they match what was saved (no page reload needed)
+function refreshWidgetCard(widget) {
+    const card = document.querySelector(`.widget[data-widget-id="${widget.id}"]`);
+    if (!card) return;
+    const info = card.querySelector('.widget-info');
+    if (info) info.innerHTML = buildWidgetInfoHtml(widget, widgetSettingsContext);
+    const sankey = (widget.widget_type || 'balance') === 'sankey';
+    if (sankey && widgetCharts[widget.id]) {
+        widgetCharts[widget.id].destroy();
+        delete widgetCharts[widget.id];
+    }
+    const canvas = document.getElementById(widget.id);
+    if (canvas) canvas.style.display = sankey ? 'none' : '';
+    const sankeyDiv = document.getElementById(`${widget.id}-sankey`);
+    if (sankeyDiv) {
+        sankeyDiv.style.display = sankey ? '' : 'none';
+        if (!sankey) sankeyDiv.innerHTML = '';
+    }
+    rebuildWidgetSettingsPanel(widget, false);
+}
+
+// Switch the settings panel to another widget type: keep what was
+// entered, show that type's controls; saved on "Update"
+async function changeWidgetSettingsType(widgetId, newType) {
+    const cached = widgetsCache.find(w => w.id === widgetId);
+    if (!cached) return;
+    const draft = readWidgetSettings(widgetId, JSON.parse(JSON.stringify(cached)));
+    draft.widget_type = newType;
+    await ensureWidgetSettingsContext(newType);
+    rebuildWidgetSettingsPanel(draft, true);
+}
+
+// Wire everything inside one widget's settings panel
+function wireWidgetSettings(widget, context) {
+    const id = widget.id;
+    const widgetType = widget.widget_type || 'balance';
+    wireWidgetSettingsVisibility(id, widgetType);
+
+    // % change previews live; like every other setting it is saved on "Update"
+    const showPctCheckbox = document.getElementById(`${id}-show-pct`);
+    const pctModeSelect = document.getElementById(`${id}-pct-mode`);
+    const previewPct = () => {
+        const chart = widgetCharts[id];
+        if (!chart) return;
+        chart.__pctOpts = { enabled: !!showPctCheckbox?.checked, mode: pctModeSelect?.value || 'from_previous' };
+        chart.update();
+    };
+    showPctCheckbox?.addEventListener('change', previewPct);
+    pctModeSelect?.addEventListener('change', previewPct);
+
+    document.getElementById(`${id}-widget-type`)?.addEventListener('change', (e) => {
+        changeWidgetSettingsType(id, e.target.value);
+    });
+
+    const widthSelect = document.getElementById(`${id}-width`);
+    widthSelect?.addEventListener('change', async () => {
+        const cols = parseInt(widthSelect.value, 10);
+        const widgetCard = document.querySelector(`.widget[data-widget-id="${id}"]`);
+        if (widgetCard) widgetCard.setAttribute('data-cols', String(cols));
+        const w = widgetsCache.find(w => w.id === id);
+        if (!w) return;
+        w.width = cols;
+        w.updated_at = new Date().toISOString();
+        try {
+            const response = await fetch(`/api/widgets/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(w)
+            });
+            if (!response.ok) console.error('Failed to save widget width:', await response.text());
+        } catch (e) {
+            console.error('Failed to save widget width:', e);
+        }
+    });
+
+    wireWidgetDateRangeControls(widget);
+}
+
+// Readable preset label: '30d' -> '30 Days', 'ytd' -> 'YTD'
+function timeRangeLabel(key) {
+    const match = key.match(/^(\d+)([dmwy])$/);
+    if (!match) return key.toUpperCase();
+    const unitLabels = { d: 'Days', w: 'Weeks', m: 'Months', y: 'Years' };
+    return `${match[1]} ${unitLabels[match[2]]}`;
+}
+
+// Date range controls of one widget's settings. A preset or "Custom (last
+// N)" makes the widget follow that relative range (stored as
+// relative_range, worked out at render time); typing a date, or "Fixed
+// dates", pins the dates. The chosen range lives in the preset select's
+// data-relative-range until "Update" saves it.
+function wireWidgetDateRangeControls(widget) {
+    const id = widget.id;
+    const el = (suffix) => document.getElementById(`${id}-${suffix}`);
+    const select = el('time-range');
+    // Widgets without a date range (Saved This Month tile) have no controls
+    if (!select) return;
+    const applyBtn = el('apply-time-range');
+    const customDiv = el('custom-range');
+    const customCount = el('custom-count');
+    const customUnit = el('custom-unit');
+    const applyCustomBtn = el('apply-custom-range');
+    const roundEndCheckbox = el('round-end');
+    const roundEndMode = el('round-end-mode');
+    const startInput = el('start');
+    const endInput = el('end');
+    const timeRanges = CONFIG.timeRanges || ['7d', '30d', '3m', '6m', '1y', 'ytd'];
+
+    const addPreset = (key) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = timeRangeLabel(key);
+        select.appendChild(option);
+    };
+    timeRanges.forEach(addPreset);
+
+    const setRelative = (range) => {
+        if (range) select.dataset.relativeRange = range;
+        else delete select.dataset.relativeRange;
+    };
+    const showControls = (value) => {
+        if (customDiv) customDiv.style.display = value === '__none__' ? 'block' : 'none';
+        if (applyBtn) applyBtn.style.display = value === '__none__' || value === '__fixed__' ? 'none' : '';
+    };
+    const roundMode = () => (roundEndCheckbox && roundEndCheckbox.checked ? roundEndMode.value : null);
+    const applyRange = (range) => {
+        const dates = resolveRelativeRange(range, roundMode());
+        if (!dates) return;
+        startInput.value = dates.start;
+        endInput.value = dates.end;
+        setRelative(range);
+    };
+
+    // Initial state from the saved widget
+    if (roundEndCheckbox) {
+        roundEndCheckbox.checked = !!widget.round_end_mode;
+        roundEndMode.value = widget.round_end_mode || 'end_of_current_month';
+        roundEndMode.style.display = roundEndCheckbox.checked ? 'inline-block' : 'none';
+    }
+    const inherit = (widget.date_range_source || 'custom') === 'dashboard';
+    const parsed = parseRelativeRange(widget.relative_range);
+    if (parsed && parsed.kind === 'preset') {
+        if (!timeRanges.includes(parsed.key)) addPreset(parsed.key);
+        select.value = parsed.key;
+        setRelative(parsed.key);
+    } else if (parsed) {
+        select.value = '__none__';
+        customCount.value = String(parsed.count);
+        customUnit.value = parsed.unit;
+        setRelative(widget.relative_range);
+    } else {
+        // Older widgets only have fixed dates: a range that is exactly a
+        // preset today was almost certainly picked as that preset
+        const match = inherit ? '__fixed__'
+            : matchingTimeRangePreset(timeRanges, startInput.value, endInput.value);
+        select.value = match;
+        if (match !== '__fixed__') setRelative(match);
+    }
+    showControls(select.value);
+
+    select.addEventListener('change', () => {
+        const value = select.value;
+        showControls(value);
+        if (value === '__fixed__') setRelative(null);
+        else if (value !== '__none__') applyRange(value);
+    });
+    applyBtn?.addEventListener('click', () => applyRange(select.value));
+    applyCustomBtn?.addEventListener('click', () => {
+        applyRange(customRelativeRangeKey(parseInt(customCount.value, 10) || 1, customUnit.value));
+    });
+    const reapply = () => {
+        if (select.dataset.relativeRange) applyRange(select.dataset.relativeRange);
+    };
+    roundEndCheckbox?.addEventListener('change', () => {
+        roundEndMode.style.display = roundEndCheckbox.checked ? 'inline-block' : 'none';
+        reapply();
+    });
+    roundEndMode?.addEventListener('change', reapply);
+    [startInput, endInput].forEach(input => input?.addEventListener('change', () => {
+        setRelative(null);
+        select.value = '__fixed__';
+        showControls('__fixed__');
+    }));
+
+    // With the dashboard range the widget's own range controls are inert
+    const dateSourceRadios = document.querySelectorAll(`input[name="${id}-date-source"]`);
+    function updateDateInputsForSource(source) {
+        const inheritNow = source === 'dashboard';
+        if (inheritNow) {
+            startInput.value = dashboardDates.start || '';
+            endInput.value = dashboardDates.end || '';
+        } else {
+            const own = resolveRelativeRange(select.dataset.relativeRange, roundMode()) ||
+                { start: widget.start_date || '', end: widget.end_date || '' };
+            startInput.value = own.start || '';
+            endInput.value = own.end || '';
+        }
+        [startInput, endInput, select, applyBtn, customCount, customUnit,
+            applyCustomBtn, roundEndCheckbox, roundEndMode].forEach(input => {
+            if (input) input.disabled = inheritNow;
+        });
+    }
+    if (inherit) updateDateInputsForSource('dashboard');
+    dateSourceRadios.forEach(radio => {
+        radio.addEventListener('change', () => updateDateInputsForSource(radio.value));
+    });
+}
+
 async function renderDashboard() {
     const container = document.getElementById('dashboard-container');
     const widgets = await getWidgetsForDashboard(currentDashboardId);
@@ -3693,7 +3876,7 @@ async function renderDashboard() {
         const dashName = dashboardsCache.find(d => d.id === currentDashboardId)?.name || 'this dashboard';
         container.innerHTML = `
             <div class="empty-dashboard">
-                <h3>No widgets on ${dashName}</h3>
+                <h3>No widgets on ${escapeHtml(dashName)}</h3>
                 <p>Go to the <a href="/">Widget Builder</a> to create your first widget, then assign it to this dashboard in widget settings.</p>
             </div>
         `;
@@ -3728,321 +3911,18 @@ async function renderDashboard() {
         }
     });
 
-    let html = '<div class="dashboard-grid">';
-
-    // Determine widget type (default to "balance" for backwards compatibility)
-
-    widgets.forEach(widget => {
-        const widgetType = widget.widget_type || 'balance';
-
-        // Build account/group display info
-        const groupIds = widget.group_ids || [];
-        const widgetGroups = groupIds.map(gid => allGroups.find(g => g.id === gid)).filter(Boolean);
-        const widgetGroupAccountIds = new Set();
-        widgetGroups.forEach(g => g.account_ids.forEach(id => widgetGroupAccountIds.add(id)));
-
-        const individualAccounts = widget.accounts
-            .map(id => allAccounts.find(a => a.id === id))
-            .filter(Boolean);
-
-        const accountNames = [
-            ...widgetGroups.map(g => g.name),
-            ...individualAccounts.map(a => a.name)
-        ].join(', ');
-
-        const accountTags = [
-            ...widgetGroups.map(g => `<span class="widget-account-tag">${g.name}</span>`),
-            ...individualAccounts.map(a => `<span class="widget-account-tag">${a.name}</span>`),
-            ...(widget.budget_names || []).map(b => `<span class="widget-account-tag budget-tag">${b}</span>`)
-        ].join('');
-
-        const dateSource = widget.date_range_source || 'custom';
-        const startDate = dateSource === 'dashboard'
-            ? (dashboardDates.start || widget.start_date || '')
-            : (widget.start_date || '');
-        const endDate = dateSource === 'dashboard'
-            ? (dashboardDates.end || widget.end_date || '')
-            : (widget.end_date || '');
-        // Widget type badge
-        let widgetTypeBadge;
-        if (widgetType === 'earned_spent') {
-            widgetTypeBadge = '<span class="widget-type-badge earned-spent">Earned vs Spent</span>';
-        } else if (widgetType === 'budget_spent') {
-            widgetTypeBadge = '<span class="widget-type-badge budget-spent">Budget Spent</span>';
-        } else if (widgetType === 'expenses_by_category') {
-            const expMode = widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Expenses';
-            widgetTypeBadge = `<span class="widget-type-badge category-subcat">${expMode}</span>`;
-        } else if (widgetType === 'category_subcat') {
-            const catMode = widget.category_graph_mode === 'parent' ? 'Main Categories' : 'Category Subcategories';
-            widgetTypeBadge = `<span class="widget-type-badge category-subcat">${catMode}</span>`;
-        } else if (widgetType === 'sankey') {
-            widgetTypeBadge = '<span class="widget-type-badge sankey">Sankey Flow</span>';
-        } else if (widgetType === 'card_paydown') {
-            widgetTypeBadge = '<span class="widget-type-badge card-paydown">Card Paydown</span>';
-        } else if (widgetType === 'net_worth') {
-            widgetTypeBadge = '<span class="widget-type-badge net-worth">Net Worth</span>';
-        } else if (widgetType === 'saved_this_month') {
-            widgetTypeBadge = '<span class="widget-type-badge saved">Saved This Month</span>';
-        } else if (widgetType === 'label_spend') {
-            widgetTypeBadge = '<span class="widget-type-badge label-spend">Spending by Label</span>';
-        } else if (widgetType === 'subscription_cost') {
-            widgetTypeBadge = '<span class="widget-type-badge subscription-cost">Subscription Cost</span>';
-        } else if (widgetType === 'budget_breakdown') {
-            const bdMode = widget.budget_breakdown_by === 'destination' ? 'Destinations'
-                : widget.budget_breakdown_by === 'main_category' ? 'Main Categories' : 'Categories';
-            widgetTypeBadge = `<span class="widget-type-badge budget-breakdown">Budget: ${bdMode}</span>`;
-        } else {
-            widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
-        }
-
-        // Dashboard assignment badges
-        const widgetDashIds = widget.dashboard_ids || [];
-        const dashBadges = widgetDashIds.map(did => {
-            const d = dashboardsCache.find(dd => dd.id === did);
-            return d ? `<span class="widget-dash-badge ${did === currentDashboardId ? 'active' : ''}">${d.name}</span>` : '';
-        }).join('');
-
-        html += `
-            <div class="widget" data-widget-id="${widget.id}" data-cols="${widget.width || 12}">
-                <div class="widget-header">
-                    <span class="widget-title">${widget.name}</span>
-                    <div class="widget-actions">
-                        <button class="refresh-btn" onclick="refreshWidget('${widget.id}')">⟳ Refresh</button>
-                        <button class="settings-toggle" onclick="toggleWidgetSettings('${widget.id}')">▼ Settings</button>
-                        <button onclick="deleteWidget('${widget.id}')">Delete</button>
-                    </div>
-                </div>
-                ${buildWidgetSettingsHtml(widget, {
-                    allAccounts, allGroups, exclusionOptions, subscriptionOptions, startDate, endDate
-                })}
-                <div class="widget-body">
-                    <div id="${widget.id}-error" class="widget-error"></div>
-                    <div class="widget-chart" data-grid="${getChartOptions(widget).showGrid ? 'on' : 'off'}" style="height: ${widget.chart_height || 300}px;">
-                        <canvas id="${widget.id}" ${widgetType === 'sankey' ? 'style="display:none"' : ''}></canvas>
-                        <div id="${widget.id}-sankey" ${widgetType === 'sankey' ? '' : 'style="display:none"'}></div>
-                        <div class="widget-chart-resize-handle"></div>
-                    </div>
-                    <div class="chart-legend" id="${widget.id}-legend" style="display: none;">
-                        <div class="legend-container" id="${widget.id}-legend-items"></div>
-                    </div>
-                    <div class="widget-info">
-                        ${widgetType === 'balance' ? `<div class="widget-accounts">${accountTags}</div>` : ''}
-                        <div class="widget-mode">
-                            ${widgetTypeBadge}
-                            ${widgetType === 'balance' ? `<span class="widget-mode-badge">${widget.chart_mode || 'combined'}</span>` : ''}
-                            ${dashBadges ? `<div class="widget-dash-badges">${dashBadges}</div>` : ''}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
+    const context = { allAccounts, allGroups, exclusionOptions, subscriptionOptions };
+    widgetSettingsContext = context;
+    container.innerHTML = '<div class="dashboard-grid">' +
+        widgets.map(widget => buildWidgetCardHtml(widget, context)).join('') +
+        '</div>';
 
     // Render charts for each widget
     for (const widget of widgets) {
         await renderWidgetChart(widget, widget.id, allAccounts, allGroups);
     }
 
-    // Settings visibility + live % change preview for each widget
-    widgets.forEach(widget => {
-        wireWidgetSettingsVisibility(widget.id, widget.widget_type || 'balance');
-
-        const showPctCheckbox = document.getElementById(`${widget.id}-show-pct`);
-        const pctModeSelect = document.getElementById(`${widget.id}-pct-mode`);
-        const previewPct = async () => {
-            const enabled = !!showPctCheckbox?.checked;
-            const mode = pctModeSelect?.value || 'from_previous';
-            const chart = widgetCharts[widget.id];
-            if (chart) {
-                chart.__pctOpts = { enabled, mode };
-                chart.update();
-            }
-            await persistPctSettings(widget.id, enabled, mode);
-        };
-        showPctCheckbox?.addEventListener('change', previewPct);
-        pctModeSelect?.addEventListener('change', previewPct);
-    });
-
-    // Wire up width selector for each widget
-    widgets.forEach(widget => {
-        const widthSelect = document.getElementById(`${widget.id}-width`);
-        if (widthSelect) {
-            widthSelect.addEventListener('change', async () => {
-                const cols = parseInt(widthSelect.value, 10);
-                const widgetCard = document.querySelector(`.widget[data-widget-id="${widget.id}"]`);
-                if (widgetCard) {
-                    widgetCard.setAttribute('data-cols', String(cols));
-                }
-                const w = widgetsCache.find(w => w.id === widget.id);
-                if (w) {
-                    w.width = cols;
-                    w.updated_at = new Date().toISOString();
-                    try {
-                        const response = await fetch(`/api/widgets/${widget.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(w)
-                        });
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            console.error('Failed to save widget width:', errorText);
-                        }
-                    } catch (e) {
-                        console.error('Failed to save widget width:', e);
-                    }
-                }
-            });
-        }
-    });
-
-    // Wire up time range controls for each widget
-    const timeRanges = CONFIG.timeRanges || ['7d', '30d', '3m', '6m', '1y', 'ytd'];
-    const defaultTimeRange = CONFIG.defaultTimeRange || '30d';
-
-    widgets.forEach(widget => {
-        const timeRangeSelect = document.getElementById(`${widget.id}-time-range`);
-        const applyTimeRangeBtn = document.getElementById(`${widget.id}-apply-time-range`);
-        const customRangeDiv = document.getElementById(`${widget.id}-custom-range`);
-        const customCount = document.getElementById(`${widget.id}-custom-count`);
-        const customUnit = document.getElementById(`${widget.id}-custom-unit`);
-        const applyCustomRangeBtn = document.getElementById(`${widget.id}-apply-custom-range`);
-        const roundEndCheckbox = document.getElementById(`${widget.id}-round-end`);
-        const roundEndMode = document.getElementById(`${widget.id}-round-end-mode`);
-        const ROLL_END_KEY = `oxidize_widget_${widget.id}_round_end`;
-        // Widgets without a date range (Saved This Month tile) have no controls
-        if (!timeRangeSelect) return;
-
-        // Build time range dropdown
-        timeRanges.forEach(key => {
-            const option = document.createElement('option');
-            option.value = key;
-            const match = key.match(/^(\d+)([dmwy])$/);
-            if (match) {
-                const num = match[1];
-                const unit = match[2];
-                const unitLabels = { d: 'Days', w: 'Weeks', m: 'Months', y: 'Years' };
-                option.textContent = `${num} ${unitLabels[unit]}`;
-            } else {
-                option.textContent = key.toUpperCase();
-            }
-            timeRangeSelect.appendChild(option);
-        });
-        // The widget stores absolute dates: preselect the preset they match
-        // (if any) instead of the default, so the dropdown never contradicts
-        // the start/end shown below it.
-        timeRangeSelect.value = matchingTimeRangePreset(timeRanges, startInputValue(widget.id), endInputValue(widget.id));
-        applyTimeRangeBtn.style.display = timeRangeSelect.value === '__none__' ? 'none' : '';
-
-        // Apply preset time range to widget
-        function applyPreset(key) {
-            const dates = calculateRelativeDates(key);
-            if (!dates) return;
-            const startEl = document.getElementById(`${widget.id}-start`);
-            const endEl = document.getElementById(`${widget.id}-end`);
-            startEl.value = dates.start;
-            endEl.value = dates.end;
-            if (roundEndCheckbox && roundEndCheckbox.checked) {
-                endEl.value = roundEndDate(dates.end, roundEndMode.value);
-            }
-        }
-
-        // Apply custom range to widget
-        function applyCustom() {
-            const count = parseInt(customCount.value, 10) || 1;
-            const unit = customUnit.value;
-            const dates = calculateRelativeDatesFromCustom(count, unit);
-            if (!dates) return;
-            const startEl = document.getElementById(`${widget.id}-start`);
-            const endEl = document.getElementById(`${widget.id}-end`);
-            startEl.value = dates.start;
-            endEl.value = dates.end;
-            if (roundEndCheckbox && roundEndCheckbox.checked) {
-                endEl.value = roundEndDate(dates.end, roundEndMode.value);
-            }
-        }
-
-        // Time range select handler
-        timeRangeSelect.addEventListener('change', () => {
-            const value = timeRangeSelect.value;
-            if (value === '__none__') {
-                customRangeDiv.style.display = 'block';
-                applyTimeRangeBtn.style.display = 'none';
-            } else {
-                customRangeDiv.style.display = 'none';
-                applyTimeRangeBtn.style.display = 'inline-block';
-                applyPreset(value);
-            }
-        });
-
-        // Apply button for preset
-        if (applyTimeRangeBtn) {
-            applyTimeRangeBtn.addEventListener('click', () => applyPreset(timeRangeSelect.value));
-        }
-
-        // Apply button for custom range
-        if (applyCustomRangeBtn) {
-            applyCustomRangeBtn.addEventListener('click', applyCustom);
-        }
-
-        // Round end checkbox handler
-        if (roundEndCheckbox) {
-            const savedMode = localStorage.getItem(ROLL_END_KEY) || 'end_of_current_month';
-            roundEndMode.value = savedMode;
-
-            roundEndCheckbox.addEventListener('change', () => {
-                roundEndMode.style.display = roundEndCheckbox.checked ? 'inline-block' : 'none';
-                const currentValue = timeRangeSelect.value;
-                if (currentValue !== '__none__') {
-                    applyPreset(currentValue);
-                } else {
-                    applyCustom();
-                }
-            });
-        }
-
-        // Round end mode change handler
-        if (roundEndMode) {
-            roundEndMode.addEventListener('change', () => {
-                localStorage.setItem(ROLL_END_KEY, roundEndMode.value);
-                const currentValue = timeRangeSelect.value;
-                if (currentValue !== '__none__') {
-                    applyPreset(currentValue);
-                } else {
-                    applyCustom();
-                }
-            });
-        }
-
-        // Date range source radio toggle: show/hide custom date fields
-        const dateSourceRadios = document.querySelectorAll(`input[name="${widget.id}-date-source"]`);
-        const startInput = document.getElementById(`${widget.id}-start`);
-        const endInput = document.getElementById(`${widget.id}-end`);
-
-        // With the dashboard range the widget's own range controls are inert
-        function updateDateInputsForSource(source) {
-            const inherit = source === 'dashboard';
-            if (inherit) {
-                startInput.value = dashboardDates.start || '';
-                endInput.value = dashboardDates.end || '';
-            }
-            [startInput, endInput, timeRangeSelect, applyTimeRangeBtn, customCount, customUnit,
-                applyCustomRangeBtn, roundEndCheckbox, roundEndMode].forEach(el => {
-                if (el) el.disabled = inherit;
-            });
-        }
-
-        // Initialize disabled state
-        updateDateInputsForSource(widget.date_range_source || 'custom');
-
-        dateSourceRadios.forEach(radio => {
-            radio.addEventListener('change', () => {
-                updateDateInputsForSource(radio.value);
-            });
-        });
-    });
+    widgets.forEach(widget => wireWidgetSettings(widget, context));
 
     // Initialize SortableJS for drag-and-drop reordering (only if unlocked)
     dashboardGrid = document.querySelector('.dashboard-grid');
