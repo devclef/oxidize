@@ -81,42 +81,51 @@ Returns net worth (assets minus liabilities) over time.
 ### Current Spending
 
 ```
-GET /api/budgets/spent?budget_id=1&start=2026-01-01&end=2026-01-31&accounts[]=1
+GET /api/budgets/spent?start=2026-01-01&end=2026-01-31&exclude_budgets[]=Work
 ```
 
-Returns spending against a specific budget for a date range.
+Returns spent per budget for the period.
 
 ### Spending History
 
 ```
-GET /api/budgets/spent-history?budget_id=1&start=2026-01-01&end=2026-06-01&period=1M
+GET /api/budgets/spent-history?start=2026-01-01&end=2026-06-01&period=1M&accounts[]=1
 ```
 
-Returns budget spending broken down by period.
+Returns spend per budget broken down by period. Supports exclusions.
+
+### Budget Breakdown
+
+```
+GET /api/budgets/breakdown?start=2026-01-01&end=2026-06-01&period=1M&by=category&budgets[]=Groceries
+```
+
+Selected budgets' spend over time, one series per full category (`by=category`, default), per main category (`by=main_category`) or per destination account (`by=destination`). Empty `budgets[]` = all budgeted spend. Supports `accounts[]` and exclusions.
 
 ### Budget List
 
 ```
-GET /api/budgets/list?start=2026-01-01&end=2026-01-31&accounts[]=1
+GET /api/budgets/list?start=2026-01-01&end=2026-01-31
 ```
 
-Returns all budgets with their allocated amounts for a period.
+Returns all budgets.
 
 ### Budget Comparison
 
 ```
-GET /api/budgets/comparison?start=2026-01-01&end=2026-01-31&accounts[]=1
+GET /api/budgets/comparison?start=2026-01-01&end=2026-12-31&budget_names=Groceries
 ```
 
-Returns budgeted vs actual spending for all budgets in the period.
+Returns this year vs last year per budget, with projections against budget limits. `budget_names` is repeatable. Supports exclusions.
 
 ### Average Cost
 
 ```
-GET /api/budgets/avg-cost?account_id=1&start=2026-01-01&end=2026-06-01
+GET /api/budgets/avg-cost?budget_names=Groceries&mode=last_n_months&months=6
+GET /api/budgets/avg-cost?budget_names=Groceries&mode=previous_year_same_month&month=12&year=2026
 ```
 
-Returns average cost per transaction for an account over a date range.
+Returns the average monthly cost per budget. `account_ids` (comma-separated) restricts accounts. Supports exclusions.
 
 ### Refresh Budget Cache
 
@@ -191,10 +200,10 @@ DELETE /api/dashboards/{id}
 ### Flow Data
 
 ```
-GET /api/sankey/flows?start=2026-01-01&end=2026-06-01&accounts[]=1
+GET /api/sankey/flows?start=2026-01-01&end=2026-06-01&accounts[]=1&flow_type=category
 ```
 
-Returns source-to-destination flow data for the Sankey diagram.
+Returns source-to-destination flow data for the Sankey widget. `flow_type` is `destination` (default), `category`, `subcategory` or `budget`; optional `categories[]`, `subcategories[]`, `budgets[]` and exclusions.
 
 ## Widgets
 
@@ -276,6 +285,57 @@ Path `id` must match body `id`.
 ```
 DELETE /api/groups/{id}
 ```
+
+## Card Paydown
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/card-paydown` | Credit card paydown analysis (`start`, `end`, `accounts[]`) |
+| POST | `/api/card-paydown/refresh` | Clear card paydown cache |
+
+## Subscriptions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/subscriptions` | All Firefly III subscriptions (bills) |
+| GET | `/api/subscriptions/groups` | Object groups that contain subscriptions (with their bill ids) |
+| GET | `/api/subscriptions/spend` | Cost over time per subscription (`start`, `end`, `period`, `subscriptions[]`, `groups[]`, `accounts[]`, `split_groups`, exclusions). Empty selection = all subscriptions; each selected group is one series unless `split_groups=1` |
+
+## Spending Labels
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/labels` | List labels |
+| POST | `/api/labels` | Create a label (name, color, description, category entries) |
+| PUT | `/api/labels/{id}` | Update a label |
+| DELETE | `/api/labels/{id}` | Delete a label |
+| GET | `/api/labels/budget-composition` | Per-label shares of one budget's spend + per-category breakdown (`budget`, `start`, `end`) |
+| GET | `/api/labels/spend` | Spend per label over time (`start`, `end`, `period`, `budgets[]`, `include_unlabeled`) |
+| GET | `/api/labels/unlabeled-categories` | Categories with spend that match no label, across all budgets (`start`, `end`, `budgets[]`) |
+| GET | `/api/labels/transactions` | Every transaction matching one label (`label`, `start`, `end`, `budgets[]`, `include_unbudgeted`) |
+
+## Monthly Summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/summary/month` | One month's totals, budgets, categories, daily series, 12-month trend and top expenses (`year`, `month`, `accounts[]`, `exclude_accounts[]`, exclusions). Future months return 400 |
+
+## Reimbursements
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/reimbursements/summary` | Work expenses vs reimbursements (`start`, `end`, `expense_categories[]`, `expense_budgets[]`, `reimbursement_categories[]`) |
+| POST | `/api/reimbursements/refresh` | Clear reimbursement cache |
+
+## Settings
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings` | Effective settings (saved values over env defaults) + form metadata |
+| PATCH | `/api/settings` | Update settings; an empty value reverts to the env default |
+| POST | `/api/settings/test-firefly` | Test a URL/token pair against Firefly III |
+
+Optional pages that are disabled in Settings return 404 from their page and API endpoints.
 
 ## Cache Management
 

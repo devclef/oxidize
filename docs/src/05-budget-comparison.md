@@ -1,20 +1,21 @@
 # Budget Comparison
 
-The budget comparison page (`/budget-comparison`) shows how your actual spending stacks up against your Firefly III budgets for a selected month.
+The budget comparison page (`/budget-comparison`) compares this year's spending per budget with last year's, and projects the year against your Firefly III budget limits.
 
 ## Overview
 
-Select a month and year to see a chart comparing:
+Select one or more budgets (**Select all** / **Deselect all** are available) to see:
 
-- **Budgeted amount** - the amount you allocated to each budget
-- **Actual spending** - how much was spent from selected accounts
+- **Monthly spending comparison** - this year vs last year, month by month
+- **Cumulative spending** - running totals for both years
+- **Summary per budget** - year-to-date spend, projected annual spend, previous year's total, and how the projection compares with the budget limit and with last year
 
-## Filters
+Category and budget exclusions are honored, so excluded spend never reaches the comparison.
 
-- **Month/Year picker** - navigate between months
-- **Account selection** - filter to specific accounts or groups
-- **Group selection** - use saved account groups for quick filtering
+This page is optional: it is enabled by default and can be turned off under [Settings](./14-settings.md).
 
-## Saving as Widget
+## API
 
-Like the main page, you can save a budget comparison configuration as a widget. Click **"Save as Widget"** after setting your filters, and it will appear on your dashboard.
+```
+GET /api/budgets/comparison?start=2026-01-01&end=2026-12-31&budget_names=Groceries&budget_names=Dining
+```

@@ -15,7 +15,8 @@
 
 ### "Invalid token" or 401 errors
 
-- Verify your `FIREFLY_III_ACCESS_TOKEN` is correct and hasn't expired
+- Verify your `FIREFLY_III_ACCESS_TOKEN` (or the token saved on the Settings page) is correct and hasn't expired
+- Use **Test connection** on `/settings` to check a URL/token pair
 - In Firefly III, go to Settings → User details and regenerate or create a new token
 
 ### Chart shows no data
@@ -27,8 +28,12 @@
 
 ### Dashboard widgets won't load
 
-- Ensure `DATA_DIR` points to a valid, writable directory (default: `./data`)
+- Ensure `DATA_DIR` points to a valid, writable directory (default: `~/.oxidize/data`)
 - Verify `oxidize.db` exists in that directory
+
+### A page returns 404
+
+Optional pages (Monthly Summary, Reimbursements, Budget Comparison, Average Cost, Spending Labels) can be disabled. Enable them under `/settings` → Features. The Monthly Summary is off by default.
 
 ### Docker volume loses data
 
@@ -56,7 +61,7 @@ RUST_LOG=debug cargo run
 
 ## Cache Debugging
 
-1. **TTL is 5 minutes** -- wait for expiry or clear manually.
+1. **TTL defaults to 1 hour** (`CACHE_TTL`, or the Settings page) -- wait for expiry or clear manually.
 2. **Clear all caches**: `curl -X POST http://localhost:8080/api/refresh`
 3. **Clear specific caches**: `curl -X POST http://localhost:8080/api/accounts/refresh`
 4. **From the UI**: Each widget has a refresh button.

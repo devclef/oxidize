@@ -9,20 +9,22 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Balance Charts** - account balances over time with configurable date ranges and periods
 - **Earned vs Spent** - income and expense breakdowns by day, week, month, or quarter
 - **Budget Comparison** - visualize spending vs budgeted amounts
-- **Sankey Flow** - d3-powered flow visualization of money movement between accounts and categories
-- **Average Cost** - calculate average cost per transaction
-- **Pie Charts** - optional pie chart view for widget data
-- **Dashboard** - custom multi-widget dashboards with per-chart settings
+- **Sankey Flow widgets** - d3-powered flow diagrams of money moving from accounts to destination accounts, categories, subcategories or budgets, built in the Widget Builder (the standalone `/sankey` page was retired and redirects there)
+- **Average Cost** - average monthly cost per budget, over the last N months or compared with the same month last year
+- **Pie Charts** - optional part-to-whole view for widget data: a doughnut with the total in the center, slices sorted largest-first and the tail folded into "Other"
+- **Dashboard** - custom multi-widget dashboards with per-chart settings; the same option set (style, stacking, % change, comparison, trend line, grid lines, axes, exclusions) is available in the Widget Builder and in each widget's Settings panel, where a widget's type can also be changed
+- **Relative date ranges** - widgets saved with a preset ("Last 30 days", "YTD", …) or a custom "last N days/weeks/months/years" range keep following it, with optional rounding of the end date to a month boundary
 - **Category & Budget Exclusions** - exclude categories or budgets entirely from historical charts, per widget or as a dashboard-wide global option
 - **Monthly Summary** - one page for the month: income vs spending, budgets, categories, top expenses, daily cash flow and a 12-month trend, with a persisted filter to include or exclude specific accounts
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
 - **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels, track per-label spending over time, and drill down into the individual transactions behind any label; also available as a "Spending by Label" dashboard widget (one line or pie slice per label, with an optional "Unlabeled" series)
 - **Subscription Cost** - pick certain subscriptions (Firefly III "bills") or groups of subscriptions (object groups containing bills) as a dashboard widget and chart their cost over time (one line or pie slice per subscription; no selection charts every subscription; selected groups show as one total by default, with an opt-in toggle to split them into individual subscriptions)
-- **Budget Breakdown** - pick one or more budgets as a dashboard widget and chart what that spend looks like over time, broken down by category or by destination account (one line or pie slice per category / account)
+- **Budget Breakdown** - pick one or more budgets as a dashboard widget and chart what that spend looks like over time, broken down by full category (`Parent:Sub`), by main category (subcategories rolled up) or by destination account (one line or pie slice per category / account)
 - **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
-- **Dark/Light Theme** - persisted in browser localStorage
-- **In-memory Caching** - 5-minute TTL reduces Firefly III API load
-- **SQLite Persistence** - widgets and groups stored locally
+- **Dark/Light Theme** - "Slate & Teal" light and soft-contrast dark themes with colorblind-validated chart colors; persisted in browser localStorage
+- **Per-chart grid lines** - toggle grid lines per widget instead of globally
+- **In-memory Caching** - configurable TTL (`CACHE_TTL`, default 1 hour) reduces Firefly III API load
+- **SQLite Persistence** - dashboards, widgets, groups, labels and settings stored locally
 - **PWA** - installable as an app on Android (Chrome "Install app"), with offline support for the UI shell
 - **Docker Support** - multi-stage build, minimal runtime image
 
@@ -30,7 +32,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) (1.88+)
+- [Rust](https://rustup.rs/) (1.88+; the Docker image builds with 1.94)
 - A running Firefly III instance with API access
 
 ### PWA (install on Android)
@@ -47,7 +49,7 @@ requires a connection to Firefly III through the server.
   precaches the UI assets and serves pages network-first with an offline fallback
 
 
-## Configuration
+### Setup
 
 Create a `.env` file in the project root:
 
@@ -88,20 +90,23 @@ env value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
 | `PORT` | `8080` | Server port |
 | `ACCOUNT_TYPES` | `asset,cash,expense,revenue,liability` | Account types for filter dropdown |
 | `AUTO_FETCH_ACCOUNTS` | `false` | Auto-load accounts on page load |
-| `DATA_DIR` | `./data` | SQLite database directory |
+| `DATA_DIR` | `~/.oxidize/data` (`./data` if no home dir) | SQLite database directory |
+| `CACHE_TTL` | `3600` | Cache TTL in seconds |
+| `TIME_RANGES` | `7d,30d,3m,6m,1y,ytd` | Relative time range presets |
+| `DEFAULT_TIME_RANGE` | `30d` | Pre-selected time range preset |
 | `RUST_LOG` | `info` | Log level (trace, debug, info, warn, error) |
 
 ## Pages
 
 | Route | Description |
 |-------|-------------|
-| `/` | Main page - explore accounts and balance charts |
+| `/` | Widget Builder - build any chart type (balance, earned/spent, budgets, categories, net worth, card paydown, saved this month, sankey, labels, subscriptions, budget breakdown) and save it as a widget |
 | `/dashboard` | Custom dashboard with saved widgets |
-| `/avg-cost` | Average cost per transaction (optional - enabled by default, toggle under Settings) |
-| `/budget-comparison` | Budget vs actual spending (optional - enabled by default, toggle under Settings) |
+| `/avg-cost` | Average monthly cost per budget (optional - enabled by default, toggle under Settings) |
+| `/budget-comparison` | This year vs last year per budget, with projections against budget limits (optional - enabled by default, toggle under Settings) |
 | `/reimbursements` | Work expenses vs reimbursements, month by month (optional - enabled by default, toggle under Settings) |
 | `/summary` | Monthly Summary (optional - disabled by default, enable it under Settings) |
-| `/labels` | Spending Labels: define your own category lenses and report on budget composition and spend trends along them (optional - enabled by default, toggle under Settings) |
+| `/labels` | Spending Labels: define your own category lenses and report on budget composition and spend trends along them, list unlabeled spend across all budgets and drill down into a label's transactions (optional - enabled by default, toggle under Settings) |
 | `/settings` | Runtime settings page (beta) - Firefly III connection (with test), account types, auto-fetch, cache TTL, time ranges, and the optional-page toggles (Monthly Summary, Reimbursements, Budget Comparison, Avg Cost, Spending Labels) |
 
 ## API Endpoints
@@ -122,6 +127,8 @@ env value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
 | GET | `/api/earned-spent/since` | Earned vs spent from a start date |
 | GET | `/api/expenses-by-category` | Expenses grouped by category |
 | GET | `/api/net-worth` | Net worth over time |
+| GET | `/api/card-paydown` | Credit card paydown analysis (`start`, `end`, `accounts[]`) |
+| POST | `/api/card-paydown/refresh` | Clear card paydown cache |
 
 Chart endpoints that aggregate transactions accept optional
 `exclude_categories[]` (repeatable) and `exclude_budgets[]` (repeatable)
@@ -135,7 +142,7 @@ dropped from the aggregation entirely.
 |--------|----------|-------------|
 | GET | `/api/budgets/spent` | Current budget spending (supports `exclude_budgets[]`) |
 | GET | `/api/budgets/spent-history` | Budget spending over time (supports `exclude_categories[]`, `exclude_budgets[]`) |
-| GET | `/api/budgets/breakdown` | Selected budgets' spend over time by category or destination account (`by=category`/`destination`, `budgets[]`, supports `exclude_categories[]`, `exclude_budgets[]`) |
+| GET | `/api/budgets/breakdown` | Selected budgets' spend over time by category, main category or destination account (`by=category`/`main_category`/`destination`, `budgets[]`, supports `exclude_categories[]`, `exclude_budgets[]`) |
 | GET | `/api/budgets/list` | List all budgets |
 | GET | `/api/budgets/comparison` | Budget vs actual comparison data (supports exclusions) |
 | GET | `/api/budgets/avg-cost` | Average cost calculation (supports exclusions) |
@@ -171,6 +178,12 @@ dropped from the aggregation entirely.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/sankey/flows` | Sankey flow data (supports exclusions) |
+
+### Monthly Summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/summary/month` | Totals, budgets, categories, daily series, 12-month trend and top expenses for one month (`year`, `month`, `accounts[]`, `exclude_accounts[]`, supports exclusions; future months return 400) |
 
 ### Reimbursements
 
@@ -212,6 +225,7 @@ Settings panel); effective exclusions are the union of both.
 | DELETE | `/api/labels/{id}` | Delete label |
 | GET | `/api/labels/transactions` | Every transaction matching a label in a period (`label` required, `start`, `end`, `budgets[]`, `accounts[]`, `include_unbudgeted`, exclusions) — the drill-down behind the label reports |
 | GET | `/api/labels/budget-composition` | How one budget's spend is composed of the labels (`budget` required; `start`, `end`, `accounts[]`, supports exclusions) |
+| GET | `/api/labels/unlabeled-categories` | Every category with spend that matches no label, across all budgets (`start`, `end`, `budgets[]`) |
 | GET | `/api/labels/spend` | Time series of spend per label (standard chart shape; `start`, `end`, `period`, `budgets[]`, `accounts[]`, `include_unlabeled`, supports exclusions) |
 
 Labels are perspectives, not partitions: a category may belong to several
@@ -238,8 +252,8 @@ fly.
 
 `monthly_summary_enabled` defaults to `false`: when disabled the `/summary`
 page and `/api/summary/month` return 404 and the nav link is hidden on all
-pages. `reimbursements_enabled`, `budget_comparison_enabled`
-and `avg_cost_enabled` default to `true`; when disabled the page (and the
+pages. `reimbursements_enabled`, `budget_comparison_enabled`,
+`avg_cost_enabled` and `labels_enabled` default to `true`; when disabled the page (and the
 page's own API endpoints) return 404 and the nav link is hidden on all
 pages. All flags can be changed while the server is running and survive
 restarts.
@@ -273,11 +287,15 @@ Oxidize
 │   │   ├── dashboard_api.rs     # Dashboard CRUD API
 │   │   ├── group.rs     # Group CRUD
 │   │   ├── index.rs     # Main page, manifest, favicon
+│   │   ├── label.rs     # Spending Labels page, CRUD and reports
 │   │   ├── reimbursement.rs  # Reimbursements page and API
 │   │   ├── sankey.rs    # Sankey flow data (+ /sankey redirect to the builder)
+│   │   ├── settings.rs  # Settings page and runtime settings API
+│   │   ├── subscription.rs   # Subscriptions and Subscription Cost data
+│   │   ├── summary.rs   # Monthly Summary page and API
 │   │   └── widget.rs    # Widget CRUD
 │   ├── models/          # Data types
-│   └── storage/mod.rs   # SQLite persistence (widgets, groups, dashboards)
+│   └── storage/mod.rs   # SQLite persistence (widgets, groups, dashboards, labels, settings)
 └── static/              # Frontend (vanilla JS, Chart.js, d3)
 ```
 

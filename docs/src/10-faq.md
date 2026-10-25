@@ -12,7 +12,7 @@ Yes, for testing. Set `FIREFLY_III_URL=https://demo.firefly-iii.org`. The demo m
 
 ### Is my financial data stored locally?
 
-Only widget, group, and dashboard configs are stored locally (SQLite). Financial data comes from Firefly III in real time with a 5-minute in-memory cache.
+Only dashboards, widgets, groups, labels and settings are stored locally (SQLite). Financial data comes from Firefly III with an in-memory cache (default 1 hour, configurable).
 
 ### Does Oxidize send data to any third party?
 
@@ -22,7 +22,7 @@ No. Communication is only between Oxidize and your Firefly III instance. No anal
 
 ### Where is my Firefly III token stored?
 
-In memory only. It's read from environment variables at startup and never written to disk.
+If you set it via `FIREFLY_III_ACCESS_TOKEN`, it is kept in memory only. If you save a token on the Settings page, it is stored in the local SQLite database (`{DATA_DIR}/oxidize.db`), so protect that file. The Settings page can display the effective token, so do not expose Oxidize to untrusted networks without an authenticating reverse proxy.
 
 ### Why can't I point Oxidize at localhost?
 
@@ -32,11 +32,11 @@ SSRF protection prevents the Firefly URL from resolving to localhost, loopback, 
 
 ### Why is the first page load slow?
 
-First load involves multiple API calls to Firefly III, possibly with date range chunking. Subsequent loads benefit from the 5-minute cache.
+First load involves multiple API calls to Firefly III, possibly with date range chunking. Subsequent loads benefit from the cache.
 
 ### What happens if Firefly III is down?
 
-Cached data is available until it expires (5 minutes). After that, requests fail until Firefly III is back.
+Cached data is available until it expires (default 1 hour). After that, requests fail until Firefly III is back.
 
 ## Configuration
 
@@ -54,7 +54,7 @@ ACCOUNT_TYPES=asset,cash
 
 ### How do I enable auto-fetch?
 
-Set `AUTO_FETCH_ACCOUNTS=true`.
+Toggle it under `/settings` → Accounts, or set `AUTO_FETCH_ACCOUNTS=true`.
 
 ## Dashboard
 
