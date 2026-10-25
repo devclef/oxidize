@@ -1,23 +1,30 @@
 # Average Cost
 
-The average cost page (`/avg-cost`) calculates the average cost per transaction for a selected account and date range.
+The average cost page (`/avg-cost`) calculates the average monthly cost of each selected budget.
 
 ## Overview
 
-Select an account and date range to compute:
+1. Select one or more **budgets** (and optionally restrict to certain **accounts**).
+2. Pick a mode:
+   - **Last N months** - the average over the last N months (default 6).
+   - **Same month last year** - compare a month with the same month a year earlier; step months with the ◀ / ▶ buttons.
+3. Click **Compute**.
 
-- **Average cost per transaction** - total spending divided by transaction count
-- **Total spending** - sum of all outgoing transactions in the range
-- **Transaction count** - number of transactions in the range
+Each budget's result shows the total and the monthly average for the window, and can be sorted. Category and budget exclusions are honored.
+
+This page is optional: it is enabled by default and can be turned off under [Settings](./14-settings.md).
 
 ## Use Cases
 
-- Track average spending per grocery store visit
-- Calculate average monthly utility costs
-- Analyze recurring expense patterns
+- How much do groceries cost in an average month?
+- Is this December more expensive than last December?
+- Set realistic budget limits from real history
 
 ## API
 
 ```
-GET /api/budgets/avg-cost?account_id=1&start=2026-01-01&end=2026-06-01
+GET /api/budgets/avg-cost?budget_names=Groceries&mode=last_n_months&months=6
+GET /api/budgets/avg-cost?budget_names=Groceries&mode=previous_year_same_month&month=12&year=2026
 ```
+
+`account_ids` (comma-separated) restricts the calculation to certain accounts.

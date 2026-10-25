@@ -16,7 +16,7 @@ Build and run directly from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/oxidize.git
+git clone https://github.com/devclef/oxidize.git
 cd oxidize
 
 # Run with default settings
@@ -60,17 +60,20 @@ The SQLite database file is stored in the mounted volume at `/app/data`.
 
 ### Environment Variables
 
-All configuration is done through environment variables. There is no config file.
+Environment variables provide the **defaults**. The Firefly III connection, account types, auto-fetch, cache TTL and time ranges can be changed at runtime on the [Settings](./14-settings.md) page; saved values win, and clearing a field reverts to the environment value. `HOST`, `PORT`, `DATA_DIR` and `RUST_LOG` need a restart.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `FIREFLY_III_URL` | **Yes** | — | Base URL of your Firefly III instance (e.g., `https://firefly.example.com`). Must use `http` or `https`. |
+| `FIREFLY_III_URL` | **Yes** | `https://demo.firefly-iii.org/api` | Base URL of your Firefly III instance (e.g., `https://firefly.example.com`). Must use `http` or `https`. |
 | `FIREFLY_III_ACCESS_TOKEN` | **Yes** | — | Your Firefly III personal access token. |
 | `HOST` | No | `0.0.0.0` | Network interface to bind to. |
 | `PORT` | No | `8080` | Port to listen on. |
 | `ACCOUNT_TYPES` | No | `asset,cash,expense,revenue,liability` | Comma-separated list of account types shown in the filter dropdown. |
 | `AUTO_FETCH_ACCOUNTS` | No | `false` | Automatically load accounts and chart data on page load. |
-| `DATA_DIR` | No | `./data` | Directory where the SQLite database is stored. |
+| `DATA_DIR` | No | `~/.oxidize/data` | Directory where the SQLite database is stored (`./data` if there is no home directory). |
+| `CACHE_TTL` | No | `3600` | Cache TTL in seconds. |
+| `TIME_RANGES` | No | `7d,30d,3m,6m,1y,ytd` | Relative time range presets. |
+| `DEFAULT_TIME_RANGE` | No | `30d` | Pre-selected time range preset. |
 | `RUST_LOG` | No | `info` | Logging level: `trace`, `debug`, `info`, `warn`, `error`. |
 
 ### .env File
@@ -96,7 +99,8 @@ After installing and configuring Oxidize:
 
 1. Start the server (`cargo run` or `docker run`)
 2. Navigate to `http://localhost:8080` (or your configured host/port)
-3. You'll see the main page with an empty balance chart area
-4. Select accounts from the dropdown, choose a date range, and pick a period to view your balance history
-5. Click **"Save as Widget"** to pin the chart to your dashboard
+3. You'll see the Widget Builder
+4. Pick a widget type, select accounts, choose a date range and a period to preview the chart
+5. Click **"Save as widget"** to pin the chart to a dashboard
 6. Visit `/dashboard` to manage your widgets and groups
+7. Visit `/settings` to adjust the connection, time ranges and optional pages

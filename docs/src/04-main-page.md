@@ -1,10 +1,10 @@
-# Main Page
+# Widget Builder
 
-The main page (`/`) is the landing view when you first open Oxidize. It provides a quick way to explore your financial data and save charts as dashboard widgets.
+The Widget Builder (`/`) is the landing view when you first open Oxidize. Pick a widget type (see [Dashboard → Widget Types](./03-dashboard.md#widget-types)), configure it with a live preview, and save it as a dashboard widget. Only the options that apply to the chosen type are shown.
 
 ## Balance Chart
 
-The main page renders a balance history chart using Chart.js. The chart:
+The default type is a balance history chart. The chart:
 
 - Shows your account balance trends over a configurable date range
 - Aggregates multiple accounts into a single line
@@ -19,7 +19,7 @@ At the top of the page, you'll find an account selector:
 - **Individual accounts** — filter to a specific account by name
 - **Account type filter** — a dropdown above the selector limits which account types are shown (assets, cash, expense, revenue, liability)
 
-To change which account types appear, adjust the `ACCOUNT_TYPES` environment variable when starting Oxidize.
+To change which account types appear, adjust them under [Settings](./14-settings.md) (or the `ACCOUNT_TYPES` environment variable).
 
 ## Date Ranges & Periods
 
@@ -58,13 +58,12 @@ The period selector determines how data is grouped on the chart:
 
 ## Saving to Widget
 
-Once you've configured a chart you like, click **"Save as Widget"** to add it to your dashboard:
+Once you've configured a chart you like, click **"Save as widget"** to add it to your dashboard:
 
-1. Select your accounts
-2. Set your date range
-3. Choose a period
-4. Click **"Save as Widget"**
-5. A dialog appears asking for a widget name and chart settings
-6. Confirm, and the widget is created and added to your dashboard
+1. Choose a widget type
+2. Select your accounts, groups, categories, budgets or subscriptions (depending on the type)
+3. Set your date range and period
+4. Adjust the chart options (style, stacking, trend line, grid lines, exclusions, …)
+5. Click **"Save as widget"**, enter a name and pick the dashboards it belongs to
 
 You can then visit `/dashboard` to see your new widget alongside any others.
