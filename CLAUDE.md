@@ -41,7 +41,7 @@ docker build -t oxidize .
 docker run -p 8080:8080 --env-file .env oxidize
 ```
 
-The Dockerfile uses a multi-stage build: `rust:1.88-slim-bookworm` → `debian:bookworm-slim`. The final image only contains the binary, static files, and runtime deps (libssl3, ca-certificates).
+The Dockerfile uses a multi-stage build: `rust:1.94-slim-bookworm` → `debian:bookworm-slim`. The final image only contains the binary, static files, and runtime deps (libssl3, ca-certificates).
 
 ## Architecture
 

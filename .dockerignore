@@ -1,0 +1,9 @@
+# Only Cargo.toml, Cargo.lock, src/ and static/ go into the image
+target/
+node_modules/
+.git/
+docs/
+tests/
+api_specs/
+*.db
+.env

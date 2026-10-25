@@ -7,16 +7,27 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+
+# A newer push to the same PR/branch supersedes the running checks
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
 
 jobs:
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,28 +35,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
 
       - name: Run backend tests
-        run: cargo test --verbose
-
-      - name: Run backend tests with coverage (optional)
-        run: cargo test --verbose -- --test-threads=1
+        run: cargo test --locked
 
   frontend-tests:
     name: Frontend Tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,13 +59,12 @@ jobs:
         run: npm ci
 
       - name: Run frontend tests
-        run: npm test -- --run
+        run: npx vitest run
 
   clippy:
     name: Clippy Linting
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -76,14 +74,17 @@ jobs:
         with:
           components: clippy
 
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+
+      # Lints the tests too, so a lint never slips in through a test file
       - name: Run Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
   fmt:
     name: Rust Formatting
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -94,13 +95,12 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
 
   build:
     name: Build Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -108,16 +108,71 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --locked
+
+  # The image is only published after a merge to main; build it here too so
+  # a Dockerfile or toolchain problem (the image pins its own Rust version)
+  # fails the PR instead of the publish.
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha,scope=oxidize-image
+          cache-to: type=gha,mode=max,scope=oxidize-image
+
+  docs:
+    name: Docs Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MDBOOK_VERSION: 0.4.36
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSfL --retry 3 \
+            "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Build docs
+        run: mdbook build docs/
+
+  # Single required check for branch protection: green only when every job
+  # above passed (a skipped or cancelled job counts as a failure)
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [backend-tests, frontend-tests, clippy, fmt, build, docker, docs]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required CI job did not succeed ($result)"
+              exit 1
+            fi
+          done

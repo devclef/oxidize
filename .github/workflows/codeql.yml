@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: "0 12 * * 3"
 
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -15,6 +19,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -43,10 +48,10 @@ jobs:
             ${{ runner.os }}-cargo-codeql-
 
       - name: Fetch all dependencies
-        run: cargo fetch
+        run: cargo fetch --locked
 
       - name: Build all targets for analysis
-        run: cargo build --all-targets
+        run: cargo build --locked --all-targets
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
