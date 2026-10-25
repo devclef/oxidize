@@ -32,7 +32,7 @@ jobs:
     env:
       MDBOOK_VERSION: 0.4.36
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Prebuilt release binary: no Rust toolchain or source build needed
       - name: Install mdBook
         run: |
