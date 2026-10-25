@@ -2316,57 +2316,6 @@ button:hover {
     flex-wrap: wrap;
 }
 
-/* ── Card Paydown Summary Strip ───────────────────────────────────────── */
-
-.card-paydown-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-    padding: 10px 12px;
-    margin-top: 4px;
-    background: var(--bg-secondary);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-}
-
-.paydown-stat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    min-width: 100px;
-    flex: 1;
-}
-
-.paydown-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    font-weight: 600;
-}
-
-.paydown-value {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text-color);
-}
-
-.paydown-value.positive {
-    color: var(--success-color);
-}
-
-.paydown-value.negative {
-    color: var(--error-color);
-}
-
-.paydown-stat.highlight {
-    background: var(--success-light);
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid color-mix(in srgb, var(--success-color) 30%, transparent);
-}
-
 /* ── Nav brand ───────────────────────────────────────────────────────── */
 .nav-brand {
     display: flex;

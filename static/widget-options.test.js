@@ -42,7 +42,7 @@ beforeAll(() => {
     (0, eval)(read('static/app.js') + `
 ;window.__oxiApp = {
     applyBuilderOptionVisibility, saveGraphAsWidget, renderExpensesByCategoryChart,
-    getDisplayOptions, toggleComparisonControls, fetchChartData,
+    getDisplayOptions, toggleComparisonControls, fetchChartData, renderCardPaydownPreview,
     get balanceChart() { return balanceChart; }
 };`);
     (0, eval)(read('static/dashboard.js') + `
@@ -538,35 +538,57 @@ describe('dashboard multi-series widgets honor every display option', () => {
     });
 });
 
-describe('dashboard card paydown widget', () => {
-    it('renders balance + activity charts and the summary (no canvasEl ReferenceError)', async () => {
+const PAYDOWN = {
+    monthly_activity: [
+        { month: '2026-08', balance: 900, payments: 300, spending: 200, net_paydown: 100 },
+        { month: '2026-09', balance: 700, payments: 400, spending: 200, net_paydown: 200 }
+    ],
+    summary: { avg_monthly_paydown: 150, current_balance: 700 }
+};
+
+describe('card paydown widget', () => {
+    it('builds one combined chart: payment/spending bars, net paydown and balance lines', () => {
+        const config = window.OxiUI.cardPaydownChartConfig(PAYDOWN);
+        expect(config.type).toBe('bar');
+        expect(config.data.labels).toEqual(['2026-08', '2026-09']);
+        const byLabel = Object.fromEntries(config.data.datasets.map(d => [d.label, d]));
+        expect(byLabel.Payments.data).toEqual([300, 400]);
+        expect(byLabel.Spending.data).toEqual([-200, -200]);
+        expect(byLabel['Net Paydown']).toMatchObject({ type: 'line', data: [100, 200], yAxisID: 'y' });
+        expect(byLabel.Balance).toMatchObject({ type: 'line', data: [900, 700], yAxisID: 'y1' });
+        expect(Object.keys(config.options.scales)).toEqual(['x', 'y', 'y1']);
+    });
+
+    it('renders on the dashboard exactly like the Widget Builder preview (no canvasEl ReferenceError)', async () => {
         document.body.innerHTML = `
             <div class="widget-chart" style="height: 400px;">
                 <div id="cp-error"></div><canvas id="cp"></canvas>
             </div>`;
-        const raf = window.requestAnimationFrame;
-        window.requestAnimationFrame = (cb) => { cb(); return 0; };
-        global.fetch = vi.fn(async () => ({
-            ok: true,
-            json: async () => ({
-                monthly_activity: [
-                    { month: '2026-08', balance: 900, payments: 300, spending: 200, net_paydown: 100 },
-                    { month: '2026-09', balance: 700, payments: 400, spending: 200, net_paydown: 200 }
-                ],
-                summary: { avg_monthly_paydown: 150, current_balance: 700 }
-            })
-        }));
-        try {
-            await dash.renderCardPaydownWidget({ id: 'cp', accounts: ['1'], group_ids: [] }, 'cp', [], '2026-08-01', '2026-09-30');
-        } finally {
-            window.requestAnimationFrame = raf;
-        }
+        global.fetch = vi.fn(async () => ({ ok: true, json: async () => PAYDOWN }));
+        await dash.renderCardPaydownWidget({ id: 'cp', accounts: ['1'], group_ids: [] }, 'cp', [], '2026-08-01', '2026-09-30');
         expect(document.getElementById('cp-error').textContent).toBe('');
-        expect(dash.widgetCharts.cp.data.datasets[0].data).toEqual([900, 700]);
-        expect(dash.widgetCharts['cp-activity']).toBeTruthy();
-        expect(document.getElementById('cp-activity')).not.toBeNull();
-        expect(document.getElementById('cp-summary')).not.toBeNull();
-        expect(document.getElementById('cp').style.height).toBe('180px');
+        const dashChart = dash.widgetCharts.cp;
+        expect(document.getElementById('cp-activity')).toBeNull();
+        expect(document.getElementById('cp-summary')).toBeNull();
+
+        loadBuilderDom();
+        window.__oxiApp.renderCardPaydownPreview({}, PAYDOWN);
+        const builderChart = window.__oxiApp.balanceChart;
+        const shape = (chart) => ({
+            type: chart.config.type,
+            labels: chart.data.labels,
+            datasets: chart.data.datasets.map(d => ({ label: d.label, type: d.type, data: d.data, yAxisID: d.yAxisID })),
+            scales: Object.keys(chart.options.scales)
+        });
+        expect(shape(dashChart)).toEqual(shape(builderChart));
+    });
+
+    it('shows a message instead of a chart when there is no card activity', async () => {
+        document.body.innerHTML = '<div id="cp2-error"></div><canvas id="cp2"></canvas>';
+        global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ monthly_activity: [] }) }));
+        await dash.renderCardPaydownWidget({ id: 'cp2', accounts: ['1'] }, 'cp2', [], null, null);
+        expect(document.getElementById('cp2-error').textContent).toContain('No card activity');
+        expect(dash.widgetCharts.cp2).toBeUndefined();
     });
 });
 

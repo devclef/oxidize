@@ -104,6 +104,13 @@ parity for every type and state, saving, rendering) and
 17. **The "Saved This Month" preview (including any error) stayed under
     other charts** in the builder after switching type.
 
+17a. **The card paydown widget crashed on the dashboard** ("canvasEl is not
+    defined") and, once fixed, looked different from the builder: two
+    separate charts plus a summary strip, against the builder's one
+    combined chart. Both pages now draw the same chart from
+    `OxiUI.cardPaydownChartConfig`: payment/spending bars, a net paydown
+    line, and the balance as a dashed line on a right-hand axis.
+
 ### Settings missing or offered where they do not apply (harmonised)
 18. The dashboard settings had **no way to change accounts or groups**, and
     **no budget filter for budget spent or label spend** widgets (the builder

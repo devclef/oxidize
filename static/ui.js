@@ -21,6 +21,7 @@
  *  - OxiUI.applyLineStyle(ds, opts) points / fill / smoothness on series
  *  - OxiUI.applyAxisOptions(sc, o)  tick limits / y-from-zero on scales
  *  - OxiUI.computePercentChange(..) % change labels (from previous / first)
+ *  - OxiUI.cardPaydownChartConfig(d) card paydown chart (builder + dashboard)
  */
 (function () {
     'use strict';
@@ -823,6 +824,119 @@
         }
     };
 
+    // ── Card paydown chart ─────────────────────────────────────────
+    // One combined chart, shared by the Graph Builder preview and the
+    // dashboard widget so both look the same: monthly payments (up) and
+    // spending (down) as bars, net paydown as a line, and the card balance
+    // as a dashed line on its own right-hand axis.
+    //   data  /api/card-paydown response ({ monthly_activity: [...] })
+    function cardPaydownChartConfig(data) {
+        const activity = (data && data.monthly_activity) || [];
+        const c = getChartColors();
+        const alpha = function (hex, a) {
+            return hex + Math.round(a * 255).toString(16).padStart(2, '0');
+        };
+        const money = function (v) {
+            return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+        return {
+            type: 'bar',
+            plugins: [hoverValueGuidePlugin],
+            data: {
+                labels: activity.map(function (a) { return a.month; }),
+                datasets: [
+                    {
+                        label: 'Payments',
+                        data: activity.map(function (a) { return a.payments || 0; }),
+                        backgroundColor: alpha(c.earned, 0.8),
+                        borderColor: c.earned,
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Spending',
+                        data: activity.map(function (a) { return (a.spending || 0) * -1; }),
+                        backgroundColor: alpha(c.spent, 0.8),
+                        borderColor: c.spent,
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Net Paydown',
+                        type: 'line',
+                        data: activity.map(function (a) { return a.net_paydown || 0; }),
+                        borderColor: c.accent,
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointBackgroundColor: c.accent,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Balance',
+                        type: 'line',
+                        data: activity.map(function (a) { return a.balance || 0; }),
+                        borderColor: c.series[6],
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        tension: 0.3,
+                        pointRadius: 2,
+                        pointBackgroundColor: c.series[6],
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { color: c.textColor, boxWidth: 12, padding: 10, font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                const val = context.parsed.y;
+                                return context.dataset.label + ': ' + (val >= 0 ? '+' : '-') + money(Math.abs(val));
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: c.textColor, maxTicksLimit: 8 },
+                        grid: { color: c.gridColor }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        ticks: {
+                            color: c.textColor,
+                            callback: function (value) {
+                                return (value < 0 ? '-' : '') + Math.abs(value).toLocaleString();
+                            }
+                        },
+                        grid: { color: c.gridColor },
+                        title: { display: true, text: 'Monthly Activity', color: c.textColor }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        ticks: {
+                            color: c.textColor,
+                            callback: function (value) { return value.toLocaleString(); }
+                        },
+                        grid: { display: false },
+                        title: { display: true, text: 'Balance', color: c.textColor }
+                    }
+                }
+            }
+        };
+    }
+
     window.OxiUI = {
         toast: toast,
         confirm: confirmDialog,
@@ -846,6 +960,7 @@
         applyLineStyle: applyLineStyle,
         applyAxisOptions: applyAxisOptions,
         computePercentChange: computePercentChange,
+        cardPaydownChartConfig: cardPaydownChartConfig,
         hoverValueGuidePlugin: hoverValueGuidePlugin
     };
 })();
