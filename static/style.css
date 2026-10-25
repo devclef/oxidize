@@ -3483,6 +3483,19 @@ button:focus-visible,
     background: var(--bg-secondary);
 }
 
+.kpi-extra {
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+/* Previous month stays visible (dimmed) while the next one loads */
+#summary-content.is-reloading {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity var(--transition-normal);
+}
+
 /* Meta line under KPIs */
 .summary-meta {
     color: var(--text-muted);

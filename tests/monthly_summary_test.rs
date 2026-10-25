@@ -316,26 +316,6 @@ mod tests {
         .to_string()
     }
 
-    /// Budget spent chart: Groceries 350, Rent 500 (Utilities: none -> 0).
-    fn budget_spent_body(y: i32, m: u32) -> String {
-        let key = format!("{}-{:02}-01T00:00:00+00:00", y, m);
-        json!([
-            {
-                "label": "Groceries",
-                "currency_symbol": "$",
-                "currency_code": "USD",
-                "entries": { key.clone(): 350.0 }
-            },
-            {
-                "label": "Rent",
-                "currency_symbol": "$",
-                "currency_code": "USD",
-                "entries": { key: 500.0 }
-            }
-        ])
-        .to_string()
-    }
-
     /// Limits: Groceries 800, Rent 1500 for exactly the given month.
     fn budget_limits_body(start: &str, end: &str) -> String {
         json!({
@@ -464,6 +444,9 @@ mod tests {
         let m_end_s = m_end.format("%Y-%m-%d").to_string();
         let p_start_s = p_start.format("%Y-%m-%d").to_string();
         let p_end_s = p_end.format("%Y-%m-%d").to_string();
+        // Net worth is read from the last day of the previous month, so the
+        // month's delta includes changes made on the 1st.
+        let nw_start_s = p_end_s.clone();
 
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
@@ -512,17 +495,6 @@ mod tests {
             .create_async()
             .await;
         server
-            .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(format!(
-                r"start={}&end={}",
-                m_start_s, m_end_s
-            )))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(budget_spent_body(y, m))
-            .create_async()
-            .await;
-        server
             .mock("GET", "/v1/budget-limits")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}",
@@ -537,7 +509,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=assets",
-                m_start_s, m_end_s
+                nw_start_s, m_end_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -548,7 +520,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=liabilities",
-                m_start_s, m_end_s
+                nw_start_s, m_end_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -709,6 +681,9 @@ mod tests {
         let m_start_s = m_start.format("%Y-%m-%d").to_string();
         let m_end_s = m_end.format("%Y-%m-%d").to_string();
         let today_s = now.format("%Y-%m-%d").to_string();
+        let nw_start_s = (m_start - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
 
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
@@ -790,26 +765,6 @@ mod tests {
             )
             .create_async()
             .await;
-        let budget_key = d1.clone();
-        server
-            .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Regex(format!(
-                r"start={}&end={}",
-                m_start_s, today_s
-            )))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!([{
-                    "label": "Subs",
-                    "currency_symbol": "$",
-                    "currency_code": "USD",
-                    "entries": { budget_key: 100.0 }
-                }])
-                .to_string(),
-            )
-            .create_async()
-            .await;
         server
             .mock("GET", "/v1/budget-limits")
             .match_query(mockito::Matcher::Regex(format!(
@@ -840,7 +795,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=assets",
-                m_start_s, today_s
+                nw_start_s, today_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -859,7 +814,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=liabilities",
-                m_start_s, today_s
+                nw_start_s, today_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -959,6 +914,7 @@ mod tests {
         let m_end_s = m_end.format("%Y-%m-%d").to_string();
         let p_start_s = p_start.format("%Y-%m-%d").to_string();
         let p_end_s = p_end.format("%Y-%m-%d").to_string();
+        let nw_start_s = p_end_s.clone();
 
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
@@ -991,13 +947,6 @@ mod tests {
             .create_async()
             .await;
         server
-            .mock("GET", "/v1/chart/budget/overview")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(budget_spent_body(y, m))
-            .create_async()
-            .await;
-        server
             .mock("GET", "/v1/budget-limits")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -1008,7 +957,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=assets",
-                m_start_s, m_end_s
+                nw_start_s, m_end_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -1019,7 +968,7 @@ mod tests {
             .mock("GET", "/v1/chart/account/overview")
             .match_query(mockito::Matcher::Regex(format!(
                 r"start={}&end={}&period=1D&preselected=liabilities",
-                m_start_s, m_end_s
+                nw_start_s, m_end_s
             )))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -1154,14 +1103,6 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(json!({ "data": [] }).to_string())
-            .create_async()
-            .await;
-        server
-            .mock("GET", "/v1/chart/budget/overview")
-            .match_query(mockito::Matcher::Any)
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body("[]")
             .create_async()
             .await;
         server

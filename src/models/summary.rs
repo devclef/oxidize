@@ -32,16 +32,38 @@ pub struct MonthTotals {
     pub days_elapsed: u32,
     /// spent / days_elapsed (0 when nothing elapsed yet).
     pub daily_average_spent: f64,
-    /// Previous month figures (None when unknown / no data).
+    /// Previous month figures, whole calendar month (None when unknown).
     pub prev_month_earned: Option<f64>,
     pub prev_month_spent: Option<f64>,
     pub prev_month_net: Option<f64>,
-    /// (earned - prev) / prev * 100, or None when prev is 0/unknown.
+    /// Previous-month figures over the comparison window: the same days
+    /// (1..=days_elapsed) for the current, partial month, so a half month
+    /// is never compared against a whole one; the whole previous month for
+    /// a completed month.
+    #[serde(default)]
+    pub prev_period_earned: Option<f64>,
+    #[serde(default)]
+    pub prev_period_spent: Option<f64>,
+    #[serde(default)]
+    pub prev_period_net: Option<f64>,
+    /// Number of previous-month days in the comparison window.
+    #[serde(default)]
+    pub comparison_days: Option<u32>,
+    /// (current - prev_period) / prev_period * 100, or None when the
+    /// comparison value is 0/unknown.
     pub earned_delta_pct: Option<f64>,
     pub spent_delta_pct: Option<f64>,
+    /// Full-month spending projected from the daily pace (current month
+    /// only).
+    #[serde(default)]
+    pub projected_spent: Option<f64>,
+    /// Number of spending transactions (journals) counted in the month.
+    #[serde(default)]
+    pub spent_count: usize,
     /// Net worth at the latest date with data in the month.
     pub net_worth: Option<f64>,
-    /// Change in net worth across the month (latest - first datapoint).
+    /// Change in net worth across the month: latest value minus the
+    /// balance at the end of the previous month.
     pub net_worth_delta: Option<f64>,
 }
 
@@ -50,7 +72,8 @@ pub struct MonthTotals {
 pub struct MonthBudget {
     pub id: String,
     pub name: String,
-    /// Spent in the period per Firefly III's budget aggregation.
+    /// Spent in the period, from the same transactions (and filters) as
+    /// the headline totals.
     pub spent: f64,
     /// Monthly limit for the month, when configured.
     pub limit: Option<f64>,
@@ -73,6 +96,10 @@ pub struct MonthBudgetTotals {
     pub with_limit: usize,
     /// Total spent across ALL budgets.
     pub spent: f64,
+    /// Spending not assigned to any budget (spent + unbudgeted = total
+    /// spending for the month).
+    #[serde(default)]
+    pub unbudgeted: f64,
     /// Sum of limits for budgets that have one.
     pub limited: f64,
     /// Total spent on budgets that have a limit.
@@ -88,12 +115,19 @@ pub struct MonthCategory {
     pub amount: f64,
     /// amount / total spent * 100 (0 when total spent is 0).
     pub pct: f64,
+    /// Number of transactions (journals) in the category.
+    #[serde(default)]
+    pub count: usize,
+    /// Spent in the same category over the previous-month comparison
+    /// window (see `MonthTotals::prev_period_spent`).
+    #[serde(default)]
+    pub prev_amount: Option<f64>,
 }
 
 /// Day-by-day cash flow for the month.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MonthDaily {
-    /// "YYYY-MM-DD" labels, one per day with data (chronological).
+    /// "YYYY-MM-DD" labels, one per elapsed day of the month (chronological).
     pub dates: Vec<String>,
     pub earned: Vec<f64>,
     pub spent: Vec<f64>,
@@ -117,9 +151,14 @@ pub struct MonthTopExpense {
     pub date: String,
     pub description: String,
     pub category: Option<String>,
+    #[serde(default)]
+    pub budget: Option<String>,
     pub amount: f64,
     /// Destination account name (expense account, or transfer destination).
     pub account: Option<String>,
+    /// Source account name (where the money came from).
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Full response for GET /api/summary/month.
@@ -316,5 +355,17 @@ pub fn budget_status(spent: f64, limit: Option<f64>, projected: Option<f64>) -> 
         },
         // Zero/negative limit is not meaningful; treat as no limit.
         _ => "no-limit".to_string(),
+    }
+}
+
+/// Number of previous-month days to compare against. The current
+/// (partial) month is compared with the same days of the previous month
+/// (capped at its length, e.g. 31 Mar vs a 28-day February); a completed
+/// month with the whole previous month.
+pub fn comparison_window_days(is_current: bool, days_elapsed: u32, prev_days_in_month: u32) -> u32 {
+    if is_current {
+        days_elapsed.min(prev_days_in_month)
+    } else {
+        prev_days_in_month
     }
 }

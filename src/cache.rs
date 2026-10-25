@@ -44,6 +44,7 @@ pub struct DataCache {
     subscription_list: RwLock<HashMap<String, CacheEntry<String>>>,
     subscription_groups: RwLock<HashMap<String, CacheEntry<String>>>,
     subscription_spend: RwLock<HashMap<String, CacheEntry<String>>>,
+    month_summary: RwLock<HashMap<String, CacheEntry<String>>>,
     ttl_seconds: u64,
 }
 
@@ -81,6 +82,7 @@ impl DataCache {
             subscription_list: RwLock::new(HashMap::new()),
             subscription_groups: RwLock::new(HashMap::new()),
             subscription_spend: RwLock::new(HashMap::new()),
+            month_summary: RwLock::new(HashMap::new()),
             ttl_seconds,
         }
     }
@@ -942,6 +944,80 @@ impl DataCache {
         Self::set_tiered(&self.budget_breakdown, &key, &data, self.current_ttl());
     }
 
+    // ── Monthly summary ──────────────────────────────────────────────
+
+    /// `end` is the effective end of the month (today for the current
+    /// month), so a cached current-month summary rolls over at midnight.
+    fn month_summary_key(
+        year: i32,
+        month: u32,
+        end: &str,
+        account_ids: Option<&[String]>,
+        excluded_account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let ids = |v: Option<&[String]>| v.map(|ids| ids.join(",")).unwrap_or_default();
+        format!(
+            "v{}:month_summary:{}-{:02}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            year,
+            month,
+            end,
+            ids(account_ids),
+            ids(excluded_account_ids),
+            exclusions.cache_key()
+        )
+    }
+
+    pub fn get_month_summary(
+        &self,
+        year: i32,
+        month: u32,
+        end: &str,
+        account_ids: Option<&[String]>,
+        excluded_account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::month_summary_key(
+            year,
+            month,
+            end,
+            account_ids,
+            excluded_account_ids,
+            exclusions,
+        );
+        Self::get_tiered(&self.month_summary, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_month_summary(
+        &self,
+        year: i32,
+        month: u32,
+        end: &str,
+        account_ids: Option<&[String]>,
+        excluded_account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::month_summary_key(
+            year,
+            month,
+            end,
+            account_ids,
+            excluded_account_ids,
+            exclusions,
+        );
+        Self::set_tiered(&self.month_summary, &key, &data, self.current_ttl());
+    }
+
+    pub fn clear_month_summary(&self) {
+        Self::clear_tiered(
+            &self.month_summary,
+            Some(&format!("v{}:month_summary:", CACHE_VERSION)),
+        );
+    }
+
     // ── Clear operations ─────────────────────────────────────────────
 
     // ── Label reports ────────────────────────────────────────────────
@@ -1304,6 +1380,7 @@ impl DataCache {
         self.clear_subscription_groups();
         self.clear_subscription_spend();
         self.clear_budget_breakdown();
+        self.clear_month_summary();
     }
 
     pub fn clear_budget_breakdown(&self) {

@@ -53,6 +53,8 @@
                 <button id="next-month" class="ghost-btn month-nav-btn" title="Next month" aria-label="Next month">&#8250;</button>
                 <button id="this-month" class="ghost-btn">This month</button>
             </div>
+            <button id="summary-refresh" class="ghost-btn"
+                    title="Re-fetch the latest data from Firefly III (clears cached data)">Refresh</button>
         </div>
     </header>
 
@@ -67,9 +69,9 @@
             </div>
         </div>
         <p class="account-filter-hint">
-            Pick which accounts the summary counts: income, spending, categories,
-            top expenses and the charts all follow this filter. Budgets and net
-            worth always cover every account. Accounts are grouped by type -
+            Pick which accounts the summary counts: income, spending, budget
+            spending, categories, top expenses and the charts all follow this
+            filter. Budget limits and net worth always cover every account. Accounts are grouped by type -
             check a group header to pick a whole type at once, and search to
             find an account quickly. Expenses and Income start collapsed to
             keep the list short; click a header to expand them. Changes apply
@@ -126,7 +128,7 @@
             </section>
             <section class="panel summary-panel">
                 <div class="panel-head">
-                    <h3>Top Expenses</h3>
+                    <h3>Largest Expenses</h3>
                 </div>
                 <div id="top-expenses"></div>
             </section>
@@ -134,6 +136,7 @@
 
         <section class="chart-card">
             <h2>Daily Cash Flow</h2>
+            <p class="chart-hint">Spending (bars) and income per day, with the running total of spending.</p>
             <div class="chart-area">
                 <canvas id="dailyChart"></canvas>
             </div>
@@ -153,7 +156,7 @@
          REQUIRED_UTILS_REVISION below: a fresh URL on every deploy so a
          browser/proxy cache entry for the OLD file can never be served to
          the NEW page (see the version-skew guard in the inline script). -->
-    <script src="/static/summary-utils.js?v=14"></script>
+    <script src="/static/summary-utils.js?v=15"></script>
     <script>
     (function () {
         'use strict';
@@ -164,6 +167,9 @@
         var allCategoriesShown = false;
         var accountFilter = { mode: 'all', ids: [] };
         var accountList = [];
+        // Incremented on every load: a response that arrives after a newer
+        // request was started (fast month clicking) is discarded.
+        var loadSeq = 0;
 
         function state() {
             return { year: null, month: null };
@@ -223,67 +229,81 @@
                 Math.abs(pct).toFixed(1) + '%</span>';
         }
 
+        function prevMonthName(d) {
+            var p = MonthSummary.shiftMonth(d.year, d.month, -1);
+            return MonthSummary.monthLabel(p.year, p.month).split(' ')[0];
+        }
+
         function renderKpis(d) {
             var t = d.totals;
             var grid = document.getElementById('kpi-grid');
             var cards = [];
+            // Deltas compare like with like: the same days of last month for
+            // the current month (older responses only had whole-month data).
+            var hasPeriod = t.prev_period_spent != null;
+            var prevEarned = hasPeriod ? t.prev_period_earned : t.prev_month_earned;
+            var prevSpent = hasPeriod ? t.prev_period_spent : t.prev_month_spent;
+            var prevNet = hasPeriod ? t.prev_period_net : t.prev_month_net;
+            var vs = hasPeriod
+                ? MonthSummary.comparisonText(d.is_current_month, t.comparison_days)
+                : 'vs last month';
+            var vsShort = vs.replace(/^vs /, '');
+            function prevText(v) {
+                return fmt(v) + (vsShort === 'last month' ? ' last month' : ' in ' + vsShort);
+            }
 
-            // Income
             cards.push({
                 label: 'Income',
                 value: fmt(t.earned),
                 chip: deltaChip(t.earned_delta_pct, false),
-                sub: t.prev_month_earned != null
-                    ? 'vs ' + fmt(t.prev_month_earned) + ' last month'
-                    : 'no data for last month'
+                sub: prevEarned != null ? prevText(prevEarned) : 'no data for last month'
             });
 
-            // Spending
-            var elapsed = t.days_elapsed < t.days_in_month
-                ? t.days_elapsed + ' of ' + t.days_in_month + ' days'
-                : null;
+            var spendSub = 'avg ' + fmt(t.daily_average_spent) + '/day';
+            if (prevSpent != null) spendSub = prevText(prevSpent) + ' \u00b7 ' + spendSub;
             cards.push({
                 label: 'Spending',
                 value: fmt(t.spent),
                 chip: deltaChip(t.spent_delta_pct, true),
-                sub: 'avg ' + fmt(t.daily_average_spent) + '/day' + (elapsed ? ' \u00b7 ' + elapsed : '')
+                sub: spendSub,
+                extra: d.is_current_month && t.projected_spent != null
+                    ? 'On pace for ' + fmt(t.projected_spent) + ' by month end'
+                    : null
             });
 
-            // Saved
             cards.push({
-                label: 'Saved this month',
+                label: d.is_current_month ? 'Saved so far' : 'Saved',
                 value: fmt(t.net),
                 valueClass: t.net >= 0 ? 'kpi-positive' : 'kpi-negative',
                 chip: t.savings_rate != null
-                    ? '<span class="delta-chip delta-neutral">' + t.savings_rate.toFixed(1) + '% saved</span>'
+                    ? '<span class="delta-chip ' + (t.savings_rate >= 0 ? 'delta-good' : 'delta-bad') + '">' +
+                      t.savings_rate.toFixed(1) + '% of income</span>'
                     : '<span class="delta-chip delta-neutral">no income</span>',
-                sub: t.prev_month_net != null
-                    ? 'vs ' + fmt(t.prev_month_net) + ' last month'
-                    : 'income \u2212 spending'
+                sub: prevNet != null ? prevText(prevNet) : 'income \u2212 spending'
             });
 
-            // Net worth
-            var nwSub = '\u2014';
-            if (t.net_worth != null && t.net_worth_delta != null) {
-                var delta = t.net_worth_delta;
-                nwSub = (delta >= 0 ? '\u25B2 ' : '\u25BC ') + fmt(Math.abs(delta)) + ' this month';
+            var nwChip = '<span class="delta-chip delta-neutral">\u2014</span>';
+            if (t.net_worth_delta != null) {
+                var up = t.net_worth_delta >= 0;
+                nwChip = '<span class="delta-chip ' + (up ? 'delta-good' : 'delta-bad') + '">' +
+                    (up ? '\u25B2 ' : '\u25BC ') + fmt(Math.abs(t.net_worth_delta)) + '</span>';
             }
             cards.push({
                 label: 'Net worth',
                 value: t.net_worth != null ? fmt(t.net_worth) : '\u2014',
-                chipHtml: t.net_worth_delta != null
-                    ? '<span class="delta-chip ' + (t.net_worth_delta >= 0 ? 'delta-good' : 'delta-bad') + '">' +
-                      (t.net_worth_delta >= 0 ? '\u25B2 ' : '\u25BC ') + fmt(Math.abs(t.net_worth_delta)) + '</span>'
-                    : '<span class="delta-chip delta-neutral">\u2014</span>',
-                sub: nwSub
+                chip: nwChip,
+                sub: t.net_worth != null
+                    ? 'since end of ' + prevMonthName(d) + ' \u00b7 all accounts'
+                    : 'not available'
             });
 
             grid.innerHTML = cards.map(function (c) {
                 return '<div class="kpi-card">' +
                     '<div class="kpi-label">' + c.label + '</div>' +
                     '<div class="kpi-value ' + (c.valueClass || '') + '">' + c.value + '</div>' +
-                    '<div class="kpi-foot">' + (c.chipHtml != null ? c.chipHtml : c.chip) +
+                    '<div class="kpi-foot">' + c.chip +
                     ' <span class="kpi-sub">' + c.sub + '</span></div>' +
+                    (c.extra ? '<div class="kpi-extra">' + c.extra + '</div>' : '') +
                     '</div>';
             }).join('');
         }
@@ -297,13 +317,16 @@
             } else {
                 parts.push('Completed month');
             }
-            if (d.currency.code) parts.push(d.currency.code);
+            if (d.totals.spent_count) {
+                parts.push(d.totals.spent_count + (d.totals.spent_count === 1 ? ' expense' : ' expenses'));
+            }
+            if (d.currency && d.currency.code) parts.push(d.currency.code);
             var filterText = MonthSummary.describeAccountFilter(
                 accountFilter.mode, accountFilter.ids.length);
             if (filterText) parts.push(filterText);
             if (d.warnings && d.warnings.length) {
                 var banner = document.getElementById('summary-warnings');
-                banner.innerHTML = '<strong>Some sections could not be loaded:</strong> ' +
+                banner.innerHTML = '<strong>Heads up:</strong> ' +
                     d.warnings.map(MonthSummary.escapeHtml).join('; ');
                 banner.style.display = 'block';
             } else {
@@ -317,9 +340,14 @@
             var sum = document.getElementById('budget-summary');
             var bt = d.budget_totals;
 
+            var unbudgeted = bt.unbudgeted || 0;
+            var unbudgetedText = unbudgeted > 0
+                ? ' \u00b7 ' + fmt(unbudgeted) + ' unbudgeted'
+                : '';
+
             if (d.budgets.length === 0) {
                 list.innerHTML = '<div class="empty-state small"><p>No budgets found in Firefly III.</p></div>';
-                sum.innerHTML = '';
+                sum.innerHTML = unbudgeted > 0 ? fmt(unbudgeted) + ' spent without a budget' : '';
                 return;
             }
 
@@ -328,12 +356,16 @@
                     ? ' \u00b7 <span class="text-error">' + bt.over_count + ' over budget</span>'
                     : ' \u00b7 all within limit';
                 sum.innerHTML = fmt(bt.limited_spent) + ' of ' + fmt(bt.limited) +
-                    ' budgeted across ' + bt.with_limit + ' budgets' + over +
-                    ' \u00b7 ' + fmt(bt.spent) + ' total on all budgets';
+                    ' budgeted across ' + bt.with_limit + (bt.with_limit === 1 ? ' budget' : ' budgets') + over +
+                    ' \u00b7 ' + fmt(bt.spent) + ' on all budgets' + unbudgetedText;
             } else {
                 sum.innerHTML = fmt(bt.spent) + ' spent across ' + bt.count +
-                    ' budgets \u00b7 no limits set for this month';
+                    (bt.count === 1 ? ' budget' : ' budgets') +
+                    ' \u00b7 no limits set for this month' + unbudgetedText;
             }
+            var daysLeft = d.is_current_month
+                ? Math.max(0, d.totals.days_in_month - d.totals.days_elapsed + 1)
+                : 0;
 
             list.innerHTML = d.budgets.map(function (b) {
                 var name = MonthSummary.escapeHtml(b.name);
@@ -366,6 +398,12 @@
                     } else {
                         foot = '<span class="muted">' + pct.toFixed(0) + '% used</span>';
                     }
+                    var allowance = MonthSummary.budgetAllowance(b.spent, b.limit, daysLeft);
+                    if (allowance && allowance.left > 0) {
+                        foot += ' <span class="muted">\u00b7 ' + fmt(allowance.left) + ' left' +
+                            (allowance.perDay != null ? ' (' + fmt(allowance.perDay) + '/day)' : '') +
+                            '</span>';
+                    }
                     if (b.projected != null && b.status !== 'over') {
                         foot += ' <span class="muted">\u00b7 projected ' + fmt(b.projected) + '</span>';
                     }
@@ -393,12 +431,30 @@
             if (rows.length > 8 && !allCategoriesShown) {
                 rows = rows.slice(0, 8);
             }
+            var vs = MonthSummary.comparisonText(d.is_current_month, d.totals.comparison_days);
             var html = rows.map(function (c) {
                 var width = Math.max(0.5, (c.amount / max) * 100);
+                var change = MonthSummary.categoryChange(c.amount, c.prev_amount);
+                var chip = '';
+                if (change) {
+                    var title = MonthSummary.escapeHtml(fmt(c.prev_amount) + ' ' + vs.replace(/^vs /, 'in '));
+                    if (change.kind === 'new') {
+                        chip = '<span class="delta-chip delta-neutral" title="' + title + '">new</span>';
+                    } else if (change.kind === 'flat') {
+                        chip = '<span class="delta-chip delta-neutral" title="' + title + '">\u25AC 0%</span>';
+                    } else {
+                        var upC = change.pct > 0;
+                        chip = '<span class="delta-chip ' + (upC ? 'delta-bad' : 'delta-good') + '" title="' + title + '">' +
+                            (upC ? '\u25B2 ' : '\u25BC ') + Math.abs(change.pct).toFixed(0) + '%</span>';
+                    }
+                }
+                var countText = c.count
+                    ? ' title="' + c.count + (c.count === 1 ? ' transaction' : ' transactions') + '"'
+                    : '';
                 return '<div class="cat-row">' +
                     '<div class="cat-row-head">' +
-                    '<span class="cat-name">' + MonthSummary.escapeHtml(c.name) + '</span>' +
-                    '<span class="cat-amount">' + fmt(c.amount) + ' <span class="muted cat-pct">' +
+                    '<span class="cat-name"' + countText + '>' + MonthSummary.escapeHtml(c.name) + '</span>' +
+                    '<span class="cat-amount">' + chip + ' ' + fmt(c.amount) + ' <span class="muted cat-pct">' +
                     c.pct.toFixed(1) + '%</span></span>' +
                     '</div>' +
                     '<div class="cat-bar"><div class="cat-bar-fill" style="width:' + width.toFixed(1) + '%"></div></div>' +
@@ -429,14 +485,20 @@
                 return '<tr>' +
                     '<td class="exp-date">' + MonthSummary.escapeHtml(t.date) + '</td>' +
                     '<td class="exp-desc">' + MonthSummary.escapeHtml(t.description || '(no description)') +
-                    (t.account ? ' <span class="muted exp-acct">' + MonthSummary.escapeHtml(t.account) + '</span>' : '') +
+                    (t.account || t.source
+                        ? '<div class="muted exp-acct">' +
+                          (t.source ? MonthSummary.escapeHtml(t.source) + ' \u2192 ' : '') +
+                          MonthSummary.escapeHtml(t.account || '?') + '</div>'
+                        : '') +
                     '</td>' +
-                    '<td class="exp-cat">' + (t.category ? MonthSummary.escapeHtml(t.category) : '<span class="muted">\u2014</span>') + '</td>' +
+                    '<td class="exp-cat">' + (t.category ? MonthSummary.escapeHtml(t.category) : '<span class="muted">Uncategorized</span>') +
+                    (t.budget ? '<div class="muted exp-acct">' + MonthSummary.escapeHtml(t.budget) + '</div>' : '') +
+                    '</td>' +
                     '<td class="exp-amount">' + fmt(t.amount) + '</td>' +
                     '</tr>';
             }).join('');
             el.innerHTML = '<table class="exp-table">' +
-                '<thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>' +
+                '<thead><tr><th>Date</th><th>Description</th><th>Category / budget</th><th class="num">Amount</th></tr></thead>' +
                 '<tbody>' + rows + '</tbody></table>';
         }
 
@@ -464,7 +526,7 @@
             if (!d.daily.dates.length) return;
 
             var cc = chartColors();
-            var labels = d.daily.dates.map(function (s) { return s.slice(8); });
+            var labels = d.daily.dates.map(function (s) { return String(parseInt(s.slice(8), 10)); });
             dailyChart = new Chart(canvas.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -512,7 +574,14 @@
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: { labels: { color: colors().textColor } },
-                        tooltip: tooltipOpts()
+                        tooltip: Object.assign(tooltipOpts(), {
+                            callbacks: Object.assign({}, tooltipOpts().callbacks, {
+                                title: function (items) {
+                                    var i = items && items.length ? items[0].dataIndex : -1;
+                                    return i >= 0 ? d.daily.dates[i] : '';
+                                }
+                            })
+                        })
                     },
                     scales: {
                         x: {
@@ -615,14 +684,31 @@
         }
 
         async function loadSummary() {
+            var seq = ++loadSeq;
             var errEl = document.getElementById('summary-error');
             var loadingEl = document.getElementById('summary-loading');
             var contentEl = document.getElementById('summary-content');
             errEl.style.display = 'none';
             errEl.textContent = '';
             loadingEl.style.display = 'flex';
-            contentEl.style.display = 'none';
-            allCategoriesShown = false;
+            // Keep the previous month on screen (dimmed) while the next one
+            // loads, instead of blanking the page on every click.
+            if (summaryData) {
+                contentEl.classList.add('is-reloading');
+            } else {
+                contentEl.style.display = 'none';
+            }
+
+            function fail(msg) {
+                if (seq !== loadSeq) return;
+                errEl.textContent = 'Could not load the summary for ' +
+                    MonthSummary.monthLabel(view.year, view.month) + ': ' + msg;
+                errEl.style.display = 'block';
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'none';
+                contentEl.classList.remove('is-reloading');
+                summaryData = null;
+            }
 
             try {
                 var url = '/api/summary/month?year=' + view.year + '&month=' + view.month;
@@ -632,21 +718,48 @@
                     });
                 var res = await fetch(url);
                 var body = await res.json().catch(function () { return null; });
-                if (!res.ok) {
-                    var msg = body && body.message ? body.message : 'HTTP ' + res.status;
-                    errEl.textContent = 'Could not load the summary: ' + msg;
-                    errEl.style.display = 'block';
-                    loadingEl.style.display = 'none';
+                if (seq !== loadSeq) return; // a newer request superseded this one
+                if (!res.ok || !body) {
+                    fail(body && body.message ? body.message : 'HTTP ' + res.status);
                     return;
                 }
                 summaryData = body;
+                allCategoriesShown = false;
                 loadingEl.style.display = 'none';
+                contentEl.classList.remove('is-reloading');
                 contentEl.style.display = 'block';
                 renderAll(body);
             } catch (e) {
-                errEl.textContent = 'Could not load the summary: ' + e.message;
-                errEl.style.display = 'block';
-                loadingEl.style.display = 'none';
+                fail(e.message);
+            }
+        }
+
+        function syncUrl() {
+            try {
+                var cur = MonthSummary.currentYearMonth();
+                var isCur = view.year === cur.year && view.month === cur.month;
+                var u = new URL(window.location.href);
+                if (isCur) {
+                    u.searchParams.delete('month');
+                } else {
+                    u.searchParams.set('month', MonthSummary.monthKey(view.year, view.month));
+                }
+                window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+            } catch (e) { /* non-fatal: the month just isn't in the URL */ }
+        }
+
+        async function refreshData() {
+            var btn = document.getElementById('summary-refresh');
+            btn.disabled = true;
+            try {
+                var res = await fetch('/api/refresh', { method: 'POST' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                await loadSummary();
+                if (window.OxiUI && OxiUI.toast) OxiUI.toast('Summary refreshed from Firefly III', 'success');
+            } catch (e) {
+                if (window.OxiUI && OxiUI.toast) OxiUI.toast('Refresh failed: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
             }
         }
 
@@ -655,6 +768,7 @@
             view.year = year;
             view.month = month;
             updateMonthNav();
+            syncUrl();
             loadSummary();
         }
 
@@ -989,8 +1103,13 @@
 
         function init() {
             var cur = MonthSummary.currentYearMonth();
-            view.year = cur.year;
-            view.month = cur.month;
+            var fromUrl = null;
+            try {
+                fromUrl = MonthSummary.parseMonthParam(
+                    new URLSearchParams(window.location.search).get('month'));
+            } catch (e) { /* ignore */ }
+            view.year = fromUrl ? fromUrl.year : cur.year;
+            view.month = fromUrl ? fromUrl.month : cur.month;
             updateMonthNav();
 
             loadStoredAccountFilter();
@@ -1025,6 +1144,21 @@
                 }
             });
 
+            document.getElementById('summary-refresh').addEventListener('click', refreshData);
+
+            // Left/right arrow keys step through months (not while typing).
+            document.addEventListener('keydown', function (e) {
+                if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+                var tag = e.target && e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+                    (e.target && e.target.isContentEditable)) return;
+                if (e.key === 'ArrowLeft') {
+                    document.getElementById('prev-month').click();
+                } else if (e.key === 'ArrowRight' && !document.getElementById('next-month').disabled) {
+                    document.getElementById('next-month').click();
+                }
+            });
+
             window.addEventListener('themeChanged', function () {
                 if (summaryData) {
                     renderDailyChart(summaryData);
@@ -1045,7 +1179,7 @@
         // prevent (proxy caches, transient 404s during a rolling restart):
         // if the loaded revision does not match, re-fetch a fresh copy
         // (cache-busted URL), load it, and only then init.
-        var REQUIRED_UTILS_REVISION = 14;
+        var REQUIRED_UTILS_REVISION = 15;
 
         function utilsAreCurrent() {
             return !!(window.MonthSummary &&
