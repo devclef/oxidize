@@ -49,6 +49,23 @@ describe('buildBudgetBreakdownParams (GET /api/budgets/breakdown)', () => {
         expect(window.buildBudgetBreakdownParams({ by: undefined }).get('by')).toBe('category');
     });
 
+    it('passes by=main_category through (subcategories rolled up)', () => {
+        expect(window.buildBudgetBreakdownParams({ by: 'main_category' }).get('by')).toBe('main_category');
+        expect(window.buildBudgetBreakdownParams({ by: 'bogus' }).get('by')).toBe('category');
+    });
+
+    it('titles the chart per breakdown mode', () => {
+        expect(window.budgetBreakdownTitle('category')).toBe('Budget Breakdown: Categories');
+        expect(window.budgetBreakdownTitle('main_category')).toBe('Budget Breakdown: Main Categories');
+        expect(window.budgetBreakdownTitle('destination')).toBe('Budget Breakdown: Destination Accounts');
+    });
+
+    it('offers full vs main category radios in the builder', () => {
+        expect(indexHtml).toContain('name="budget-breakdown-by" value="category"');
+        expect(indexHtml).toContain('name="budget-breakdown-by" value="main_category"');
+        expect(indexHtml).toContain('name="budget-breakdown-by" value="destination"');
+    });
+
     it('omits empty selections and "auto" period', () => {
         const params = window.buildBudgetBreakdownParams({
             startDate: null,

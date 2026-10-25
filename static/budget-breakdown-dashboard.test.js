@@ -58,6 +58,26 @@ describe('buildBudgetBreakdownWidgetParams (GET /api/budgets/breakdown)', () => 
         expect(params.get('by')).toBe('destination');
     });
 
+    it('sends by=main_category for main-category widgets', () => {
+        const widget = {
+            accounts: [],
+            group_ids: [],
+            budget_names: ['Groceries'],
+            budget_breakdown_by: 'main_category',
+            interval: '1M'
+        };
+        const params = window.buildBudgetBreakdownWidgetParams(
+            widget, '2026-01-01', '2026-03-31', allGroups, null
+        );
+        expect(params.get('by')).toBe('main_category');
+    });
+
+    it('falls back to by=category for unknown modes', () => {
+        const widget = { budget_names: ['Groceries'], budget_breakdown_by: 'bogus' };
+        const params = window.buildBudgetBreakdownWidgetParams(widget, null, null, allGroups, null);
+        expect(params.get('by')).toBe('category');
+    });
+
     it('omits empty selections and "auto" period', () => {
         const widget = {
             accounts: [],
@@ -128,6 +148,7 @@ describe('dashboard.js wiring', () => {
     it('offers budget pickers + breakdown mode in the widget settings', () => {
         expect(dashboardSource).toContain('id="${widget.id}-budgets"');
         expect(dashboardSource).toContain('id="${widget.id}-budget-breakdown-by"');
+        expect(dashboardSource).toContain('<option value="main_category"');
     });
 
     it('persists the budget selection and breakdown mode on update', () => {

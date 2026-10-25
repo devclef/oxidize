@@ -2319,9 +2319,10 @@ impl FireflyClient {
     /// chart (90-day chunking, spent journals only, account filter,
     /// exclusion filtering), then only journals charged to a selected
     /// budget are kept (an empty selection keeps all budgeted spend),
-    /// grouped into one series per `category_name` (fallback
-    /// "Uncategorized") or per `destination_name` (fallback "Unknown
-    /// account"), bucketed by period key and sorted by total desc.
+    /// grouped into one series per full `category_name` (`by="category"`,
+    /// fallback "Uncategorized"), per main category — the part before
+    /// ":" (`by="main_category"`) — or per `destination_name`
+    /// (`by="destination"`, fallback "Unknown account"), bucketed by period key and sorted by total desc.
     #[allow(clippy::too_many_arguments)]
     pub async fn get_budget_breakdown_chart(
         &self,
@@ -2333,10 +2334,10 @@ impl FireflyClient {
         account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
     ) -> Result<ChartLine, String> {
-        let by_mode = if by == "destination" {
-            "destination"
-        } else {
-            "category"
+        let by_mode = match by {
+            "destination" => "destination",
+            "main_category" => "main_category",
+            _ => "category",
         };
         if let Some(cached_json) = self.cache.get_budget_breakdown(
             &budget_names,
@@ -2424,13 +2425,24 @@ impl FireflyClient {
                 continue;
             };
 
-            let series_name = if by_mode == "category" {
-                journal
+            let series_name = if by_mode != "destination" {
+                let category = journal
                     .get("category_name")
                     .and_then(|c| c.as_str())
-                    .filter(|c| !c.trim().is_empty())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| "Uncategorized".to_string())
+                    .filter(|c| !c.trim().is_empty());
+                match category {
+                    // "Parent:Sub" collapses to "Parent" (same split as
+                    // exclusions and the Sankey category flow).
+                    Some(c) if by_mode == "main_category" => c
+                        .split(':')
+                        .next()
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                        .unwrap_or(c)
+                        .to_string(),
+                    Some(c) => c.to_string(),
+                    None => "Uncategorized".to_string(),
+                }
             } else {
                 journal
                     .get("destination_name")

@@ -2609,8 +2609,8 @@ function buildSubscriptionWidgetParams(widget, effectiveStart, effectiveEnd, all
 /**
  * Query params for a budget_breakdown widget's /api/budgets/breakdown
  * fetch (pure, testable). widget.budget_breakdown_by absent/"category" =
- * one series per category, "destination" = one series per destination
- * account; dashboard + widget exclusions are merged.
+ * one series per full category (Parent:Sub), "main_category" = one series
+ * per main category, "destination" = one series per destination account; dashboard + widget exclusions are merged.
  */
 function buildBudgetBreakdownWidgetParams(widget, effectiveStart, effectiveEnd, allGroups, dashExclusions) {
     const groupIds = widget.group_ids || [];
@@ -2625,7 +2625,8 @@ function buildBudgetBreakdownWidgetParams(widget, effectiveStart, effectiveEnd, 
     if (effectiveStart) params.append('start', effectiveStart);
     if (effectiveEnd) params.append('end', effectiveEnd);
     if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
-    params.append('by', widget.budget_breakdown_by === 'destination' ? 'destination' : 'category');
+    const by = widget.budget_breakdown_by;
+    params.append('by', by === 'destination' || by === 'main_category' ? by : 'category');
     (widget.budget_names || []).forEach(name => params.append('budgets[]', name));
     accountIds.forEach(id => params.append('accounts[]', id));
     appendExclusionParams(params, mergeExclusions(dashExclusions, widget));
@@ -4096,7 +4097,8 @@ async function renderDashboard() {
         } else if (widgetType === 'subscription_cost') {
             widgetTypeBadge = '<span class="widget-type-badge subscription-cost">Subscription Cost</span>';
         } else if (widgetType === 'budget_breakdown') {
-            const bdMode = widget.budget_breakdown_by === 'destination' ? 'Destinations' : 'Categories';
+            const bdMode = widget.budget_breakdown_by === 'destination' ? 'Destinations'
+                : widget.budget_breakdown_by === 'main_category' ? 'Main Categories' : 'Categories';
             widgetTypeBadge = `<span class="widget-type-badge budget-breakdown">Budget: ${bdMode}</span>`;
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
@@ -4300,7 +4302,8 @@ async function renderDashboard() {
                         </label>
                         <label>Break down by:
                             <select id="${widget.id}-budget-breakdown-by">
-                                <option value="category" ${widget.budget_breakdown_by !== 'destination' ? 'selected' : ''}>Categories</option>
+                                <option value="category" ${widget.budget_breakdown_by !== 'destination' && widget.budget_breakdown_by !== 'main_category' ? 'selected' : ''}>Full categories (Parent:Sub)</option>
+                                <option value="main_category" ${widget.budget_breakdown_by === 'main_category' ? 'selected' : ''}>Main categories</option>
                                 <option value="destination" ${widget.budget_breakdown_by === 'destination' ? 'selected' : ''}>Destination accounts</option>
                             </select>
                         </label>
