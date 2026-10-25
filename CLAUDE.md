@@ -275,6 +275,11 @@ api_specs/            # OpenAPI spec for Firefly III (reference)
 docs/superpowers/     # Internal docs: plans/ and specs/
 ```
 
+The Monthly Summary page keeps the selected month in the URL
+(`/summary?month=YYYY-MM`), steps months with the left/right arrow keys,
+discards responses superseded by a newer month request, and has a Refresh
+button (`POST /api/refresh`).
+
 #### Frontend versioning (summary page)
 
 `summary.html` is always served fresh, but `summary-utils.js` is a separate
@@ -542,7 +547,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/api/categories/list` | — | Top-level categories with subcategories |
 | `GET` | `/api/categories/subcategory-spend` | `start`, `end`, `period`, `graph_mode`, `parent_categories[]`, `subcategories[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spending by subcategory |
 | `GET` | `/api/sankey/flows` | `accounts[]`, `start`, `end`, `flow_type`, `categories[]`, `subcategories[]`, `budgets[]`, `exclude_categories[]`, `exclude_budgets[]` | Sankey flow data |
-| `GET` | `/api/summary/month` | `year`, `month`, `accounts[]` (only these), `exclude_accounts[]` (drop transactions touching these), `exclude_categories[]`, `exclude_budgets[]` | Monthly Summary data (totals, budgets, categories, daily series, 12-month trend, top expenses); future months -> 400 |
+| `GET` | `/api/summary/month` | `year`, `month`, `accounts[]` (only these), `exclude_accounts[]` (drop transactions touching these), `exclude_categories[]`, `exclude_budgets[]` | Monthly Summary data (totals, budgets, categories, daily series, 12-month trend, top expenses); future months -> 400. Built in one pass over one transaction fetch (12 months ending today/month end), so budget spend + unbudgeted = categories = total spending and the trend matches the totals. Month-over-month deltas compare the same days of last month for the current month. Budget limits and net worth (measured from the end of the previous month) cover all accounts. Cached per month + filters (cleared by `/api/refresh`) |
 | `GET` | `/api/reimbursements/summary` | `start`, `end`, `expense_categories[]`, `expense_budgets[]`, `reimbursement_categories[]` | Work expenses vs reimbursements: period totals (spent, reimbursed, net, pct), per-month buckets, category/budget breakdowns; markers required (400 without) |
 | `POST` | `/api/reimbursements/refresh` | — | Clear reimbursement summary cache |
 

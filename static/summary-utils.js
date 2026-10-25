@@ -22,6 +22,15 @@
  *    collapsed (Expenses, Income) when the user has no saved choice
  *  - MonthSummary.resolveFilterMode(mode, idCount)  derive the effective
  *    filter mode from a selection (empty selection => 'all')
+ *  - MonthSummary.parseMonthParam(value)  "2026-09" (the ?month= URL
+ *    param) -> {year, month}; null when missing, malformed or in the future
+ *  - MonthSummary.comparisonText(isCurrentMonth, days)  what the
+ *    month-over-month deltas compare against ("vs first 12 days of last
+ *    month" for a partial month, "vs last month" otherwise)
+ *  - MonthSummary.budgetAllowance(spent, limit, daysLeft)  what is left of
+ *    a budget limit, and per remaining day
+ *  - MonthSummary.categoryChange(amount, prevAmount)  a category's change
+ *    vs the previous month: {kind: 'new'|'gone'|'pct'|'flat', pct}
  *
  * Account filter: { mode: 'all' | 'include' | 'exclude', ids: string[] },
  * persisted under MonthSummary.ACCOUNT_FILTER_KEY in localStorage.
@@ -86,7 +95,7 @@
     // browser-cached copy slips in right after a deploy (see the
     // version-skew guard in summary.html). A CI test keeps the three in
     // lockstep.
-    var UTILS_REVISION = 14;
+    var UTILS_REVISION = 15;
 
     // localStorage key for the persisted account filter.
     var ACCOUNT_FILTER_KEY = 'oxidize_summary_account_filter';
@@ -243,6 +252,51 @@
         return mode === 'exclude' ? 'exclude' : 'include';
     }
 
+    // "2026-09" -> {year: 2026, month: 9}. Null when the value is missing,
+    // malformed or a future month (the page cannot show future months).
+    function parseMonthParam(value) {
+        var m = /^(\d{4})-(\d{2})$/.exec(String(value == null ? '' : value).trim());
+        if (!m) return null;
+        var year = parseInt(m[1], 10);
+        var month = parseInt(m[2], 10);
+        if (month < 1 || month > 12) return null;
+        if (isFuture(year, month)) return null;
+        return { year: year, month: month };
+    }
+
+    // What the month-over-month deltas compare against. A partial month is
+    // compared with the same days of the previous month, never the whole.
+    function comparisonText(isCurrentMonth, days) {
+        var n = parseInt(days, 10);
+        if (isCurrentMonth && isFinite(n) && n > 0) {
+            return 'vs first ' + n + (n === 1 ? ' day' : ' days') + ' of last month';
+        }
+        return 'vs last month';
+    }
+
+    // Remaining allowance of a budget limit. perDay is the amount that can
+    // still be spent per remaining day (null when no days are left or the
+    // budget is already used up).
+    function budgetAllowance(spent, limit, daysLeft) {
+        if (limit == null || !(limit > 0)) return null;
+        var left = limit - (Number(spent) || 0);
+        var d = parseInt(daysLeft, 10);
+        var perDay = left > 0 && isFinite(d) && d > 0 ? left / d : null;
+        return { left: left, perDay: perDay };
+    }
+
+    // A category's change vs the previous month's comparison window.
+    // Null when the previous amount is unknown.
+    function categoryChange(amount, prevAmount) {
+        if (prevAmount == null || !isFinite(prevAmount)) return null;
+        var cur = Number(amount) || 0;
+        if (prevAmount === 0) return cur > 0 ? { kind: 'new', pct: null } : null;
+        if (cur === 0) return { kind: 'gone', pct: -100 };
+        var pct = (cur - prevAmount) / prevAmount * 100;
+        if (Math.abs(pct) < 0.5) return { kind: 'flat', pct: pct };
+        return { kind: 'pct', pct: pct };
+    }
+
     // Escape text for safe interpolation into innerHTML.
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -270,6 +324,10 @@
         groupAccounts: groupAccounts,
         isDefaultCollapsed: isDefaultCollapsed,
         resolveFilterMode: resolveFilterMode,
+        parseMonthParam: parseMonthParam,
+        comparisonText: comparisonText,
+        budgetAllowance: budgetAllowance,
+        categoryChange: categoryChange,
         escapeHtml: escapeHtml
     };
 })();

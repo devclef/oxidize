@@ -321,3 +321,78 @@ describe('resolveFilterMode', () => {
         expect(window.MonthSummary.resolveFilterMode('exclude', 2)).toBe('exclude');
     });
 });
+
+describe('parseMonthParam', () => {
+    it('parses a YYYY-MM month', () => {
+        expect(window.MonthSummary.parseMonthParam('2024-03')).toEqual({ year: 2024, month: 3 });
+        expect(window.MonthSummary.parseMonthParam(' 2024-12 ')).toEqual({ year: 2024, month: 12 });
+    });
+
+    it('rejects missing, malformed and out-of-range values', () => {
+        const p = window.MonthSummary.parseMonthParam;
+        expect(p(null)).toBeNull();
+        expect(p('')).toBeNull();
+        expect(p('2024-3')).toBeNull();
+        expect(p('2024-13')).toBeNull();
+        expect(p('2024-00')).toBeNull();
+        expect(p('march')).toBeNull();
+    });
+
+    it('rejects future months', () => {
+        const cur = window.MonthSummary.currentYearMonth();
+        const next = window.MonthSummary.shiftMonth(cur.year, cur.month, 1);
+        const key = window.MonthSummary.monthKey(next.year, next.month);
+        expect(window.MonthSummary.parseMonthParam(key)).toBeNull();
+        const now = window.MonthSummary.monthKey(cur.year, cur.month);
+        expect(window.MonthSummary.parseMonthParam(now)).toEqual(cur);
+    });
+});
+
+describe('comparisonText', () => {
+    it('describes a like-for-like window for the current month', () => {
+        expect(window.MonthSummary.comparisonText(true, 12)).toBe('vs first 12 days of last month');
+        expect(window.MonthSummary.comparisonText(true, 1)).toBe('vs first 1 day of last month');
+    });
+
+    it('compares a completed month with the whole previous month', () => {
+        expect(window.MonthSummary.comparisonText(false, 30)).toBe('vs last month');
+        expect(window.MonthSummary.comparisonText(true, null)).toBe('vs last month');
+    });
+});
+
+describe('budgetAllowance', () => {
+    it('returns what is left and the per-day allowance', () => {
+        expect(window.MonthSummary.budgetAllowance(100, 400, 10)).toEqual({ left: 300, perDay: 30 });
+    });
+
+    it('has no per-day allowance without days left or when used up', () => {
+        expect(window.MonthSummary.budgetAllowance(100, 400, 0)).toEqual({ left: 300, perDay: null });
+        expect(window.MonthSummary.budgetAllowance(500, 400, 5)).toEqual({ left: -100, perDay: null });
+    });
+
+    it('is null without a positive limit', () => {
+        expect(window.MonthSummary.budgetAllowance(100, null, 5)).toBeNull();
+        expect(window.MonthSummary.budgetAllowance(100, 0, 5)).toBeNull();
+    });
+});
+
+describe('categoryChange', () => {
+    const c = (a, p) => window.MonthSummary.categoryChange(a, p);
+
+    it('is null when the previous amount is unknown', () => {
+        expect(c(10, null)).toBeNull();
+        expect(c(10, undefined)).toBeNull();
+    });
+
+    it('flags categories that had no spend last month as new', () => {
+        expect(c(10, 0)).toEqual({ kind: 'new', pct: null });
+        expect(c(0, 0)).toBeNull();
+    });
+
+    it('reports percentage changes, treating tiny ones as flat', () => {
+        expect(c(150, 100)).toEqual({ kind: 'pct', pct: 50 });
+        expect(c(50, 100)).toEqual({ kind: 'pct', pct: -50 });
+        expect(c(100.2, 100).kind).toBe('flat');
+        expect(c(0, 100)).toEqual({ kind: 'gone', pct: -100 });
+    });
+});

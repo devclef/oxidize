@@ -5,9 +5,9 @@ use crate::models::label::{
     LabelTransactions, UnlabeledCategoriesReport,
 };
 use crate::models::summary::{
-    budget_status, month_range, pct_change, project_full_month, shift_months, MonthBudget,
-    MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily, MonthSummary, MonthTopExpense,
-    MonthTotals, MonthTrend,
+    budget_status, comparison_window_days, month_range, pct_change, project_full_month,
+    shift_months, MonthBudget, MonthBudgetTotals, MonthCategory, MonthCurrency, MonthDaily,
+    MonthSummary, MonthTopExpense, MonthTotals, MonthTrend,
 };
 use crate::models::{
     parse_amount, AccountArray, AvgCostBudget, AvgCostMode, AvgCostMonthlyPoint, AvgCostResponse,
@@ -5375,25 +5375,26 @@ impl FireflyClient {
 
     /// Build the Monthly Summary for a calendar month.
     ///
-    /// All transaction-derived figures (totals, categories, daily series,
-    /// 12-month trend, top expenses) are aggregated from the same
-    /// transaction set with the same account/exclusion filters, so they
-    /// always agree with each other. Budget figures come from Firefly III's
-    /// own budget endpoints; net worth from the account overview chart
-    /// (asset balances plus liability balances, where debt balances are negative).
+    /// All transaction-derived figures (totals, budget spend, categories,
+    /// daily series, 12-month trend, previous-month comparison, top
+    /// expenses) are aggregated in one pass over one transaction set with
+    /// the same account/exclusion filters, so they always agree with each
+    /// other: budget spend + unbudgeted = categories = total spending.
+    /// Budget limits come from Firefly III's budget-limit endpoint; net
+    /// worth from the account overview chart (asset balances plus liability
+    /// balances, where debt balances are negative).
     ///
     /// `month` is 1-12; future months are rejected. Sub-sections that fail
-    /// to load (budgets, net worth, previous-month comparison) degrade
-    /// gracefully: the affected fields are left empty and the problem is
-    /// reported in `warnings`, so the page can still show what loaded.
+    /// to load (budgets, limits, net worth) degrade gracefully: the affected
+    /// fields are left empty and the problem is reported in `warnings`, so
+    /// the page can still show what loaded.
     ///
     /// `account_ids` restricts the summary to the given accounts;
     /// `excluded_account_ids` drops every transaction that touches one of
     /// the listed accounts (on either side). When both are given, the
     /// exclusions win. The filter applies to everything derived from
-    /// transactions (totals, categories, daily series, trend, top
-    /// expenses); budgets and net worth are whole-of-household metrics and
-    /// are not affected.
+    /// transactions; budget limits and net worth are whole-of-household
+    /// metrics and are not affected.
     pub async fn get_month_summary(
         &self,
         year: i32,
@@ -5419,166 +5420,273 @@ impl FireflyClient {
         let start = fmt(&month_start);
         let end = fmt(&effective_end);
 
-        // Previous month, for month-over-month comparison.
+        if let Some(cached) = self.cache.get_month_summary(
+            year,
+            month,
+            &end,
+            account_ids.as_deref(),
+            excluded_account_ids.as_deref(),
+            exclusions,
+        ) {
+            debug!("Cache hit for month summary {}-{:02}", year, month);
+            return serde_json::from_str(&cached)
+                .map_err(|e| format!("Failed to deserialize cached month summary: {}", e));
+        }
+
+        // Previous month, compared over the same days for a partial month.
         let (py, pm) = shift_months(year, month, -1);
-        let (prev_start, prev_end, _) = month_range(py, pm)?;
-        let prev_start_s = fmt(&prev_start);
-        let prev_end_s = fmt(&prev_end);
+        let (prev_start, prev_end, prev_days) = month_range(py, pm)?;
+        let comparison_days = comparison_window_days(is_current, days_elapsed, prev_days);
+        let cmp_end = prev_start + Duration::days(comparison_days as i64 - 1);
 
         // Trailing 12-month trend window (selected month last).
         let (ty, tm) = shift_months(year, month, -11);
         let (trend_start, _, _) = month_range(ty, tm)?;
+
+        // Net worth from the last day of the previous month, so the delta
+        // includes changes made on the 1st.
+        let nw_start = month_start - Duration::days(1);
         let trend_start_s = fmt(&trend_start);
 
-        // Fetch all underlying data in parallel.
-        let (daily_r, prev_r, budgets_r, spent_r, limits_r, nw_r, txs_r, accts_r, trend_r) = tokio::join!(
-            self.get_earned_spent(
-                Some(start.clone()),
-                Some(end.clone()),
-                Some("1D".to_string()),
-                account_ids.clone(),
-                excluded_account_ids.clone(),
-                exclusions,
-            ),
-            self.get_earned_spent(
-                Some(prev_start_s),
-                Some(prev_end_s),
-                Some("1M".to_string()),
-                account_ids.clone(),
-                excluded_account_ids.clone(),
-                exclusions,
-            ),
-            self.get_budgets(None, None),
-            self.get_budget_spent(Some(start.clone()), Some(end.clone()), exclusions),
-            self.get_budget_limits(Some(start.clone()), Some(end.clone())),
-            self.get_net_worth(
-                Some(start.clone()),
-                Some(end.clone()),
-                Some("1D".to_string()),
-            ),
+        // One transaction fetch covers the selected month, the previous
+        // month and the trend, all ending at `effective_end`: every
+        // transaction-derived figure (totals, budgets, categories, daily
+        // series, trend, top expenses) comes from the same journals with
+        // the same classification, so they always agree with each other.
+        // (Future-dated journals of the current month are not counted.)
+        let (txs_r, budgets_r, limits_r, nw_r, accts_r) = tokio::join!(
             self.fetch_all_transactions(
-                &start,
+                &trend_start_s,
                 &end,
                 account_ids.as_ref(),
                 None,
                 excluded_account_ids.as_deref(),
             ),
-            self.get_accounts(None),
-            self.get_earned_spent(
-                Some(trend_start_s),
-                // Use the full calendar month end (not `effective_end`):
-                // with a mid-month end, period-key generation drops the
-                // final partial bucket and its data would be folded into
-                // the previous month. The API only ever returns
-                // transactions up to today, so the partial-month bucket
-                // stays accurate.
-                Some(fmt(&month_end)),
-                Some("1M".to_string()),
-                account_ids.clone(),
-                excluded_account_ids.clone(),
-                exclusions,
+            self.get_budgets(None, None),
+            self.get_budget_limits(Some(start.clone()), Some(end.clone())),
+            self.get_net_worth(
+                Some(fmt(&nw_start)),
+                Some(end.clone()),
+                Some("1D".to_string()),
             ),
+            self.get_accounts(None),
         );
 
-        // Core transaction data is required: without it there are no
-        // meaningful financials to show at all.
-        let daily = daily_r.map_err(|e| format!("Failed to load monthly cash flow: {}", e))?;
-        let trend = trend_r.map_err(|e| format!("Failed to load 12-month trend: {}", e))?;
         let txs = txs_r.map_err(|e| format!("Failed to load transactions: {}", e))?;
-
         let mut warnings: Vec<String> = Vec::new();
 
-        // ── Daily series + headline totals ───────────────────────────────
-        let (earned_series, spent_series) = Self::split_earned_spent_line(&daily);
-        let earned_map: std::collections::HashMap<String, f64> =
-            earned_series.into_iter().collect();
-        let spent_map: std::collections::HashMap<String, f64> = spent_series.into_iter().collect();
-
-        let mut dates: std::collections::BTreeSet<String> = earned_map.keys().cloned().collect();
-        dates.extend(spent_map.keys().cloned());
-        let mut daily_dates = Vec::new();
-        let mut daily_earned = Vec::new();
-        let mut daily_spent = Vec::new();
-        let mut daily_cumulative = Vec::new();
-        let mut cumulative = 0.0;
-        for d in &dates {
-            let e = earned_map.get(d).copied().unwrap_or(0.0);
-            let s = spent_map.get(d).copied().unwrap_or(0.0);
-            cumulative += s;
-            daily_dates.push(d.clone());
-            daily_earned.push(e);
-            daily_spent.push(s);
-            daily_cumulative.push(cumulative);
-        }
-
-        let earned_total: f64 = daily_earned.iter().sum();
-        let spent_total: f64 = daily_spent.iter().sum();
-
-        // ── Previous month comparison ────────────────────────────────────
-        let (prev_month_earned, prev_month_spent) = match prev_r {
-            Ok(line) => {
-                let (e, s) = Self::sum_earned_spent_line(&line);
-                (Some(e), Some(s))
-            }
-            Err(e) => {
-                warnings.push(format!("Previous-month comparison unavailable: {}", e));
-                (None, None)
-            }
+        let account_names: std::collections::HashMap<String, String> = match accts_r {
+            Ok(list) => list.into_iter().map(|a| (a.id, a.name)).collect(),
+            Err(_) => std::collections::HashMap::new(),
         };
-        let prev_month_net = match (&prev_month_earned, &prev_month_spent) {
-            (Some(e), Some(s)) => Some(e - s),
-            _ => None,
-        };
-
-        // ── Categories ───────────────────────────────────────────────────
-        // Grouped from the same transactions (and same spent classification)
-        // as the headline totals, so the breakdown always sums to `spent`.
         let selected_ids: std::collections::HashSet<String> = account_ids
             .as_ref()
             .map(|ids| ids.iter().cloned().collect())
             .unwrap_or_default();
-        let mut category_totals: std::collections::HashMap<String, f64> =
+        let non_empty = |j: &serde_json::Value, field: &str| -> Option<String> {
+            j.get(field)
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(String::from)
+        };
+        let account_name = |j: &serde_json::Value, name_field: &str, id_field: &str| {
+            non_empty(j, name_field).or_else(|| {
+                j.get(id_field)
+                    .and_then(|v| v.as_str())
+                    .and_then(|id| account_names.get(id).cloned())
+            })
+        };
+
+        let days = days_elapsed as usize;
+        let mut daily_earned = vec![0.0; days];
+        let mut daily_spent = vec![0.0; days];
+        let mut earned_total = 0.0;
+        let mut spent_total = 0.0;
+        let mut spent_count = 0usize;
+        let (mut prev_full_e, mut prev_full_s) = (0.0, 0.0);
+        let (mut prev_cmp_e, mut prev_cmp_s) = (0.0, 0.0);
+        let mut trend_e: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut trend_s: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut category_totals: std::collections::HashMap<String, (f64, usize)> =
             std::collections::HashMap::new();
+        let mut prev_category_totals: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let mut spent_by_budget_id: std::collections::HashMap<String, (f64, Option<String>)> =
+            std::collections::HashMap::new();
+        let mut spent_by_budget_name: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let mut unbudgeted = 0.0;
+        let mut tops: Vec<MonthTopExpense> = Vec::new();
+        let mut currency_codes: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut currency = MonthCurrency::default();
+
         for tx in &txs {
-            if let Some(arr) = tx
+            let Some(journals) = tx
                 .get("attributes")
                 .and_then(|a| a.get("transactions"))
                 .and_then(|t| t.as_array())
-            {
-                for j in arr {
-                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
-                    {
-                        continue;
-                    }
-                    let name = j
-                        .get("category_name")
-                        .and_then(|c| c.as_str())
-                        .map(String::from)
-                        .unwrap_or_else(|| "Uncategorized".to_string());
-                    if let Some(amount_str) = j.get("amount").and_then(|a| a.as_str()) {
-                        if let Ok(amount) = amount_str.parse::<f64>() {
-                            *category_totals.entry(name).or_insert(0.0) += amount;
+            else {
+                continue;
+            };
+            for j in journals {
+                if journal_is_excluded(exclusions, j) {
+                    continue;
+                }
+                let is_earned = journal_counts_earned(j, &selected_ids);
+                let is_spent = journal_counts_spent(j, &selected_ids);
+                if !is_earned && !is_spent {
+                    continue;
+                }
+                let Some(amount) = j
+                    .get("amount")
+                    .and_then(|a| a.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .map(f64::abs)
+                else {
+                    continue;
+                };
+                let Some(date) = j
+                    .get("date")
+                    .and_then(|d| d.as_str())
+                    .and_then(parse_tx_date)
+                    .map(|dt| dt.date())
+                else {
+                    continue;
+                };
+                if date < trend_start || date > effective_end {
+                    continue;
+                }
+
+                let month_key = date.format("%Y-%m").to_string();
+                let category = non_empty(j, "category_name");
+                if is_earned {
+                    *trend_e.entry(month_key).or_insert(0.0) += amount;
+                } else {
+                    *trend_s.entry(month_key).or_insert(0.0) += amount;
+                }
+
+                if date >= prev_start && date <= prev_end {
+                    let in_window = date <= cmp_end;
+                    if is_earned {
+                        prev_full_e += amount;
+                        if in_window {
+                            prev_cmp_e += amount;
+                        }
+                    } else {
+                        prev_full_s += amount;
+                        if in_window {
+                            prev_cmp_s += amount;
+                            let name = category.clone().unwrap_or_else(|| "Uncategorized".into());
+                            *prev_category_totals.entry(name).or_insert(0.0) += amount;
                         }
                     }
+                    continue;
                 }
+                if date < month_start {
+                    continue;
+                }
+
+                // Selected month.
+                if let Some(code) = non_empty(j, "currency_code") {
+                    if currency.code.is_none() {
+                        currency.code = Some(code.clone());
+                        currency.symbol = non_empty(j, "currency_symbol");
+                    }
+                    currency_codes.insert(code);
+                }
+                let day_idx = (date.day() as usize)
+                    .saturating_sub(1)
+                    .min(days.saturating_sub(1));
+                if is_earned {
+                    earned_total += amount;
+                    if days > 0 {
+                        daily_earned[day_idx] += amount;
+                    }
+                    continue;
+                }
+
+                spent_total += amount;
+                spent_count += 1;
+                if days > 0 {
+                    daily_spent[day_idx] += amount;
+                }
+                let cat_name = category.clone().unwrap_or_else(|| "Uncategorized".into());
+                let entry = category_totals.entry(cat_name).or_insert((0.0, 0));
+                entry.0 += amount;
+                entry.1 += 1;
+
+                let budget_name = non_empty(j, "budget_name");
+                match (non_empty(j, "budget_id"), &budget_name) {
+                    (Some(id), name) => {
+                        let entry = spent_by_budget_id.entry(id).or_insert((0.0, None));
+                        entry.0 += amount;
+                        if entry.1.is_none() {
+                            entry.1 = name.clone();
+                        }
+                    }
+                    (None, Some(name)) => {
+                        *spent_by_budget_name.entry(name.clone()).or_insert(0.0) += amount
+                    }
+                    (None, None) => unbudgeted += amount,
+                }
+
+                tops.push(MonthTopExpense {
+                    date: date.format("%Y-%m-%d").to_string(),
+                    description: j
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    category,
+                    budget: budget_name,
+                    amount,
+                    account: account_name(j, "destination_name", "destination_id"),
+                    source: account_name(j, "source_name", "source_id"),
+                });
             }
         }
+
+        if currency_codes.len() > 1 {
+            warnings.push(format!(
+                "Transactions in several currencies ({}) are added up as-is, without conversion",
+                currency_codes.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+
+        // ── Daily series ─────────────────────────────────────────────────
+        let daily_dates: Vec<String> = (0..days)
+            .map(|i| fmt(&(month_start + Duration::days(i as i64))))
+            .collect();
+        let daily_cumulative: Vec<f64> = daily_spent
+            .iter()
+            .scan(0.0, |acc, v| {
+                *acc += v;
+                Some(*acc)
+            })
+            .collect();
+
+        // ── Categories ───────────────────────────────────────────────────
         let mut categories: Vec<MonthCategory> = category_totals
             .into_iter()
-            .map(|(name, amount)| MonthCategory {
+            .map(|(name, (amount, count))| MonthCategory {
                 pct: if spent_total > 0.0 {
                     amount / spent_total * 100.0
                 } else {
                     0.0
                 },
+                prev_amount: Some(prev_category_totals.get(&name).copied().unwrap_or(0.0)),
                 name,
                 amount,
+                count,
             })
             .collect();
         categories.sort_by(|a, b| {
             b.amount
                 .partial_cmp(&a.amount)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.name.cmp(&b.name))
         });
 
         // ── Budgets ──────────────────────────────────────────────────────
@@ -5591,118 +5699,129 @@ impl FireflyClient {
         };
 
         let mut budget_rows: Vec<MonthBudget> = Vec::new();
-        let mut budget_totals = MonthBudgetTotals::default();
-
-        match (budgets_r, spent_r) {
-            (Ok(budgets), Ok(spent_chart)) => {
-                // Spent per budget from Firefly's own budget aggregation.
-                let mut spent_by_name: std::collections::HashMap<String, f64> =
-                    std::collections::HashMap::new();
-                let mut budget_currency: (Option<String>, Option<String>) = (None, None);
-                for ds in &spent_chart {
-                    let amount: f64 = parse_chart_entries(&ds.entries)
-                        .iter()
-                        .map(|(_, v)| v)
-                        .sum();
-                    *spent_by_name.entry(ds.label.clone()).or_insert(0.0) += amount;
-                    if budget_currency.0.is_none() {
-                        budget_currency = (ds.currency_code.clone(), ds.currency_symbol.clone());
-                    }
-                }
-
-                for b in &budgets {
-                    let spent = spent_by_name.get(&b.name).copied().unwrap_or(0.0);
-                    // Prefer a limit whose period exactly covers this month,
-                    // otherwise any limit overlapping it.
-                    let limit = limits
-                        .iter()
-                        .find(|l| l.budget_id == b.id && l.period_start == start)
-                        .or_else(|| {
-                            limits.iter().find(|l| {
-                                l.budget_id == b.id
-                                    && l.period_start <= end
-                                    && (l.period_end.is_empty() || l.period_end >= start)
-                            })
+        let mut budget_totals = MonthBudgetTotals {
+            unbudgeted,
+            ..Default::default()
+        };
+        let mut push_budget =
+            |rows: &mut Vec<MonthBudget>, id: String, name: String, spent: f64| {
+                // Prefer a limit whose period starts with this month, otherwise
+                // any limit overlapping it.
+                let limit = limits
+                    .iter()
+                    .find(|l| !id.is_empty() && l.budget_id == id && l.period_start == start)
+                    .or_else(|| {
+                        limits.iter().find(|l| {
+                            !id.is_empty()
+                                && l.budget_id == id
+                                && l.period_start <= end
+                                && (l.period_end.is_empty() || l.period_end >= start)
                         })
-                        .map(|l| l.amount);
-
-                    let pct_of_limit = limit.and_then(|l| {
-                        if l > 0.0 {
-                            Some(spent / l * 100.0)
-                        } else {
-                            None
-                        }
-                    });
-                    let projected = if is_current {
-                        project_full_month(spent, days_elapsed, days_in_month)
-                    } else {
-                        None
-                    };
-                    let status = budget_status(spent, limit, projected);
-
-                    budget_totals.count += 1;
-                    budget_totals.spent += spent;
-                    if let Some(l) = limit {
-                        if l > 0.0 {
-                            budget_totals.with_limit += 1;
-                            budget_totals.limited += l;
-                            budget_totals.limited_spent += spent;
-                        }
-                    }
-                    if status == "over" {
-                        budget_totals.over_count += 1;
-                    }
-
-                    budget_rows.push(MonthBudget {
-                        id: b.id.clone(),
-                        name: b.name.clone(),
-                        spent,
-                        limit,
-                        pct_of_limit,
-                        projected,
-                        status,
-                        currency_code: budget_currency.0.clone(),
-                        currency_symbol: budget_currency.1.clone(),
-                    });
-                }
-
-                // Worst first: over > warning > ok > no-limit, then by
-                // percentage of limit (most used first).
-                let rank = |s: &str| match s {
-                    "over" => 0,
-                    "warning" => 1,
-                    "ok" => 2,
-                    _ => 3,
-                };
-                budget_rows.sort_by(|a, b| {
-                    let ra = rank(&a.status);
-                    let rb = rank(&b.status);
-                    ra.cmp(&rb).then_with(|| {
-                        let pa = a.pct_of_limit.unwrap_or(f64::MIN);
-                        let pb = b.pct_of_limit.unwrap_or(f64::MIN);
-                        pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
                     })
+                    .map(|l| l.amount)
+                    .filter(|l| *l > 0.0);
+                let pct_of_limit = limit.map(|l| spent / l * 100.0);
+                let projected = if is_current {
+                    project_full_month(spent, days_elapsed, days_in_month)
+                } else {
+                    None
+                };
+                let status = budget_status(spent, limit, projected);
+
+                budget_totals.count += 1;
+                budget_totals.spent += spent;
+                if let Some(l) = limit {
+                    budget_totals.with_limit += 1;
+                    budget_totals.limited += l;
+                    budget_totals.limited_spent += spent;
+                }
+                if status == "over" {
+                    budget_totals.over_count += 1;
+                }
+                rows.push(MonthBudget {
+                    id,
+                    name,
+                    spent,
+                    limit,
+                    pct_of_limit,
+                    projected,
+                    status,
+                    currency_code: currency.code.clone(),
+                    currency_symbol: currency.symbol.clone(),
                 });
+            };
+
+        match budgets_r {
+            Ok(budgets) => {
+                for b in &budgets {
+                    if exclusions.is_budget_excluded(&b.name) {
+                        continue;
+                    }
+                    let spent = spent_by_budget_id.remove(&b.id).map_or(0.0, |(a, _)| a)
+                        + spent_by_budget_name.remove(&b.name).unwrap_or(0.0);
+                    let has_limit = limits.iter().any(|l| l.budget_id == b.id);
+                    // Inactive budgets only matter when they still carry spend.
+                    if !b.active && spent == 0.0 && !has_limit {
+                        continue;
+                    }
+                    push_budget(&mut budget_rows, b.id.clone(), b.name.clone(), spent);
+                }
             }
-            (Err(e), _) => warnings.push(format!("Budgets unavailable: {}", e)),
-            (Ok(_), Err(e)) => warnings.push(format!("Budget spend unavailable: {}", e)),
+            Err(e) => warnings.push(format!("Budgets unavailable: {}", e)),
         }
+        // Spend on budgets the budget list does not know about (deleted, or
+        // the list failed to load) is still budgeted spend: keep it visible.
+        let mut leftovers: Vec<(String, String, f64)> = spent_by_budget_id
+            .into_iter()
+            .map(|(id, (amount, name))| {
+                let name = name.unwrap_or_else(|| format!("Budget #{}", id));
+                (id, name, amount)
+            })
+            .chain(
+                spent_by_budget_name
+                    .into_iter()
+                    .map(|(name, amount)| (String::new(), name, amount)),
+            )
+            .collect();
+        leftovers.sort_by(|a, b| a.1.cmp(&b.1));
+        for (id, name, amount) in leftovers {
+            push_budget(&mut budget_rows, id, name, amount);
+        }
+
+        // Worst first: over > warning > ok > no-limit, then by percentage
+        // of limit (most used first), then by spend.
+        let rank = |s: &str| match s {
+            "over" => 0,
+            "warning" => 1,
+            "ok" => 2,
+            _ => 3,
+        };
+        budget_rows.sort_by(|a, b| {
+            rank(&a.status)
+                .cmp(&rank(&b.status))
+                .then_with(|| {
+                    let pa = a.pct_of_limit.unwrap_or(f64::MIN);
+                    let pb = b.pct_of_limit.unwrap_or(f64::MIN);
+                    pb.partial_cmp(&pa).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    b.spent
+                        .partial_cmp(&a.spent)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        });
 
         // ── Net worth ────────────────────────────────────────────────────
         let (net_worth, net_worth_delta) = match nw_r {
             Ok(line) => {
-                let entries = line
+                let mut entries = line
                     .first()
                     .map(|d| parse_chart_entries(&d.entries))
                     .unwrap_or_default();
-                if entries.is_empty() {
-                    (None, None)
-                } else {
-                    let mut sorted = entries;
-                    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-                    let first = sorted.first().unwrap().1;
-                    let last = sorted.last().unwrap().1;
-                    (Some(last), Some(last - first))
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                match (entries.first(), entries.last()) {
+                    (Some(first), Some(last)) => (Some(last.1), Some(last.1 - first.1)),
+                    _ => (None, None),
                 }
             }
             Err(e) => {
@@ -5712,103 +5831,25 @@ impl FireflyClient {
         };
 
         // ── Top expenses ─────────────────────────────────────────────────
-        let account_names: std::collections::HashMap<String, String> = match accts_r {
-            Ok(list) => list.into_iter().map(|a| (a.id, a.name)).collect(),
-            Err(_) => std::collections::HashMap::new(),
-        };
-
-        let mut tops: Vec<MonthTopExpense> = Vec::new();
-        for tx in &txs {
-            if let Some(arr) = tx
-                .get("attributes")
-                .and_then(|a| a.get("transactions"))
-                .and_then(|t| t.as_array())
-            {
-                for j in arr {
-                    if !journal_counts_spent(j, &selected_ids) || journal_is_excluded(exclusions, j)
-                    {
-                        continue;
-                    }
-                    let (amount, date) = match (
-                        j.get("amount")
-                            .and_then(|a| a.as_str())
-                            .and_then(|s| s.parse::<f64>().ok()),
-                        j.get("date")
-                            .and_then(|d| d.as_str())
-                            .and_then(parse_tx_date)
-                            .map(|dt| dt.format("%Y-%m-%d").to_string()),
-                    ) {
-                        (Some(a), Some(d)) => (a, d),
-                        _ => continue,
-                    };
-                    let description = j
-                        .get("description")
-                        .and_then(|d| d.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let category = j
-                        .get("category_name")
-                        .and_then(|c| c.as_str())
-                        .filter(|c| !c.is_empty())
-                        .map(String::from);
-                    let account = j
-                        .get("destination_id")
-                        .and_then(|d| d.as_str())
-                        .and_then(|id| account_names.get(id).cloned());
-                    tops.push(MonthTopExpense {
-                        date,
-                        description,
-                        category,
-                        amount,
-                        account,
-                    });
-                }
-            }
-        }
         tops.sort_by(|a, b| {
             b.amount
                 .partial_cmp(&a.amount)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.date.cmp(&a.date))
         });
-        tops.truncate(8);
+        tops.truncate(10);
 
         // ── 12-month trend ───────────────────────────────────────────────
-        let (earned_by_month, spent_by_month) = {
-            let mut e: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-            let mut s: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-            for ds in &trend {
-                let is_earned = ds.label.to_lowercase().contains("earned");
-                for (k, v) in parse_chart_entries(&ds.entries) {
-                    let date_part = k.split('T').next().unwrap_or(&k);
-                    let label: String = date_part.chars().take(7).collect();
-                    let map = if is_earned { &mut e } else { &mut s };
-                    *map.entry(label).or_insert(0.0) += v;
-                }
-            }
-            (e, s)
-        };
         let mut trend_labels = Vec::new();
         let mut trend_earned = Vec::new();
         let mut trend_spent = Vec::new();
         for i in 0..12i64 {
             let (yy, mm) = shift_months(year, month, i - 11);
             let label = format!("{}-{:02}", yy, mm);
-            trend_earned.push(earned_by_month.get(&label).copied().unwrap_or(0.0));
-            trend_spent.push(spent_by_month.get(&label).copied().unwrap_or(0.0));
+            trend_earned.push(trend_e.get(&label).copied().unwrap_or(0.0));
+            trend_spent.push(trend_s.get(&label).copied().unwrap_or(0.0));
             trend_labels.push(label);
         }
-
-        // ── Currency (from the transactions themselves) ──────────────────
-        let currency = MonthCurrency {
-            code: daily
-                .first()
-                .and_then(|d| d.currency_code.clone())
-                .or_else(|| trend.first().and_then(|d| d.currency_code.clone())),
-            symbol: daily
-                .first()
-                .and_then(|d| d.currency_symbol.clone())
-                .or_else(|| trend.first().and_then(|d| d.currency_symbol.clone())),
-        };
 
         let net = earned_total - spent_total;
         let savings_rate = if earned_total > 0.0 {
@@ -5817,7 +5858,7 @@ impl FireflyClient {
             None
         };
 
-        Ok(MonthSummary {
+        let summary = MonthSummary {
             year,
             month,
             start_date: start.clone(),
@@ -5835,11 +5876,21 @@ impl FireflyClient {
                 } else {
                     0.0
                 },
-                prev_month_earned,
-                prev_month_spent,
-                prev_month_net,
-                earned_delta_pct: pct_change(earned_total, prev_month_earned),
-                spent_delta_pct: pct_change(spent_total, prev_month_spent),
+                prev_month_earned: Some(prev_full_e),
+                prev_month_spent: Some(prev_full_s),
+                prev_month_net: Some(prev_full_e - prev_full_s),
+                prev_period_earned: Some(prev_cmp_e),
+                prev_period_spent: Some(prev_cmp_s),
+                prev_period_net: Some(prev_cmp_e - prev_cmp_s),
+                comparison_days: Some(comparison_days),
+                earned_delta_pct: pct_change(earned_total, Some(prev_cmp_e)),
+                spent_delta_pct: pct_change(spent_total, Some(prev_cmp_s)),
+                projected_spent: if is_current {
+                    project_full_month(spent_total, days_elapsed, days_in_month)
+                } else {
+                    None
+                },
+                spent_count,
                 net_worth,
                 net_worth_delta,
             },
@@ -5860,35 +5911,29 @@ impl FireflyClient {
             top_expenses: tops,
             currency,
             warnings,
-        })
-    }
+        };
 
-    /// Split an earned/spent ChartLine into (date -> value) series, sorted by date.
-    fn split_earned_spent_line(line: &ChartLine) -> (DateSeries, DateSeries) {
-        let mut earned = DateSeries::new();
-        let mut spent = DateSeries::new();
-        for ds in line {
-            let series: DateSeries = parse_chart_entries(&ds.entries)
-                .into_iter()
-                .map(|(k, v)| (k.split('T').next().unwrap_or(&k).to_string(), v))
-                .collect();
-            if ds.label.to_lowercase().contains("earned") {
-                earned = series;
-            } else if ds.label.to_lowercase().contains("spent") {
-                spent = series;
+        // Only cache complete results: a partial load (warnings) should be
+        // retried on the next request.
+        if summary
+            .warnings
+            .iter()
+            .all(|w| w.starts_with("Transactions in several"))
+        {
+            if let Ok(json) = serde_json::to_string(&summary) {
+                self.cache.set_month_summary(
+                    year,
+                    month,
+                    &end,
+                    account_ids.as_deref(),
+                    excluded_account_ids.as_deref(),
+                    exclusions,
+                    json,
+                );
             }
         }
-        earned.sort_by(|a, b| a.0.cmp(&b.0));
-        spent.sort_by(|a, b| a.0.cmp(&b.0));
-        (earned, spent)
-    }
 
-    /// Sum an earned/spent ChartLine into (earned_total, spent_total).
-    fn sum_earned_spent_line(line: &ChartLine) -> (f64, f64) {
-        let (earned, spent) = Self::split_earned_spent_line(line);
-        let e: f64 = earned.iter().map(|(_, v)| v).sum();
-        let s: f64 = spent.iter().map(|(_, v)| v).sum();
-        (e, s)
+        Ok(summary)
     }
 }
 
