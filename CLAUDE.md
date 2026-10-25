@@ -172,6 +172,30 @@ stacking. Widget settings on the dashboard page expose subscription/group
 multi-selects and a split toggle. Without subscriptions (or spend in the range) widgets show
 a friendly message instead of a chart.
 
+### Budget Breakdown Widgets
+
+Dashboard widget type `budget_breakdown` ("Budget Breakdown", see
+`plans/budget-breakdown-widget.md`) breaks a selected budget's spend down
+over time, either per category or per destination account — "where does
+this budget's money actually go?":
+
+- `GET /api/budgets/breakdown?start&end&period&by&budgets[]&accounts[]
+  &exclude_categories[]&exclude_budgets[]` — standard `ChartLine`, one
+  dataset per category (default `by=category`) or per destination account
+  (`by=destination`), sorted by total spend desc, built from the shared
+  transaction pipeline (`fetch_all_transactions` + `is_journal_spent` +
+  exclusion filtering). Only spend charged to a selected budget counts
+  (empty selection = all budgeted spend); missing category/destination
+  names fall back to "Uncategorized" / "Unknown account".
+
+The widget reuses `budget_names` (required in the builder, ≥1 selected),
+stores `budget_breakdown_by` (`"category"` default / `"destination"`),
+and reuses `accounts`/`group_ids` (optional account filter), `interval`,
+`chart_type` (line/pie), exclusions and stacking. Widget settings on the
+dashboard page expose budget multi-selects and a "break down by" selector.
+Without spend in the range the widget shows a friendly message instead of
+a chart.
+
 ### Source Code Layout
 
 ```
@@ -313,6 +337,7 @@ The central data-fetching layer. All methods are `async` and return `Result<T, S
 | `get_budgets()` | Lists budgets from Firefly III |
 | `get_budget_spent(start, end, exclusions)` | Spent per budget for a period (post-filters excluded budget datasets) |
 | `get_budget_spent_history(start, end, period, account_ids, exclusions)` | Monthly spent-per-budget time series (drops journals matching `exclusions`) |
+| `get_budget_breakdown_chart(budget_names, start, end, period, by, account_ids, exclusions)` | Selected budgets' spend over time, one series per category (`by="category"`, default) or per destination account (`by="destination"`); only budgeted spend counts (drops journals matching `exclusions`) |
 | `get_budget_limit(...)` | Budget period limits |
 | `get_budget_comparison(start, end, budget_names, exclusions)` | This year vs last year, with projections against budget limits (skips excluded budgets) |
 | `get_categories()` | Top-level categories with subcategories |
@@ -377,7 +402,7 @@ CREATE TABLE widgets (
     end_date TEXT,
     interval TEXT,
     chart_mode TEXT,
-    widget_type TEXT,                -- widget type (balance, earned_spent, ..., label_spend, subscription_cost)
+    widget_type TEXT,                -- widget type (balance, earned_spent, ..., label_spend, subscription_cost, budget_breakdown)
     chart_options TEXT,              -- JSON object (ChartOptions)
     display_order INTEGER NOT NULL DEFAULT 0,
     width INTEGER NOT NULL DEFAULT 12,
@@ -418,8 +443,9 @@ CREATE TABLE groups (
 #### Models (`src/models/`)
 
 **`Widget`** — configurable dashboard chart widget:
-- `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"`, `"label_spend"` or `"subscription_cost"`
+- `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"`, `"label_spend"`, `"subscription_cost"` or `"budget_breakdown"`
 - `include_unlabeled`: optional bool for `label_spend` widgets (absent = include the "Unlabeled" series)
+- `budget_breakdown_by`: optional string for `budget_breakdown` widgets — `"category"` (default; absent) or `"destination"` (chart the selected budgets' spend per destination account instead of per category)
 - `subscription_ids` / `subscription_group_ids`: id arrays for `subscription_cost` widgets (Firefly III bill ids + object-group ids; both empty = all subscriptions)
 - `exclude_categories` / `exclude_budgets`: optional name arrays that exclude categories/budgets entirely from the widget's data (merged with dashboard-level exclusions)
 - `chart_options`: optional `ChartOptions` struct with display settings (show_points, fill_area, tension, x/y axis limits, begin_at_zero, show_pct, pct_mode)
@@ -508,6 +534,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/api/budgets/list` | `start`, `end` | Budget list |
 | `GET` | `/api/budgets/spent` | `start`, `end`, `exclude_budgets[]` | Spent per budget for the period |
 | `GET` | `/api/budgets/spent-history` | `start`, `end`, `period`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spent-per-budget time series |
+| `GET` | `/api/budgets/breakdown` | `start`, `end`, `period`, `by` (`category` default / `destination`), `budgets[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Selected budgets' spend over time, one series per category or destination account (Budget Breakdown widget) |
 | `GET` | `/api/budgets/comparison` | `start`, `end`, `budget_names` (repeatable), `exclude_categories[]`, `exclude_budgets[]` | This year vs last year + projections vs limits |
 | `GET` | `/api/budgets/avg-cost` | `budget_names` (repeatable), `mode`, `months`, `account_ids` (comma-separated), `month`, `year`, `exclude_categories[]`, `exclude_budgets[]` | Average monthly cost per budget |
 | `GET` | `/api/card-paydown` | `start`, `end`, `accounts[]`, `debug` | Credit card paydown analysis |

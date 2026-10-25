@@ -966,6 +966,13 @@ async function updateWidgetDateRange(widgetId) {
     const subSplitEl = document.getElementById(`${widgetId}-subscription-split`);
     if (subSplitEl) widget.subscription_split_groups = subSplitEl.checked;
 
+    const widgetBudgetsEl = document.getElementById(`${widgetId}-budgets`);
+    if (widgetBudgetsEl) {
+        widget.budget_names = Array.from(widgetBudgetsEl.selectedOptions).map(o => o.value);
+    }
+    const bdByEl = document.getElementById(`${widgetId}-budget-breakdown-by`);
+    if (bdByEl) widget.budget_breakdown_by = bdByEl.value;
+
     const exclCatsEl = document.getElementById(`${widgetId}-exclude-categories`);
     if (exclCatsEl) {
         widget.exclude_categories = Array.from(exclCatsEl.selectedOptions).map(o => o.value);
@@ -2599,6 +2606,32 @@ function buildSubscriptionWidgetParams(widget, effectiveStart, effectiveEnd, all
     return params;
 }
 
+/**
+ * Query params for a budget_breakdown widget's /api/budgets/breakdown
+ * fetch (pure, testable). widget.budget_breakdown_by absent/"category" =
+ * one series per category, "destination" = one series per destination
+ * account; dashboard + widget exclusions are merged.
+ */
+function buildBudgetBreakdownWidgetParams(widget, effectiveStart, effectiveEnd, allGroups, dashExclusions) {
+    const groupIds = widget.group_ids || [];
+    const groupAccountIds = new Set();
+    groupIds.forEach(gid => {
+        const g = (allGroups || []).find(gg => gg.id === gid);
+        if (g) (g.account_ids || []).forEach(id => groupAccountIds.add(id));
+    });
+    const accountIds = [...new Set([...(widget.accounts || []), ...groupAccountIds])];
+
+    const params = new URLSearchParams();
+    if (effectiveStart) params.append('start', effectiveStart);
+    if (effectiveEnd) params.append('end', effectiveEnd);
+    if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
+    params.append('by', widget.budget_breakdown_by === 'destination' ? 'destination' : 'category');
+    (widget.budget_names || []).forEach(name => params.append('budgets[]', name));
+    accountIds.forEach(id => params.append('accounts[]', id));
+    appendExclusionParams(params, mergeExclusions(dashExclusions, widget));
+    return params;
+}
+
 let subscriptionOptionsPromise = null;
 
 /**
@@ -2820,6 +2853,24 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                 return;
             }
             history = subData;
+        } else if (widgetType === 'budget_breakdown') {
+            // Selected budgets' spend over time, one series per category
+            // or per destination account (standard ChartLine)
+            const params = buildBudgetBreakdownWidgetParams(
+                widget, effectiveStart, effectiveEnd, allGroups, dashboardExclusions
+            );
+            const url = `/api/budgets/breakdown?${params.toString()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            const bdData = await response.json();
+            if (!bdData || bdData.length === 0) {
+                document.getElementById(`${canvasId}-error`).textContent =
+                    'No budgeted spend found for this range.';
+                return;
+            }
+            history = bdData;
         } else {
             // For balance widgets, fetch with all relevant accounts (individual + group members)
             const groupIds = widget.group_ids || [];
@@ -3158,13 +3209,15 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
             return;
         }
 
-        // Handle expenses_by_category / subscription_cost widget types
-        // (both are one-line-per-series multi-dataset charts)
-        if (widgetType === 'expenses_by_category' || widgetType === 'subscription_cost') {
+        // Handle expenses_by_category / subscription_cost / budget_breakdown
+        // widget types (all are one-line-per-series multi-dataset charts)
+        if (widgetType === 'expenses_by_category' || widgetType === 'subscription_cost' || widgetType === 'budget_breakdown') {
             if (!history || history.length === 0) {
                 document.getElementById(`${canvasId}-error`).textContent = widgetType === 'subscription_cost'
                     ? 'No subscription cost data available'
-                    : 'No category expense data available';
+                    : widgetType === 'budget_breakdown'
+                        ? 'No budget breakdown data available'
+                        : 'No category expense data available';
                 return;
             }
 
@@ -4042,6 +4095,9 @@ async function renderDashboard() {
             widgetTypeBadge = '<span class="widget-type-badge label-spend">Spending by Label</span>';
         } else if (widgetType === 'subscription_cost') {
             widgetTypeBadge = '<span class="widget-type-badge subscription-cost">Subscription Cost</span>';
+        } else if (widgetType === 'budget_breakdown') {
+            const bdMode = widget.budget_breakdown_by === 'destination' ? 'Destinations' : 'Categories';
+            widgetTypeBadge = `<span class="widget-type-badge budget-breakdown">Budget: ${bdMode}</span>`;
         } else {
             widgetTypeBadge = '<span class="widget-type-badge balance">Balance</span>';
         }
@@ -4190,14 +4246,14 @@ async function renderDashboard() {
                         <label class="checkbox-label"><input type="checkbox" id="${widget.id}-enable-trendline" ${chartOpts.showTrendline ? 'checked' : ''}> Trend Line (moving average)</label>
                         <label>Trend Window: <input type="number" id="${widget.id}-trendline-window" value="${chartOpts.trendlineWindow}" min="1" max="90" style="width: 60px;"></label>
                         ` : ''}
-                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'].includes(widgetType) ? `
+                        ${['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `
                         <label class="checkbox-label" title="Stack series values vertically on line charts (per-series trend lines stay unstacked)"><input type="checkbox" id="${widget.id}-stacked" ${chartOpts.stacked ? 'checked' : ''}> Stack Values</label>
                         ` : ''}
                         ${widgetType === 'label_spend' ? `
                         <label class="checkbox-label" title="Also chart budgeted spend that matches no label as an 'Unlabeled' series"><input type="checkbox" id="${widget.id}-include-unlabeled" ${widget.include_unlabeled !== false ? 'checked' : ''}> Include Unlabeled</label>
                         ` : ''}
                     </div>
-                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost'].includes(widgetType) ? `
+                    ${['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'sankey', 'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `
                     <div class="widget-settings-section">
                         <strong>Exclusions</strong>
                         <div class="exclusions-hint">Entirely removed from this widget's data, in addition to dashboard-level exclusions.</div>
@@ -4230,6 +4286,23 @@ async function renderDashboard() {
                         <label style="display: flex; gap: 6px; align-items: center;" title="By default each selected group is one series showing the group's total cost; enable to show each subscription in the group as its own series instead.">
                             <input type="checkbox" id="${widget.id}-subscription-split" ${widget.subscription_split_groups ? 'checked' : ''}>
                             Split selected groups into individual subscriptions
+                        </label>
+                    </div>
+                    ` : ''}
+                    ${widgetType === 'budget_breakdown' ? `
+                    <div class="widget-settings-section">
+                        <strong>Budgets</strong>
+                        <div class="exclusions-hint">One series per category (or destination account) that the selected budgets are charged to.</div>
+                        <label>Budgets:
+                            <select multiple size="5" id="${widget.id}-budgets" class="exclusion-select">
+                                ${exclusionOptions.budgets.map(b => `<option value="${escapeHtml(b)}" ${(widget.budget_names || []).includes(b) ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label>Break down by:
+                            <select id="${widget.id}-budget-breakdown-by">
+                                <option value="category" ${widget.budget_breakdown_by !== 'destination' ? 'selected' : ''}>Categories</option>
+                                <option value="destination" ${widget.budget_breakdown_by === 'destination' ? 'selected' : ''}>Destination accounts</option>
+                            </select>
                         </label>
                     </div>
                     ` : ''}

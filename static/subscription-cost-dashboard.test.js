@@ -145,6 +145,6 @@ describe('dashboard.js wiring', () => {
     });
 
     it('supports stacking and exclusions for subscription_cost', () => {
-        expect(dashboardSource).toContain("'label_spend', 'subscription_cost'].includes(widgetType) ? `");
+        expect(dashboardSource).toContain("'label_spend', 'subscription_cost', 'budget_breakdown'].includes(widgetType) ? `");
     });
 });

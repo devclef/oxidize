@@ -466,6 +466,68 @@ pub async fn get_budget_spent_history(
     }
 }
 
+/// GET endpoint for budget breakdown: the selected budgets' spend over
+/// time, broken down per category or per destination account.
+///
+/// Query params:
+///   start, end (default: last 365 days / today), period (default "1M"),
+///   budgets[] (optional: only spend charged to these budgets; empty =
+///   all budgeted spend), by ("category" default | "destination"),
+///   accounts[] (optional), exclude_categories[], exclude_budgets[].
+///
+/// Response: standard ChartLine (one dataset per category or destination
+/// account, sorted by total spend descending), renderable like
+/// /api/expenses-by-category.
+#[get("/api/budgets/breakdown")]
+pub async fn get_budget_breakdown(
+    client: web::Data<FireflyClient>,
+    req: HttpRequest,
+) -> impl Responder {
+    let query_string = req.query_string();
+    let params: Vec<(String, String)> =
+        serde_urlencoded::from_str(query_string).unwrap_or_default();
+    let exclusions = crate::handlers::parse_exclusions(&params);
+
+    let mut start: Option<String> = None;
+    let mut end: Option<String> = None;
+    let mut period: Option<String> = None;
+    let mut by = "category".to_string();
+    let mut budgets: Vec<String> = Vec::new();
+    let mut account_ids: Vec<String> = Vec::new();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "start" => start = Some(v),
+            "end" => end = Some(v),
+            "period" => period = Some(v),
+            "by" => by = v,
+            "budgets[]" | "budgets" => budgets.push(v),
+            "accounts[]" | "accounts" => account_ids.push(v),
+            _ => {}
+        }
+    }
+
+    match client
+        .get_budget_breakdown_chart(
+            budgets,
+            start,
+            end,
+            period,
+            &by,
+            if account_ids.is_empty() {
+                None
+            } else {
+                Some(account_ids)
+            },
+            &exclusions,
+        )
+        .await
+    {
+        Ok(chart) => HttpResponse::Ok().json(chart),
+        Err(e) => HttpResponse::InternalServerError().body(e),
+    }
+}
+
 /// GET endpoint for budget list (for widget selector)
 #[get("/api/budgets/list")]
 pub async fn get_budget_list(client: web::Data<FireflyClient>, req: HttpRequest) -> impl Responder {

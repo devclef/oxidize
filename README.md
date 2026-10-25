@@ -16,6 +16,7 @@ A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Ox
 - **Reimbursement Tracking** - compare work expenses (spending in marked categories/budgets) against reimbursements (income in marked categories) over any period, with month-by-month chart, outstanding amounts and per-category/budget breakdowns; markers persist in the browser
 - **Spending Labels** - user-defined lenses over categories (e.g. "wants" vs "needs"); report how any budget is composed of your labels, track per-label spending over time, and drill down into the individual transactions behind any label; also available as a "Spending by Label" dashboard widget (one line or pie slice per label, with an optional "Unlabeled" series)
 - **Subscription Cost** - pick certain subscriptions (Firefly III "bills") or groups of subscriptions (object groups containing bills) as a dashboard widget and chart their cost over time (one line or pie slice per subscription; no selection charts every subscription; selected groups show as one total by default, with an opt-in toggle to split them into individual subscriptions)
+- **Budget Breakdown** - pick one or more budgets as a dashboard widget and chart what that spend looks like over time, broken down by category or by destination account (one line or pie slice per category / account)
 - **CSV Account Export** - download all accounts of any Firefly III account type (even types hidden from the dashboard filter) as a CSV file
 - **Dark/Light Theme** - persisted in browser localStorage
 - **In-memory Caching** - 5-minute TTL reduces Firefly III API load
@@ -133,6 +134,7 @@ dropped from the aggregation entirely.
 |--------|----------|-------------|
 | GET | `/api/budgets/spent` | Current budget spending (supports `exclude_budgets[]`) |
 | GET | `/api/budgets/spent-history` | Budget spending over time (supports `exclude_categories[]`, `exclude_budgets[]`) |
+| GET | `/api/budgets/breakdown` | Selected budgets' spend over time by category or destination account (`by=category`/`destination`, `budgets[]`, supports `exclude_categories[]`, `exclude_budgets[]`) |
 | GET | `/api/budgets/list` | List all budgets |
 | GET | `/api/budgets/comparison` | Budget vs actual comparison data (supports exclusions) |
 | GET | `/api/budgets/avg-cost` | Average cost calculation (supports exclusions) |

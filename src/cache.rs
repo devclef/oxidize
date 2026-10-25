@@ -38,6 +38,7 @@ pub struct DataCache {
     reimbursement_summary: RwLock<HashMap<String, CacheEntry<String>>>,
     label_spend: RwLock<HashMap<String, CacheEntry<String>>>,
     label_composition: RwLock<HashMap<String, CacheEntry<String>>>,
+    budget_breakdown: RwLock<HashMap<String, CacheEntry<String>>>,
     label_unlabeled: RwLock<HashMap<String, CacheEntry<String>>>,
     label_transactions: RwLock<HashMap<String, CacheEntry<String>>>,
     subscription_list: RwLock<HashMap<String, CacheEntry<String>>>,
@@ -74,6 +75,7 @@ impl DataCache {
             reimbursement_summary: RwLock::new(HashMap::new()),
             label_spend: RwLock::new(HashMap::new()),
             label_composition: RwLock::new(HashMap::new()),
+            budget_breakdown: RwLock::new(HashMap::new()),
             label_unlabeled: RwLock::new(HashMap::new()),
             label_transactions: RwLock::new(HashMap::new()),
             subscription_list: RwLock::new(HashMap::new()),
@@ -861,6 +863,85 @@ impl DataCache {
         Self::set_tiered(&self.subscription_spend, &key, &data, self.current_ttl());
     }
 
+    // ── Budget breakdown ─────────────────────────────────────────────
+
+    fn budget_breakdown_key(
+        budget_names: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        by: &str,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> String {
+        let start = start_date.unwrap_or("default");
+        let end = end_date.unwrap_or("default");
+        let period = period.unwrap_or("default");
+        let budgets = budget_names.join(",");
+        let accounts = match account_ids {
+            Some(ids) => ids.join(","),
+            None => "all".to_string(),
+        };
+        format!(
+            "v{}:budget_breakdown:{}:{}:{}:{}:{}:{}:{}",
+            CACHE_VERSION,
+            budgets,
+            start,
+            end,
+            period,
+            by,
+            accounts,
+            exclusions.cache_key()
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_budget_breakdown(
+        &self,
+        budget_names: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        by: &str,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+    ) -> Option<String> {
+        let key = Self::budget_breakdown_key(
+            budget_names,
+            start_date,
+            end_date,
+            period,
+            by,
+            account_ids,
+            exclusions,
+        );
+        Self::get_tiered(&self.budget_breakdown, &key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_budget_breakdown(
+        &self,
+        budget_names: &[String],
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        period: Option<&str>,
+        by: &str,
+        account_ids: Option<&[String]>,
+        exclusions: &Exclusions,
+        data: String,
+    ) {
+        let key = Self::budget_breakdown_key(
+            budget_names,
+            start_date,
+            end_date,
+            period,
+            by,
+            account_ids,
+            exclusions,
+        );
+        Self::set_tiered(&self.budget_breakdown, &key, &data, self.current_ttl());
+    }
+
     // ── Clear operations ─────────────────────────────────────────────
 
     // ── Label reports ────────────────────────────────────────────────
@@ -1222,6 +1303,14 @@ impl DataCache {
         self.clear_subscription_list();
         self.clear_subscription_groups();
         self.clear_subscription_spend();
+        self.clear_budget_breakdown();
+    }
+
+    pub fn clear_budget_breakdown(&self) {
+        Self::clear_tiered(
+            &self.budget_breakdown,
+            Some(&format!("v{}:budget_breakdown:", CACHE_VERSION)),
+        );
     }
 
     pub fn clear_accounts(&self) {

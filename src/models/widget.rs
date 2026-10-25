@@ -37,7 +37,9 @@ pub struct Widget {
     /// "balance" (default), "earned_spent", "budget_spent",
     /// "expenses_by_category", "category_subcat", "net_worth", "card_paydown",
     /// "saved_this_month", "sankey", "label_spend" (per-label spend
-    /// trend) or "subscription_cost" (per-subscription cost over time).
+    /// trend), "subscription_cost" (per-subscription cost over time) or
+    /// "budget_breakdown" (selected budgets' spend by category or
+    /// destination account over time).
     pub widget_type: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +62,12 @@ pub struct Widget {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sankey_flow_type: Option<String>,
+    /// Budget breakdown widgets: what the selected budgets' spend is
+    /// charted over time by: "category" (default; absent = category) or
+    /// "destination" (the destination account of the spend).
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_breakdown_by: Option<String>,
     /// Chart rendering type: "line" (default) or "pie".
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -422,6 +430,41 @@ mod tests {
 
         let out = serde_json::to_value(&widget).unwrap();
         assert_eq!(out["include_unlabeled"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn widget_legacy_json_defaults_budget_breakdown_by() {
+        // Widgets saved before budget_breakdown_by existed must still
+        // deserialize with the field absent (rendered as "category").
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": []
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.budget_breakdown_by, None);
+
+        // And it is skipped on serialization, so the saved JSON shape is
+        // unchanged for widgets that never set it.
+        let out = serde_json::to_value(&widget).unwrap();
+        assert!(out.get("budget_breakdown_by").is_none());
+    }
+
+    #[test]
+    fn widget_budget_breakdown_by_round_trips() {
+        let json = r#"{
+            "id": "w2",
+            "name": "Budgets",
+            "accounts": [],
+            "widget_type": "budget_breakdown",
+            "budget_names": ["Groceries"],
+            "budget_breakdown_by": "destination"
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.budget_breakdown_by, Some("destination".to_string()));
+
+        let out = serde_json::to_value(&widget).unwrap();
+        assert_eq!(out["budget_breakdown_by"].as_str(), Some("destination"));
     }
 
     #[test]

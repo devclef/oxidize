@@ -236,7 +236,7 @@ function escapeHtmlAttr(str) {
 // Widget types whose data supports category/budget exclusions — the same set
 // the dashboard widget settings offers them for (sankey only exists as a
 // dashboard widget type).
-const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'];
+const EXCLUDABLE_WIDGET_TYPES = ['earned_spent', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'];
 
 function currentWidgetType() {
     const sel = document.getElementById('widget-type-select');
@@ -698,6 +698,48 @@ async function fetchChartData() {
 
             chartContainer.style.display = 'block';
             renderChart(subData, widgetType, null, null);
+            return;
+        }
+
+        // For budget_breakdown widget type - selected budgets' spend over
+        // time, one series per category or per destination account
+        if (widgetType === 'budget_breakdown') {
+            const budgetNames = Array.from(document.querySelectorAll('.budget-select:checked')).map(cb => cb.dataset.name);
+            const accountIds = getSelectedAccountIds();
+
+            const bdParams = buildBudgetBreakdownParams({
+                startDate,
+                endDate,
+                interval,
+                budgetNames,
+                by: getBudgetBreakdownBy(),
+                accountIds,
+                excludedCategories: getExcludedCategories(),
+                excludedBudgets: getExcludedBudgets()
+            });
+
+            const bdUrl = `/api/budgets/breakdown?${bdParams.toString()}`;
+            const bdResponse = await fetch(bdUrl);
+            if (!bdResponse.ok) {
+                throw new Error(`Error: ${bdResponse.status} ${bdResponse.statusText}`);
+            }
+            const bdData = await bdResponse.json();
+
+            if (!bdData || bdData.length === 0) {
+                const msg = budgetNames.length === 0
+                    ? 'Select at least one budget to break down.'
+                    : 'No budgeted spend found for the current date range.';
+                chartErrorEl.innerHTML = `<div class="info">${msg}</div>`;
+                chartContainer.style.display = 'block';
+                if (balanceChart) {
+                    balanceChart.destroy();
+                    balanceChart = null;
+                }
+                return;
+            }
+
+            chartContainer.style.display = 'block';
+            renderChart(bdData, widgetType);
             return;
         }
 
@@ -1174,7 +1216,7 @@ function getStackingEnabled() {
 }
 
 // #24: widget types that have multi-series line charts a stacked toggle can affect
-const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost'];
+const STACKABLE_WIDGET_TYPES = ['balance', 'budget_spent', 'expenses_by_category', 'category_subcat', 'label_spend', 'subscription_cost', 'budget_breakdown'];
 
 // Show/hide the Stacked pill based on the selected widget type and line/pie style.
 function updateStackedToggleVisibility() {
@@ -1814,6 +1856,34 @@ function buildSubscriptionSpendParams({ startDate, endDate, interval,
     (excludedCategories || []).forEach(c => params.append('exclude_categories[]', c));
     (excludedBudgets || []).forEach(b => params.append('exclude_budgets[]', b));
     return params;
+}
+
+// ---- Budget Breakdown (budget_breakdown widget type) ---------------------
+
+/**
+ * Query params for GET /api/budgets/breakdown (pure, testable).
+ * budgetNames is the budget selection (empty = all budgeted spend at the
+ * API level; the builder requires a selection); `by` is "category"
+ * (default) or "destination"; interval "auto" is omitted.
+ */
+function buildBudgetBreakdownParams({ startDate, endDate, interval,
+    budgetNames, by, accountIds, excludedCategories, excludedBudgets }) {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start', startDate);
+    if (endDate) params.append('end', endDate);
+    if (interval && interval !== 'auto') params.append('period', interval);
+    params.append('by', by === 'destination' ? 'destination' : 'category');
+    (budgetNames || []).forEach(name => params.append('budgets[]', name));
+    (accountIds || []).forEach(id => params.append('accounts[]', id));
+    (excludedCategories || []).forEach(c => params.append('exclude_categories[]', c));
+    (excludedBudgets || []).forEach(b => params.append('exclude_budgets[]', b));
+    return params;
+}
+
+/** The selected "break down by" radio value in the builder. */
+function getBudgetBreakdownBy() {
+    const radio = document.querySelector('input[name="budget-breakdown-by"]:checked');
+    return radio && radio.value === 'destination' ? 'destination' : 'category';
 }
 
 async function fetchSubscriptions() {
@@ -2676,6 +2746,29 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null, la
         } else {
             // Same multi-series construction as the category chart (palette
             // colors, trend lines, stacking)
+            renderExpensesByCategoryChart(ctx, history);
+        }
+        return;
+    }
+
+    // For budget_breakdown widget type: one series per category or
+    // destination account (same multi-series construction as the category
+    // chart: palette colors, trend lines, stacking)
+    if (widgetType === 'budget_breakdown') {
+        const chartType = getChartType();
+        if (chartType === 'pie') {
+            // Aggregate total spend per series across all dates
+            const totals = history.map(ds => {
+                let sum = 0;
+                if (typeof ds.entries === 'object') {
+                    Object.values(ds.entries).forEach(v => {
+                        sum += Math.abs(typeof v === 'object' && v !== null ? (v.value || 0) : (parseFloat(v) || 0));
+                    });
+                }
+                return sum;
+            });
+            renderPieChart(ctx, history.map(ds => ds.label), totals);
+        } else {
             renderExpensesByCategoryChart(ctx, history);
         }
         return;
@@ -3834,6 +3927,12 @@ async function saveGraphAsWidget() {
         return;
     }
 
+    // Budget Breakdown needs at least one budget to break down
+    if (widgetType === 'budget_breakdown' && selectedBudgetNames.length === 0) {
+        OxiUI.toast('Please select at least one budget', 'error');
+        return;
+    }
+
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
     const interval = document.getElementById('interval-select').value;
@@ -3904,6 +4003,7 @@ async function saveGraphAsWidget() {
         subscription_split_groups: widgetType === 'subscription_cost'
             ? (document.getElementById('subscription-split-checkbox')?.checked ?? false)
             : null,
+        budget_breakdown_by: widgetType === 'budget_breakdown' ? getBudgetBreakdownBy() : null,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,
@@ -4918,6 +5018,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     'saved_this_month': 'Saved This Month',
                     'label_spend': 'Spending by Label',
                     'subscription_cost': 'Subscription Cost Over Time',
+                    'budget_breakdown': getBudgetBreakdownBy() === 'destination'
+                        ? 'Budget Breakdown: Destination Accounts'
+                        : 'Budget Breakdown: Categories',
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -4982,9 +5085,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
              // Toggle budgets section visibility (budget_spent filters which
             // budgets are charted; label_spend uses it as an optional filter,
-            // where no selection means "all budgets")
+            // where no selection means "all budgets"; budget_breakdown
+            // requires a selection)
             const budgetsSection = document.getElementById('budgets-section');
-            const budgetsApplies = widgetType === 'budget_spent' || widgetType === 'label_spend';
+            const budgetsApplies = widgetType === 'budget_spent' || widgetType === 'label_spend' || widgetType === 'budget_breakdown';
             if (budgetsSection) {
                 budgetsSection.style.display = budgetsApplies ? 'block' : 'none';
                 if (budgetsApplies && allBudgets.length === 0) {
@@ -5034,6 +5138,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (labelSpendOptionsGroup) {
                 labelSpendOptionsGroup.style.display = widgetType === 'label_spend' ? 'flex' : 'none';
             }
+            // Show/hide budget breakdown options (visible for budget_breakdown only)
+            const budgetBreakdownOptionsGroup = document.getElementById('budget-breakdown-options-group');
+            if (budgetBreakdownOptionsGroup) {
+                budgetBreakdownOptionsGroup.style.display = widgetType === 'budget_breakdown' ? 'flex' : 'none';
+            }
             fetchChartData();
         });
     }
@@ -5049,6 +5158,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle earned chart type change
     document.querySelectorAll('input[name="earned-chart-type"]').forEach(radio => {
         radio.addEventListener('change', () => {
+            fetchChartData();
+        });
+    });
+
+    // Handle budget breakdown mode change (update the title too)
+    document.querySelectorAll('input[name="budget-breakdown-by"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const chartTitle = document.getElementById('chart-title');
+            if (chartTitle) {
+                chartTitle.textContent = getBudgetBreakdownBy() === 'destination'
+                    ? 'Budget Breakdown: Destination Accounts'
+                    : 'Budget Breakdown: Categories';
+            }
             fetchChartData();
         });
     });

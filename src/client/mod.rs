@@ -324,6 +324,11 @@ impl FireflyClient {
         info!("Subscription cache cleared");
     }
 
+    pub fn clear_budget_breakdown_cache(&self) {
+        self.cache.clear_budget_breakdown();
+        info!("Budget breakdown cache cleared");
+    }
+
     /// Analyze credit card paydown activity for the given card accounts.
     /// Returns monthly breakdown of payments (transfers from other asset accounts
     /// into the card, i.e. debt-reducing) and spending (flows from the card to
@@ -2300,6 +2305,196 @@ impl FireflyClient {
                 end_date,
                 period,
                 account_ids,
+                exclusions,
+                json,
+            );
+        }
+
+        Ok(chart)
+    }
+
+    /// Time series of spend for the selected budgets, broken down per
+    /// category or per destination account (the `budget_breakdown`
+    /// widget type). Same transaction pipeline as every other spend
+    /// chart (90-day chunking, spent journals only, account filter,
+    /// exclusion filtering), then only journals charged to a selected
+    /// budget are kept (an empty selection keeps all budgeted spend),
+    /// grouped into one series per `category_name` (fallback
+    /// "Uncategorized") or per `destination_name` (fallback "Unknown
+    /// account"), bucketed by period key and sorted by total desc.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_budget_breakdown_chart(
+        &self,
+        budget_names: Vec<String>,
+        start_date: Option<String>,
+        end_date: Option<String>,
+        period: Option<String>,
+        by: &str,
+        account_ids: Option<Vec<String>>,
+        exclusions: &Exclusions,
+    ) -> Result<ChartLine, String> {
+        let by_mode = if by == "destination" {
+            "destination"
+        } else {
+            "category"
+        };
+        if let Some(cached_json) = self.cache.get_budget_breakdown(
+            &budget_names,
+            start_date.as_deref(),
+            end_date.as_deref(),
+            period.as_deref(),
+            by_mode,
+            account_ids.as_deref(),
+            exclusions,
+        ) {
+            debug!("Cache hit for budget breakdown");
+            return serde_json::from_str(&cached_json)
+                .map_err(|e| format!("Failed to deserialize cached budget breakdown: {}", e));
+        }
+
+        use crate::models::chart::ChartDataSet;
+
+        let end = end_date
+            .clone()
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+        let start = start_date.clone().unwrap_or_else(|| {
+            (Utc::now() - Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+        let period_val = period.clone().unwrap_or_else(|| "1M".to_string());
+
+        let all_transactions = self
+            .fetch_all_transactions(&start, &end, account_ids.as_ref(), None, None)
+            .await?;
+
+        // Flatten transactions into journal entries
+        let mut all_journals: Vec<serde_json::Value> = Vec::new();
+        for tx in &all_transactions {
+            if let Some(trans_arr) = tx
+                .get("attributes")
+                .and_then(|a| a.get("transactions"))
+                .and_then(|t| t.as_array())
+            {
+                for journal in trans_arr {
+                    all_journals.push(journal.clone());
+                }
+            }
+        }
+
+        let selected_ids: std::collections::HashSet<String> = account_ids
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default();
+        let budget_set: std::collections::HashSet<String> = budget_names.iter().cloned().collect();
+
+        // Per series (category or destination account): period-key -> amount
+        let mut series_entries: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, f64>,
+        > = std::collections::HashMap::new();
+        let mut currency_symbol: Option<String> = None;
+        let mut currency_code: Option<String> = None;
+
+        for journal in &all_journals {
+            if !is_journal_spent(journal, &selected_ids) {
+                continue;
+            }
+            if journal_is_excluded(exclusions, journal) {
+                continue;
+            }
+            // Only spend charged to one of the selected budgets is
+            // broken down (an empty selection = all budgeted spend).
+            let journal_budget = journal
+                .get("budget_name")
+                .and_then(|b| b.as_str())
+                .unwrap_or("");
+            if journal_budget.is_empty()
+                || (!budget_set.is_empty() && !budget_set.contains(journal_budget))
+            {
+                continue;
+            }
+            let (Some(amount_str), Some(date)) = (
+                journal.get("amount").and_then(|a| a.as_str()),
+                journal.get("date").and_then(|d| d.as_str()),
+            ) else {
+                continue;
+            };
+            let Ok(amount) = amount_str.parse::<f64>() else {
+                continue;
+            };
+
+            let series_name = if by_mode == "category" {
+                journal
+                    .get("category_name")
+                    .and_then(|c| c.as_str())
+                    .filter(|c| !c.trim().is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "Uncategorized".to_string())
+            } else {
+                journal
+                    .get("destination_name")
+                    .and_then(|d| d.as_str())
+                    .filter(|d| !d.trim().is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "Unknown account".to_string())
+            };
+
+            let period_key = Self::get_period_key(date, &period_val, Some(&end));
+            let entries = series_entries.entry(series_name).or_default();
+            *entries.entry(period_key).or_insert(0.0) += amount;
+
+            if currency_symbol.is_none() {
+                currency_symbol = journal
+                    .get("currency_symbol")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                currency_code = journal
+                    .get("currency_code")
+                    .and_then(|c| c.as_str())
+                    .map(String::from);
+            }
+        }
+
+        // Convert to ChartLine: one ChartDataSet per series
+        let mut chart: Vec<ChartDataSet> = series_entries
+            .into_iter()
+            .map(|(label, entries)| ChartDataSet {
+                label,
+                currency_symbol: currency_symbol.clone(),
+                currency_code: currency_code.clone(),
+                entries: serde_json::to_value(entries).unwrap(),
+            })
+            .collect();
+
+        // Sort by total spend descending. Spend is stored signed (negative
+        // for withdrawals), so compare by absolute total: the costliest
+        // series first.
+        chart.sort_by(|a, b| {
+            let sum_a = Self::sum_entries(&a.entries).abs();
+            let sum_b = Self::sum_entries(&b.entries).abs();
+            sum_b
+                .partial_cmp(&sum_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        debug!(
+            "budget_breakdown ({}): {} series, {} to {}",
+            by_mode,
+            chart.len(),
+            start,
+            end
+        );
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&chart) {
+            self.cache.set_budget_breakdown(
+                &budget_names,
+                start_date.as_deref(),
+                end_date.as_deref(),
+                period.as_deref(),
+                by_mode,
+                account_ids.as_deref(),
                 exclusions,
                 json,
             );

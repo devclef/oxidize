@@ -164,6 +164,7 @@
                 <option value="saved_this_month">Saved This Month</option>
                 <option value="label_spend">Spending by Label</option>
                 <option value="subscription_cost">Subscription Cost</option>
+                <option value="budget_breakdown">Budget Breakdown</option>
             </select>
         </div>
 
@@ -281,6 +282,21 @@
                             <label class="mode-label" title="Also chart spend that matches no label as an 'Unlabeled' series (budgeted spend only)">
                                 <input type="checkbox" id="include-unlabeled-checkbox" checked>
                                 Include Unlabeled
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Budget breakdown options (only shown for budget_breakdown widget type) -->
+                    <div class="toggle-group" id="budget-breakdown-options-group" style="display: none;">
+                        <span class="control-caption">Break down by</span>
+                        <div class="earned-chart-type-selector">
+                            <label class="mode-label" title="One series per category the selected budgets are charged to">
+                                <input type="radio" name="budget-breakdown-by" value="category" checked>
+                                Categories
+                            </label>
+                            <label class="mode-label" title="One series per destination account the selected budgets' spend is charged to">
+                                <input type="radio" name="budget-breakdown-by" value="destination">
+                                Destination accounts
                             </label>
                         </div>
                     </div>
