@@ -963,6 +963,8 @@ async function updateWidgetDateRange(widgetId) {
     if (subGroupsEl) {
         widget.subscription_group_ids = Array.from(subGroupsEl.selectedOptions).map(o => o.value);
     }
+    const subSplitEl = document.getElementById(`${widgetId}-subscription-split`);
+    if (subSplitEl) widget.subscription_split_groups = subSplitEl.checked;
 
     const exclCatsEl = document.getElementById(`${widgetId}-exclude-categories`);
     if (exclCatsEl) {
@@ -2590,6 +2592,8 @@ function buildSubscriptionWidgetParams(widget, effectiveStart, effectiveEnd, all
     if (widget.interval && widget.interval !== 'auto') params.append('period', widget.interval);
     (widget.subscription_ids || []).forEach(id => params.append('subscriptions[]', id));
     (widget.subscription_group_ids || []).forEach(id => params.append('groups[]', id));
+    // Default (falsy/absent): each selected group is charted as one total.
+    params.append('split_groups', widget.subscription_split_groups ? '1' : '0');
     accountIds.forEach(id => params.append('accounts[]', id));
     appendExclusionParams(params, mergeExclusions(dashExclusions, widget));
     return params;
@@ -4212,7 +4216,7 @@ async function renderDashboard() {
                     ${widgetType === 'subscription_cost' ? `
                     <div class="widget-settings-section">
                         <strong>Subscriptions</strong>
-                        <div class="exclusions-hint">Empty selection charts every subscription. Groups include all of their subscriptions.</div>
+                        <div class="exclusions-hint">Empty selection charts every subscription. Each selected group is charted as one total of the whole group.</div>
                         <label>Subscriptions:
                             <select multiple size="5" id="${widget.id}-subscriptions" class="exclusion-select">
                                 ${subscriptionOptions.subscriptions.map(sub => `<option value="${escapeHtml(sub.id)}" ${(widget.subscription_ids || []).includes(sub.id) ? 'selected' : ''}>${escapeHtml(sub.name)}</option>`).join('')}
@@ -4222,6 +4226,10 @@ async function renderDashboard() {
                             <select multiple size="4" id="${widget.id}-subscription-groups" class="exclusion-select">
                                 ${subscriptionOptions.groups.map(g => `<option value="${escapeHtml(g.id)}" ${(widget.subscription_group_ids || []).includes(g.id) ? 'selected' : ''}>${escapeHtml(g.name)} (${g.bill_count})</option>`).join('')}
                             </select>
+                        </label>
+                        <label style="display: flex; gap: 6px; align-items: center;" title="By default each selected group is one series showing the group's total cost; enable to show each subscription in the group as its own series instead.">
+                            <input type="checkbox" id="${widget.id}-subscription-split" ${widget.subscription_split_groups ? 'checked' : ''}>
+                            Split selected groups into individual subscriptions
                         </label>
                     </div>
                     ` : ''}

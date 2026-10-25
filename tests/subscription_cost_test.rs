@@ -367,7 +367,9 @@ mod tests {
         assert_eq!(groups[0].bill_count, 1);
         assert_eq!(groups[0].bill_ids, vec!["8".to_string()]);
 
-        // The spend chart with groups[]=og1 charts Spotify only
+        // The spend chart with groups[]=og1 includes only the group's
+        // bills — and by default the group is charted as one total
+        // labelled with the group name.
         let uri = "/api/subscriptions/spend?start=2026-01-01&end=2026-03-31&period=1M&groups[]=og1";
         let req = awt::TestRequest::get().uri(uri).to_request();
         let resp = awt::call_service(&app, req).await;
@@ -379,8 +381,113 @@ mod tests {
             1,
             "group expansion includes only its bills: {chart}"
         );
+        assert_eq!(datasets[0]["label"], "Streaming");
+        assert_eq!(datasets[0]["entries"]["2026-01-31T00:00:00+00:00"], -14.99);
+
+        // With split_groups=1 the group expands to one dataset per bill.
+        let uri =
+            "/api/subscriptions/spend?start=2026-01-01&end=2026-03-31&period=1M&groups[]=og1&split_groups=1";
+        let req = awt::TestRequest::get().uri(uri).to_request();
+        let resp = awt::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let chart: serde_json::Value = awt::read_body_json(resp).await;
+        let datasets = chart.as_array().unwrap();
+        assert_eq!(datasets.len(), 1, "one bill in the group: {chart}");
         assert_eq!(datasets[0]["label"], "Spotify");
         assert_eq!(datasets[0]["entries"]["2026-01-31T00:00:00+00:00"], -14.99);
+    }
+
+    #[actix_web::test]
+    async fn spend_chart_group_split_toggle() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let config = make_test_config(server.url());
+        let client = web::Data::new(FireflyClient::new(config.clone()));
+        let app = build_app!(config, client);
+
+        client.clear_subscription_cache();
+        mock_tx(&mut server, fixture_txs()).await;
+
+        // One object group containing BOTH subscriptions (bills 7 + 8)
+        server
+            .mock("GET", "/v1/object-groups")
+            .match_query(mockito::Matcher::Regex(r".*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::to_string(&json!({
+                    "data": [{
+                        "type": "object-groups",
+                        "id": "og1",
+                        "attributes": { "title": "Streaming" }
+                    }]
+                }))
+                .unwrap(),
+            )
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v1/object-groups/og1/bills")
+            .match_query(mockito::Matcher::Regex(r".*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::to_string(&json!({
+                    "data": [bill("8", "Spotify"), bill("7", "Netflix")]
+                }))
+                .unwrap(),
+            )
+            .create_async()
+            .await;
+
+        // Default (no split_groups): one dataset per selected group,
+        // labelled with the group name, holding the group's total cost.
+        let uri = "/api/subscriptions/spend?start=2026-01-01&end=2026-03-31&period=1M&groups[]=og1";
+        let req = awt::TestRequest::get().uri(uri).to_request();
+        let resp = awt::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let chart: serde_json::Value = awt::read_body_json(resp).await;
+        let datasets = chart.as_array().unwrap();
+        assert_eq!(datasets.len(), 1, "unsplit group is one total: {chart}");
+        assert_eq!(datasets[0]["label"], "Streaming");
+        // Jan: Netflix -9.99 + Spotify -14.99; Feb: Netflix only; Mar:
+        // Spotify only.
+        assert_eq!(datasets[0]["entries"]["2026-01-31T00:00:00+00:00"], -24.98);
+        assert_eq!(datasets[0]["entries"]["2026-02-28T00:00:00+00:00"], -9.99);
+        assert_eq!(datasets[0]["entries"]["2026-03-31T00:00:00+00:00"], -14.99);
+
+        // split_groups=1: one dataset per bill (previous behavior), sorted
+        // by total desc.
+        let uri =
+            "/api/subscriptions/spend?start=2026-01-01&end=2026-03-31&period=1M&groups[]=og1&split_groups=1";
+        let req = awt::TestRequest::get().uri(uri).to_request();
+        let resp = awt::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let chart: serde_json::Value = awt::read_body_json(resp).await;
+        let labels: Vec<&str> = chart
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, vec!["Spotify", "Netflix"]);
+
+        // A subscription that is both individually selected AND a member
+        // of a selected group merges into the group total when not split.
+        let uri =
+            "/api/subscriptions/spend?start=2026-01-01&end=2026-03-31&period=1M&groups[]=og1&subscriptions[]=7";
+        let req = awt::TestRequest::get().uri(uri).to_request();
+        let resp = awt::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let chart: serde_json::Value = awt::read_body_json(resp).await;
+        let datasets = chart.as_array().unwrap();
+        assert_eq!(
+            datasets.len(),
+            1,
+            "member of a selected group merges into the group total: {chart}"
+        );
+        assert_eq!(datasets[0]["label"], "Streaming");
+        assert_eq!(datasets[0]["entries"]["2026-02-28T00:00:00+00:00"], -9.99);
     }
 
     #[actix_web::test]
@@ -438,6 +545,7 @@ mod tests {
             "widget_type": "subscription_cost",
             "subscription_ids": ["7", "8"],
             "subscription_group_ids": ["og1"],
+            "subscription_split_groups": true,
             "dashboard_ids": ["default"],
             "start_date": "2026-01-01",
             "end_date": "2026-03-31",
@@ -461,12 +569,14 @@ mod tests {
             .expect("widget persisted");
         assert_eq!(got.subscription_ids, vec!["7".to_string(), "8".to_string()]);
         assert_eq!(got.subscription_group_ids, vec!["og1".to_string()]);
+        assert_eq!(got.subscription_split_groups, Some(true));
         assert_eq!(got.widget_type.as_deref(), Some("subscription_cost"));
 
         // Update: change the selections and verify persistence
         let mut updated: Widget = got.clone();
         updated.subscription_ids = vec!["7".to_string()];
         updated.subscription_group_ids = vec![];
+        updated.subscription_split_groups = Some(false);
         Storage::update_widget(&updated).unwrap();
         let all = Storage::get_all_widgets().unwrap();
         let got = all
@@ -475,6 +585,7 @@ mod tests {
             .expect("widget persisted");
         assert_eq!(got.subscription_ids, vec!["7".to_string()]);
         assert!(got.subscription_group_ids.is_empty());
+        assert_eq!(got.subscription_split_groups, Some(false));
 
         // Cleanup
         let _ = Storage::delete_widget("sub-widget-test-1");

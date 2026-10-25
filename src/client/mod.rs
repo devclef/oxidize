@@ -3456,6 +3456,11 @@ impl FireflyClient {
     /// every subscription. Journals are filtered to "spent" entries
     /// (withdrawals + outbound transfers) and bucketed per period, matching
     /// the other spend charts.
+    ///
+    /// `split_groups` (default off): when off, the bills of each selected
+    /// object group are collapsed into a single series labelled with the
+    /// group name (the group's total cost); when on, each bill gets its own
+    /// series as before.
     #[allow(clippy::too_many_arguments)]
     pub async fn get_subscription_spend_chart(
         &self,
@@ -3466,6 +3471,7 @@ impl FireflyClient {
         period: Option<String>,
         account_ids: Option<Vec<String>>,
         exclusions: &Exclusions,
+        split_groups: bool,
     ) -> Result<ChartLine, String> {
         use crate::models::chart::ChartDataSet;
 
@@ -3495,6 +3501,7 @@ impl FireflyClient {
             period.as_deref(),
             account_ids.as_deref(),
             exclusions,
+            split_groups,
         ) {
             debug!("Cache hit for subscription spend");
             return serde_json::from_str(&cached_json)
@@ -3502,20 +3509,27 @@ impl FireflyClient {
         }
 
         // Expand object groups into bill ids (+ names for the name-based
-        // fallback match)
+        // fallback match). The selected groups are kept for the
+        // group-total aggregation below.
         let mut selected_ids: std::collections::HashSet<String> =
             subscription_ids.iter().cloned().collect();
         let mut selected_names: std::collections::HashSet<String> =
             std::collections::HashSet::new();
-        if !group_ids.is_empty() {
-            let groups = self.get_subscription_groups().await?;
-            for g in groups.iter().filter(|g| group_ids.contains(&g.id)) {
-                for bid in &g.bill_ids {
-                    selected_ids.insert(bid.clone());
-                }
-                for name in &g.bills {
-                    selected_names.insert(name.clone());
-                }
+        let selected_groups: Vec<crate::models::SubscriptionGroup> = if group_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.get_subscription_groups()
+                .await?
+                .into_iter()
+                .filter(|g| group_ids.contains(&g.id))
+                .collect()
+        };
+        for g in &selected_groups {
+            for bid in &g.bill_ids {
+                selected_ids.insert(bid.clone());
+            }
+            for name in &g.bills {
+                selected_names.insert(name.clone());
             }
         }
         let has_selection = !selected_ids.is_empty() || !selected_names.is_empty();
@@ -3623,7 +3637,52 @@ impl FireflyClient {
             }
         }
 
-        let mut chart: Vec<ChartDataSet> = per_subscription
+        // When groups are not split (default), collapse the bills of each
+        // selected object group into one series labelled with the group
+        // name — the group's entire cost per period. Bills not belonging
+        // to a selected group (e.g. individually selected subscriptions)
+        // keep their own series.
+        let series = if !split_groups && !selected_groups.is_empty() {
+            let mut group_of_key: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            for g in &selected_groups {
+                for bid in &g.bill_ids {
+                    group_of_key.insert(format!("id:{bid}"), g.name.clone());
+                }
+                // Name-based membership is best-effort: the group listing
+                // only carries the first 20 bill names.
+                for name in &g.bills {
+                    group_of_key.insert(format!("name:{name}"), g.name.clone());
+                }
+            }
+            let mut merged: std::collections::BTreeMap<
+                String,
+                (String, std::collections::HashMap<String, f64>),
+            > = std::collections::BTreeMap::new();
+            for (key, (label, entries)) in per_subscription {
+                match group_of_key.get(&key) {
+                    Some(group_label) => {
+                        let entry =
+                            merged
+                                .entry(format!("group:{group_label}"))
+                                .or_insert_with(|| {
+                                    (group_label.clone(), std::collections::HashMap::new())
+                                });
+                        for (period_key, amount) in entries {
+                            *entry.1.entry(period_key).or_insert(0.0) += amount;
+                        }
+                    }
+                    None => {
+                        merged.insert(key, (label, entries));
+                    }
+                }
+            }
+            merged
+        } else {
+            per_subscription
+        };
+
+        let mut chart: Vec<ChartDataSet> = series
             .into_values()
             .map(|(label, entries)| ChartDataSet {
                 label,
@@ -3653,6 +3712,7 @@ impl FireflyClient {
                 period.as_deref(),
                 account_ids.as_deref(),
                 exclusions,
+                split_groups,
                 json,
             );
         }

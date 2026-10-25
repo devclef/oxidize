@@ -78,6 +78,12 @@ pub struct Widget {
     /// included in the widget.
     #[serde(default)]
     pub subscription_group_ids: Vec<String>,
+    /// Subscription cost widgets: whether selected subscription groups are
+    /// split into one series per subscription. `None` (widgets saved before
+    /// this field existed) means groups are charted as one total each.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_split_groups: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -347,6 +353,40 @@ mod tests {
             .map(|v| v.as_str().unwrap())
             .collect();
         assert_eq!(groups, vec!["3"]);
+    }
+
+    #[test]
+    fn widget_legacy_json_defaults_subscription_split_groups() {
+        // Widgets saved before the split flag existed must still
+        // deserialize with the field absent (rendered as "not split").
+        let json = r#"{
+            "id": "w1",
+            "name": "Test",
+            "accounts": [],
+            "widget_type": "subscription_cost"
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.subscription_split_groups, None);
+
+        let out = serde_json::to_value(&widget).unwrap();
+        assert!(out.get("subscription_split_groups").is_none());
+    }
+
+    #[test]
+    fn widget_subscription_split_groups_round_trips() {
+        let json = r#"{
+            "id": "w2",
+            "name": "Subs",
+            "accounts": [],
+            "widget_type": "subscription_cost",
+            "subscription_group_ids": ["3"],
+            "subscription_split_groups": true
+        }"#;
+        let widget: Widget = serde_json::from_str(json).unwrap();
+        assert_eq!(widget.subscription_split_groups, Some(true));
+
+        let out = serde_json::to_value(&widget).unwrap();
+        assert_eq!(out["subscription_split_groups"].as_bool(), Some(true));
     }
 
     #[test]

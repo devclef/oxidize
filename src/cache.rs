@@ -784,6 +784,7 @@ impl DataCache {
         period: Option<&str>,
         account_ids: Option<&[String]>,
         exclusions: &Exclusions,
+        split_groups: bool,
     ) -> String {
         let start = start_date.unwrap_or("default");
         let end = end_date.unwrap_or("default");
@@ -794,8 +795,9 @@ impl DataCache {
             Some(ids) => ids.join(","),
             None => "all".to_string(),
         };
+        let split = if split_groups { "split" } else { "grouped" };
         format!(
-            "v{}:subscription_spend:{}:{}:{}:{}:{}:{}:{}",
+            "v{}:subscription_spend:{}:{}:{}:{}:{}:{}:{}:{}",
             CACHE_VERSION,
             subs,
             groups,
@@ -803,7 +805,8 @@ impl DataCache {
             end,
             period,
             accounts,
-            exclusions.cache_key()
+            exclusions.cache_key(),
+            split
         )
     }
 
@@ -817,6 +820,7 @@ impl DataCache {
         period: Option<&str>,
         account_ids: Option<&[String]>,
         exclusions: &Exclusions,
+        split_groups: bool,
     ) -> Option<String> {
         let key = Self::subscription_spend_key(
             subscription_ids,
@@ -826,6 +830,7 @@ impl DataCache {
             period,
             account_ids,
             exclusions,
+            split_groups,
         );
         Self::get_tiered(&self.subscription_spend, &key)
     }
@@ -840,6 +845,7 @@ impl DataCache {
         period: Option<&str>,
         account_ids: Option<&[String]>,
         exclusions: &Exclusions,
+        split_groups: bool,
         data: String,
     ) {
         let key = Self::subscription_spend_key(
@@ -850,6 +856,7 @@ impl DataCache {
             period,
             account_ids,
             exclusions,
+            split_groups,
         );
         Self::set_tiered(&self.subscription_spend, &key, &data, self.current_ttl());
     }

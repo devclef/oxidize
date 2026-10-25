@@ -66,7 +66,25 @@ describe('buildSubscriptionSpendParams (GET /api/subscriptions/spend)', () => {
 
     it('tolerates missing option lists (undefined)', () => {
         const params = window.buildSubscriptionSpendParams({});
-        expect(params.toString()).toBe('');
+        // Only the split flag is always present (default: groups not split)
+        expect(params.toString()).toBe('split_groups=0');
+    });
+
+    it('appends split_groups=0 by default and 1 when splitting groups', () => {
+        const base = {
+            startDate: '2026-01-01',
+            endDate: '2026-03-31',
+            interval: '1M',
+            subscriptionIds: ['7'],
+            groupIds: ['og1'],
+            accountIds: [],
+            excludedCategories: [],
+            excludedBudgets: []
+        };
+        const def = window.buildSubscriptionSpendParams(base);
+        expect(def.get('split_groups')).toBe('0');
+        const split = window.buildSubscriptionSpendParams({ ...base, splitGroups: true });
+        expect(split.get('split_groups')).toBe('1');
     });
 
     it('repeats repeatable params for multiple subscriptions/groups', () => {
@@ -91,5 +109,10 @@ describe('index.html wiring', () => {
         expect(indexHtml).toContain('id="subscription-search-input"');
         expect(indexHtml).toContain('id="select-all-subscriptions-btn"');
         expect(indexHtml).toContain('id="deselect-all-subscriptions-btn"');
+    });
+
+    it('offers the split-groups display toggle', () => {
+        expect(indexHtml).toContain('id="subscription-split-checkbox"');
+        expect(indexHtml).toContain('Split selected groups into individual subscriptions');
     });
 });

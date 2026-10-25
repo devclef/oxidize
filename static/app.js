@@ -662,7 +662,8 @@ async function fetchChartData() {
                 groupIds: selectedGroupIds,
                 accountIds: selectedIds,
                 excludedCategories: getExcludedCategories(),
-                excludedBudgets: getExcludedBudgets()
+                excludedBudgets: getExcludedBudgets(),
+                splitGroups: document.getElementById('subscription-split-checkbox')?.checked ?? false
             });
 
             const url = `/api/subscriptions/spend?${params.toString()}`;
@@ -1796,16 +1797,19 @@ let subscriptionSearchFilter = '';
 /**
  * Query params for GET /api/subscriptions/spend (pure, testable).
  * Empty subscriptionIds/groupIds mean "no filter" (all subscriptions);
- * interval "auto" is omitted.
+ * interval "auto" is omitted. splitGroups falsy = each selected group is
+ * charted as one total.
  */
 function buildSubscriptionSpendParams({ startDate, endDate, interval,
-    subscriptionIds, groupIds, accountIds, excludedCategories, excludedBudgets }) {
+    subscriptionIds, groupIds, accountIds, excludedCategories, excludedBudgets,
+    splitGroups }) {
     const params = new URLSearchParams();
     if (startDate) params.append('start', startDate);
     if (endDate) params.append('end', endDate);
     if (interval && interval !== 'auto') params.append('period', interval);
     (subscriptionIds || []).forEach(id => params.append('subscriptions[]', id));
     (groupIds || []).forEach(id => params.append('groups[]', id));
+    params.append('split_groups', splitGroups ? '1' : '0');
     (accountIds || []).forEach(id => params.append('accounts[]', id));
     (excludedCategories || []).forEach(c => params.append('exclude_categories[]', c));
     (excludedBudgets || []).forEach(b => params.append('exclude_budgets[]', b));
@@ -3897,6 +3901,9 @@ async function saveGraphAsWidget() {
         subscription_group_ids: widgetType === 'subscription_cost'
             ? Array.from(document.querySelectorAll('.subscription-group-select:checked')).map(cb => cb.value)
             : [],
+        subscription_split_groups: widgetType === 'subscription_cost'
+            ? (document.getElementById('subscription-split-checkbox')?.checked ?? false)
+            : null,
         start_date: startDate || null,
         end_date: endDate || null,
         interval: interval || null,

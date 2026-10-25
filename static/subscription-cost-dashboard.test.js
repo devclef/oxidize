@@ -96,6 +96,26 @@ describe('buildSubscriptionWidgetParams (GET /api/subscriptions/spend)', () => {
         expect(params.getAll('groups[]')).toEqual([]);
         expect(params.getAll('accounts[]')).toEqual(['acc-5']);
     });
+
+    it('appends split_groups=0 by default and 1 when the widget splits groups', () => {
+        const widget = {
+            accounts: [],
+            group_ids: [],
+            subscription_ids: [],
+            subscription_group_ids: ['og1'],
+            interval: '1M'
+        };
+        const def = window.buildSubscriptionWidgetParams(
+            widget, '2026-01-01', '2026-03-31', allGroups, null
+        );
+        expect(def.get('split_groups')).toBe('0');
+
+        widget.subscription_split_groups = true;
+        const split = window.buildSubscriptionWidgetParams(
+            widget, '2026-01-01', '2026-03-31', allGroups, null
+        );
+        expect(split.get('split_groups')).toBe('1');
+    });
 });
 
 describe('dashboard.js wiring', () => {
@@ -116,6 +136,12 @@ describe('dashboard.js wiring', () => {
     it('persists the selections on update', () => {
         expect(dashboardSource).toContain('widget.subscription_ids = Array.from(subsEl.selectedOptions).map(o => o.value);');
         expect(dashboardSource).toContain('widget.subscription_group_ids = Array.from(subGroupsEl.selectedOptions).map(o => o.value);');
+    });
+
+    it('offers a split-groups toggle in the widget settings and persists it', () => {
+        expect(dashboardSource).toContain('id="${widget.id}-subscription-split"');
+        expect(dashboardSource).toContain('Split selected groups into individual subscriptions');
+        expect(dashboardSource).toContain('widget.subscription_split_groups = subSplitEl.checked;');
     });
 
     it('supports stacking and exclusions for subscription_cost', () => {

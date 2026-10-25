@@ -155,17 +155,21 @@ time:
 - `GET /api/subscriptions/groups` — object groups with ≥1 subscription
   (bill ids for selection expansion + names for display; TTL-cached).
 - `GET /api/subscriptions/spend?start&end&period&subscriptions[]&groups[]
-  &accounts[]&exclude_categories[]&exclude_budgets[]` — standard
-  `ChartLine`, one dataset per subscription sorted by total desc, built
-  from the shared transaction pipeline (`fetch_all_transactions` +
-  `is_journal_spent` + exclusion filtering). Empty subscription + group
-  selections mean **all subscriptions**.
+  &accounts[]&exclude_categories[]&exclude_budgets[]&split_groups` —
+  standard `ChartLine`, one dataset per subscription sorted by total
+  desc, built from the shared transaction pipeline
+  (`fetch_all_transactions` + `is_journal_spent` + exclusion filtering).
+  Empty subscription + group selections mean **all subscriptions**.
+  `split_groups` (default off): when off, the bills of each selected
+  group collapse into a single series labelled with the group name (the
+  group's total cost); when on, each bill gets its own series.
 
 The widget stores `subscription_ids` and `subscription_group_ids`
-(empty + empty = all), reuses `accounts`/`group_ids` (optional account
-filter), `interval`, `chart_type` (line/pie), exclusions and stacking.
-Widget settings on the dashboard page expose subscription/group
-multi-selects. Without subscriptions (or spend in the range) widgets show
+(empty + empty = all) plus `subscription_split_groups` (default: groups
+are charted as one total each), reuses `accounts`/`group_ids` (optional
+account filter), `interval`, `chart_type` (line/pie), exclusions and
+stacking. Widget settings on the dashboard page expose subscription/group
+multi-selects and a split toggle. Without subscriptions (or spend in the range) widgets show
 a friendly message instead of a chart.
 
 ### Source Code Layout
