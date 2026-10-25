@@ -809,22 +809,14 @@ function updateWidgetChartsTheme(theme) {
 
     Object.values(widgetCharts).forEach(chart => {
         if (!chart) return;
-        if (chart.options && chart.options.scales) {
-            chart.options.scales.x.grid = { color: gridColor };
-            chart.options.scales.x.ticks = { color: textColor };
-            chart.options.scales.y.grid = { color: gridColor };
-            chart.options.scales.y.ticks = { color: textColor };
-            chart.update('none');
-        }
-        // Pie charts have no scales; re-color slices and legend for the new theme
-        if (chart.config && chart.config.type === 'pie') {
-            const colors = getPiePalette();
-            const n = chart.data.labels.length;
-            chart.data.datasets[0].backgroundColor = colors.slice(0, n).map(c => c + 'cc');
-            chart.data.datasets[0].borderColor = colors.slice(0, n);
-            if (chart.options.plugins && chart.options.plugins.legend) {
-                chart.options.plugins.legend.labels = { color: textColor, padding: 12 };
-            }
+        // Pie charts have no scales; rebuild their styling for the new theme
+        if (OxiUI.restylePieChart(chart)) return;
+        const scales = chart.options && chart.options.scales;
+        if (scales && scales.x && scales.y) {
+            scales.x.grid = { color: gridColor };
+            scales.x.ticks = { color: textColor };
+            scales.y.grid = { color: gridColor };
+            scales.y.ticks = { color: textColor };
             chart.update('none');
         }
     });
@@ -1614,63 +1606,12 @@ function filterChartLineByNames(chartLine, budgetNames) {
     return chartLine.filter(ds => nameSet.has(ds.label));
 }
 
-function getPiePalette() {
-    return seriesPalette();
-}
-
 // Render a pie chart for widget data
-function renderPieChartWidget(ctx, widget, labels, data, colors = null) {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = chartColors().textColor;
-
-    const palette = getPiePalette();
-
-    // Sort slices largest-first so the pie chart reads clockwise from biggest to
-    // smallest (explicit per-slice colors, e.g. label colors, follow their slice)
-    const indexed = labels.map((label, i) => ({ label, value: data[i], color: (colors && colors[i]) || null }));
-    indexed.sort((a, b) => b.value - a.value);
-    labels = indexed.map(item => item.label);
-    data = indexed.map(item => item.value);
-    const sliceColors = indexed.map((item, i) => item.color || palette[i % palette.length]);
-
+function renderPieChartWidget(ctx, widget, labels, data, colors = null, pieOpts = {}) {
     if (widgetCharts[widget.id]) {
         widgetCharts[widget.id].destroy();
     }
-
-    widgetCharts[widget.id] = new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: sliceColors.slice(0, labels.length).map(c => c + 'cc'),
-                borderColor: sliceColors.slice(0, labels.length),
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'bottom',
-                    labels: { color: chartTextColor, padding: 12 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const raw = context.parsed?.value ?? context.raw ?? 0;
-                            const value = typeof raw === 'number' && !isNaN(raw) ? Math.abs(raw) : 0;
-                            const total = context.dataset.data.reduce((s, v) => s + (typeof v === 'number' && !isNaN(v) ? Math.abs(v) : 0), 0);
-                            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-                            return context.label + ': ' + value.toLocaleString() + ' (' + pct + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
+    widgetCharts[widget.id] = OxiUI.createPieChart(ctx, labels, data, Object.assign({ colors }, pieOpts));
 }
 
 async function refreshWidget(widgetId) {
@@ -2944,7 +2885,7 @@ async function renderWidgetChart(widget, canvasId, allAccounts, allGroups = []) 
                     const vals = extractChartData(spentDataset.entries, labels);
                     spentTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
                 }
-                renderPieChartWidget(ctx, widget, ['Earned', 'Spent'], [earnedTotal, spentTotal]);
+                renderPieChartWidget(ctx, widget, ['Earned', 'Spent'], [earnedTotal, spentTotal], ['earned', 'spent'], { showTotal: false });
             } else {
                 const earnedChartType = widget.earned_chart_type || 'bars';
                 await renderEarnedSpentChart(ctx, widget, labels, history, canvasId, earnedChartType);

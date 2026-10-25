@@ -9,6 +9,8 @@
  *  - OxiUI.getChartColors()          theme-aware chart colors
  *  - OxiUI.getSeriesPalette()        ordered categorical series colors
  *  - OxiUI.chartGridPlugin           hides grid lines inside [data-grid="off"]
+ *  - OxiUI.pieChartConfig(l, d, o)  shared doughnut config (folds the tail)
+ *  - OxiUI.createPieChart / restylePieChart  build it / re-theme it
  *  - OxiUI.spinnerHtml(label)        inline loading spinner
  *  - OxiUI.movingAverage(v, w)      trailing moving average (null-safe)
  *  - OxiUI.trendlineDataset(...)    dotted moving-average dataset
@@ -280,6 +282,8 @@
             tooltipBg: '#ffffff',
             tooltipBorder: '#e2e8f0',
             tooltipText: '#1e293b',
+            surface: '#ffffff',
+            headingColor: '#0f172a',
             accent: '#0f766e',
             earned: '#15803d',
             spent: '#dc2626',
@@ -293,6 +297,8 @@
             tooltipBg: '#212a33',
             tooltipBorder: 'rgba(148, 163, 184, 0.22)',
             tooltipText: '#d3dbe4',
+            surface: '#1a2129',
+            headingColor: '#e9eef3',
             accent: '#4fb8aa',
             earned: '#5cc98a',
             spent: '#ef8a8a',
@@ -337,6 +343,194 @@
     function getSeriesPalette() {
         const c = getChartColors();
         return c.series.concat(c.seriesExtra);
+    }
+
+    // ── Pie / doughnut charts ───────────────────────────────────────────
+    // Shared config for every part-to-whole chart: a doughnut (far less
+    // solid color than a pie) with the total in the hole, slices separated
+    // by a surface-colored gap, slice colors softened toward the surface in
+    // dark mode, and the long tail folded into one neutral "Other" slice.
+    const PIE_MAX_SLICES = 8;
+
+    // Blend '#rrggbb' toward another '#rrggbb' by t (0..1).
+    function mixHex(color, toward, t) {
+        const parse = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+        if (!/^#[0-9a-f]{6}$/i.test(color) || !/^#[0-9a-f]{6}$/i.test(toward)) return color;
+        const a = parse(color);
+        const b = parse(toward);
+        return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+    }
+
+    // Sort slices largest-first and fold everything past the cap into
+    // "Other". Explicit per-slice colors follow their slice.
+    function pieSlices(labels, data, colors, maxSlices) {
+        const cap = maxSlices || PIE_MAX_SLICES;
+        const items = (labels || []).map((label, i) => {
+            const raw = Number(data && data[i]);
+            return {
+                label: label,
+                value: isFinite(raw) ? Math.abs(raw) : 0,
+                color: (colors && colors[i]) || null
+            };
+        }).filter((item) => item.value > 0);
+        items.sort((a, b) => b.value - a.value);
+        if (items.length <= cap) return items;
+        const kept = items.slice(0, cap - 1);
+        const rest = items.slice(cap - 1);
+        kept.push({
+            label: 'Other',
+            value: rest.reduce((sum, item) => sum + item.value, 0),
+            color: null,
+            isOther: true,
+            members: rest.map((item) => item.label)
+        });
+        return kept;
+    }
+
+    const pieCenterTotalPlugin = {
+        id: 'oxiPieCenterTotal',
+        // `format` is a plain function, not a Chart.js scriptable option.
+        descriptors: { _scriptable: false, _indexable: false },
+        afterDraw(chart) {
+            const opts = chart.options.plugins && chart.options.plugins.oxiPieCenterTotal;
+            if (!opts || !opts.display) return;
+            const meta = chart.getDatasetMeta(0);
+            const arc = meta && meta.data && meta.data[0];
+            if (!arc || !arc.innerRadius || arc.innerRadius < 28) return;
+            const visibleTotal = chart.data.datasets[0].data.reduce((sum, v, i) =>
+                sum + (chart.getDataVisibility(i) ? (Number(v) || 0) : 0), 0);
+            const ctx = chart.ctx;
+            const x = arc.x;
+            const y = arc.y;
+            const valueSize = Math.max(12, Math.min(22, Math.round(arc.innerRadius / 3.2)));
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = opts.labelColor;
+            ctx.font = '500 ' + Math.max(10, Math.round(valueSize * 0.55)) + 'px ' + Chart.defaults.font.family;
+            ctx.fillText(opts.label || 'Total', x, y - valueSize * 0.62);
+            ctx.fillStyle = opts.valueColor;
+            ctx.font = '650 ' + valueSize + 'px ' + Chart.defaults.font.family;
+            ctx.fillText(opts.format(visibleTotal), x, y + valueSize * 0.35);
+            ctx.restore();
+        }
+    };
+
+    if (typeof Chart !== 'undefined' && typeof Chart.register === 'function') {
+        Chart.register(pieCenterTotalPlugin);
+    }
+
+    /**
+     * Chart.js config for a part-to-whole chart.
+     * opts: { colors?: per-slice colors ('#rrggbb' or a getChartColors()
+     *         key such as 'earned'), format?: (n) => string,
+     *         maxSlices?: number, centerLabel?: string,
+     *         tooltipLabel?: (context) => string,
+     *         showTotal?: false to leave the hole empty when a sum of the
+     *         slices is meaningless (e.g. earned vs spent) }
+     */
+    function pieChartConfig(labels, data, opts) {
+        opts = opts || {};
+        const c = getChartColors();
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const palette = c.series.concat(c.seriesExtra);
+        const format = opts.format || ((v) => formatCurrency(v));
+        const slices = pieSlices(labels, data, opts.colors, opts.maxSlices);
+        let paletteIndex = 0;
+        const sliceColors = slices.map((slice) => {
+            // A slice color may name a theme color ('earned', 'spent', ...)
+            // so it follows light/dark switches.
+            const named = slice.color && typeof c[slice.color] === 'string' ? c[slice.color] : slice.color;
+            const base = slice.isOther ? c.neutral : (named || palette[paletteIndex++ % palette.length]);
+            return isDark ? mixHex(base, c.surface, 0.18) : base;
+        });
+        const total = slices.reduce((sum, s) => sum + s.value, 0);
+
+        return {
+            type: 'doughnut',
+            data: {
+                labels: slices.map((s) => s.label),
+                datasets: [{
+                    data: slices.map((s) => s.value),
+                    backgroundColor: sliceColors,
+                    hoverBackgroundColor: sliceColors,
+                    borderColor: c.surface,
+                    hoverBorderColor: c.surface,
+                    borderWidth: 2,
+                    hoverOffset: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '62%',
+                layout: { padding: 6 },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: c.textColor,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            boxWidth: 8,
+                            boxHeight: 8,
+                            padding: 14,
+                            font: { size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: c.tooltipBg,
+                        borderColor: c.tooltipBorder,
+                        borderWidth: 1,
+                        titleColor: c.tooltipText,
+                        bodyColor: c.tooltipText,
+                        usePointStyle: true,
+                        callbacks: {
+                            label: opts.tooltipLabel || ((context) => {
+                                const value = Number(context.parsed) || 0;
+                                const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                                return ' ' + context.label + ': ' + format(value) + ' (' + pct + '%)';
+                            }),
+                            afterLabel: (context) => {
+                                const slice = slices[context.dataIndex];
+                                if (!slice || !slice.isOther) return '';
+                                const names = slice.members.slice(0, 6).join(', ');
+                                const more = slice.members.length > 6 ? ' +' + (slice.members.length - 6) + ' more' : '';
+                                return '   ' + names + more;
+                            }
+                        }
+                    },
+                    oxiPieCenterTotal: {
+                        display: opts.showTotal !== false,
+                        label: opts.centerLabel || 'Total',
+                        format: format,
+                        labelColor: c.textColor,
+                        valueColor: c.headingColor
+                    }
+                }
+            }
+        };
+    }
+
+    function createPieChart(ctx, labels, data, opts) {
+        const chart = new Chart(ctx, pieChartConfig(labels, data, opts));
+        chart.$oxiPie = { labels: labels, data: data, opts: opts || {} };
+        return chart;
+    }
+
+    // Re-apply the shared doughnut styling (e.g. after a theme switch).
+    function restylePieChart(chart) {
+        if (!chart || !chart.$oxiPie) return false;
+        const src = chart.$oxiPie;
+        const config = pieChartConfig(src.labels, src.data, src.opts);
+        chart.data.labels = config.data.labels;
+        Object.assign(chart.data.datasets[0], config.data.datasets[0]);
+        chart.options.plugins.legend.labels = config.options.plugins.legend.labels;
+        chart.options.plugins.tooltip = config.options.plugins.tooltip;
+        chart.options.plugins.oxiPieCenterTotal = config.options.plugins.oxiPieCenterTotal;
+        chart.update('none');
+        return true;
     }
 
     // ── Loading spinner ─────────────────────────────────────────────────
@@ -524,6 +718,11 @@
         getChartColors: getChartColors,
         getSeriesPalette: getSeriesPalette,
         chartGridPlugin: chartGridPlugin,
+        pieChartConfig: pieChartConfig,
+        createPieChart: createPieChart,
+        restylePieChart: restylePieChart,
+        pieSlices: pieSlices,
+        mixHex: mixHex,
         spinnerHtml: spinnerHtml,
         movingAverage: movingAverage,
         trendlineDataset: trendlineDataset,

@@ -165,18 +165,8 @@ function updateChartTheme(theme) {
 
     if (!balanceChart) return;
 
-    // Pie charts have no scales; re-color slices and legend for the new theme
-    if (balanceChart.config && balanceChart.config.type === 'pie') {
-        const colors = getPiePalette();
-        const n = balanceChart.data.labels.length;
-        balanceChart.data.datasets[0].backgroundColor = colors.slice(0, n).map(c => c + 'cc');
-        balanceChart.data.datasets[0].borderColor = colors.slice(0, n);
-        if (balanceChart.options.plugins && balanceChart.options.plugins.legend) {
-            balanceChart.options.plugins.legend.labels = { color: textColor, padding: 12 };
-        }
-        balanceChart.update('none');
-        return;
-    }
+    // Pie charts have no scales; rebuild their styling for the new theme
+    if (OxiUI.restylePieChart(balanceChart)) return;
 
     if (balanceChart.options && balanceChart.options.scales) {
         const scales = balanceChart.options.scales;
@@ -2421,61 +2411,11 @@ function getChartType() {
     return document.querySelector('input[name="chart-type"]:checked')?.value || 'line';
 }
 
-function getPiePalette() {
-    return seriesPalette();
-}
-
-function renderPieChart(ctx, labels, data, colors = null) {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const chartTextColor = chartColors().textColor;
-
-    const palette = getPiePalette();
-
-    // Sort slices largest-first so the pie chart reads clockwise from biggest to
-    // smallest (explicit per-slice colors, e.g. label colors, follow their slice)
-    const indexed = labels.map((label, i) => ({ label, value: data[i], color: (colors && colors[i]) || null }));
-    indexed.sort((a, b) => b.value - a.value);
-    labels = indexed.map(item => item.label);
-    data = indexed.map(item => item.value);
-    const sliceColors = indexed.map((item, i) => item.color || palette[i % palette.length]);
-
+function renderPieChart(ctx, labels, data, colors = null, pieOpts = {}) {
     if (balanceChart) {
         balanceChart.destroy();
     }
-
-    balanceChart = new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: sliceColors.slice(0, labels.length).map(c => c + 'cc'),
-                borderColor: sliceColors.slice(0, labels.length),
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'bottom',
-                    labels: { color: chartTextColor, padding: 12 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const value = context.parsed.value;
-                            const total = context.dataset.data.reduce((a, b) => a + Math.abs(b), 0);
-                            const pct = total > 0 ? ((Math.abs(value) / total) * 100).toFixed(1) : 0;
-                            return context.label + ': ' + Math.abs(value).toLocaleString() + ' (' + pct + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
+    balanceChart = OxiUI.createPieChart(ctx, labels, data, Object.assign({ colors }, pieOpts));
 }
 
 function renderCardPaydownPreview(ctx, data) {
@@ -2703,7 +2643,7 @@ function renderChart(history, widgetType = 'balance', cardPaydownData = null, la
                 const vals = extractChartData(spentDataset.entries);
                 spentTotal = vals.reduce((a, v) => a + Math.abs(v), 0);
             }
-            renderPieChart(ctx, ['Earned', 'Spent'], [earnedTotal, spentTotal]);
+            renderPieChart(ctx, ['Earned', 'Spent'], [earnedTotal, spentTotal], ['earned', 'spent'], { showTotal: false });
         } else {
             renderEarnedSpentChart(ctx, history, earnedChartType);
         }

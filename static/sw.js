@@ -5,7 +5,7 @@ if (new URL(self.registration.scope).pathname !== '/') {
   self.registration.unregister();
 }
 
-const CACHE_NAME = 'oxidize-cache-v25';
+const CACHE_NAME = 'oxidize-cache-v26';
 // The summary-utils.js entry carries the same ?v= as the script tag in
 // summary.html so the precached copy matches what the page requests.
 // Icons and the web app manifest are precached so installability and the

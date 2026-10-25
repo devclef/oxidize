@@ -412,6 +412,86 @@ describe('OxiUI.chartGridPlugin (per-chart grid lines)', () => {
     });
 });
 
+describe('pie / doughnut charts', () => {
+    afterEach(() => {
+        document.documentElement.removeAttribute('data-theme');
+    });
+
+    it('sorts slices largest-first, drops empty ones and uses absolute values', () => {
+        const slices = OxiUI.pieSlices(['a', 'b', 'c', 'd'], [10, -50, 0, 20]);
+        expect(slices.map(s => s.label)).toEqual(['b', 'd', 'a']);
+        expect(slices.map(s => s.value)).toEqual([50, 20, 10]);
+    });
+
+    it('folds the tail past the cap into one "Other" slice', () => {
+        const labels = ['a', 'b', 'c', 'd', 'e'];
+        const slices = OxiUI.pieSlices(labels, [50, 40, 30, 20, 10], null, 3);
+        expect(slices.map(s => s.label)).toEqual(['a', 'b', 'Other']);
+        expect(slices[2].value).toBe(60);
+        expect(slices[2].members).toEqual(['c', 'd', 'e']);
+    });
+
+    it('keeps explicit per-slice colors with their slice after sorting', () => {
+        const slices = OxiUI.pieSlices(['Earned', 'Spent'], [100, 300], ['#00aa00', '#aa0000']);
+        expect(slices.map(s => [s.label, s.color])).toEqual([['Spent', '#aa0000'], ['Earned', '#00aa00']]);
+    });
+
+    it('mixHex blends colors and passes non-hex values through', () => {
+        expect(OxiUI.mixHex('#000000', '#ffffff', 0.5)).toBe('#808080');
+        expect(OxiUI.mixHex('#123456', '#ffffff', 0)).toBe('#123456');
+        expect(OxiUI.mixHex('rgb(1,2,3)', '#ffffff', 0.5)).toBe('rgb(1,2,3)');
+    });
+
+    it('builds a doughnut with surface-colored slice gaps and a neutral "Other"', () => {
+        const labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+        const data = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+        const config = OxiUI.pieChartConfig(labels, data);
+        const c = OxiUI.getChartColors();
+        const ds = config.data.datasets[0];
+        expect(config.type).toBe('doughnut');
+        expect(config.options.cutout).toBe('62%');
+        expect(config.data.labels).toHaveLength(8);
+        expect(config.data.labels[7]).toBe('Other');
+        expect(ds.borderColor).toBe(c.surface);
+        expect(ds.backgroundColor.slice(0, 7)).toEqual(c.series.slice(0, 7));
+        expect(ds.backgroundColor[7]).toBe(c.neutral);
+        expect(config.options.plugins.legend.labels.usePointStyle).toBe(true);
+        expect(config.options.plugins.oxiPieCenterTotal.display).toBe(true);
+    });
+
+    it('can leave the center empty when a total is meaningless', () => {
+        expect(OxiUI.pieChartConfig(['a'], [1]).options.plugins.oxiPieCenterTotal.display).toBe(true);
+        expect(OxiUI.pieChartConfig(['a'], [1], { showTotal: false }).options.plugins.oxiPieCenterTotal.display).toBe(false);
+    });
+
+    it('resolves named theme colors per theme', () => {
+        const light = OxiUI.pieChartConfig(['Earned', 'Spent'], [2, 1], { colors: ['earned', 'spent'] });
+        expect(light.data.datasets[0].backgroundColor).toEqual([OxiUI.getChartColors().earned, OxiUI.getChartColors().spent]);
+        document.documentElement.setAttribute('data-theme', 'dark');
+        const c = OxiUI.getChartColors();
+        const dark = OxiUI.pieChartConfig(['Earned', 'Spent'], [2, 1], { colors: ['earned', 'spent'] });
+        expect(dark.data.datasets[0].backgroundColor).toEqual([OxiUI.mixHex(c.earned, c.surface, 0.18), OxiUI.mixHex(c.spent, c.surface, 0.18)]);
+    });
+
+    it('softens slice colors toward the surface in dark mode', () => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        const c = OxiUI.getChartColors();
+        const config = OxiUI.pieChartConfig(['a'], [1]);
+        const color = config.data.datasets[0].backgroundColor[0];
+        expect(color).toBe(OxiUI.mixHex(c.series[0], c.surface, 0.18));
+        expect(color).not.toBe(c.series[0]);
+    });
+
+    it('formats tooltips with the value share and lists folded members', () => {
+        const labels = ['a', 'b', 'c'];
+        const config = OxiUI.pieChartConfig(labels, [60, 30, 10], { maxSlices: 2, format: (v) => '$' + v });
+        const cb = config.options.plugins.tooltip.callbacks;
+        expect(cb.label({ parsed: 60, label: 'a', dataIndex: 0 })).toBe(' a: $60 (60.0%)');
+        expect(cb.afterLabel({ dataIndex: 1 })).toContain('b, c');
+        expect(cb.afterLabel({ dataIndex: 0 })).toBe('');
+    });
+});
+
 describe('OxiUI.getSeriesPalette', () => {
     it('lists the validated series slots first, then the extras, without repeats', () => {
         const palette = OxiUI.getSeriesPalette();
