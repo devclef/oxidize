@@ -367,50 +367,128 @@ describe('OxiUI.getChartColors', () => {
     });
 });
 
-describe('chart grid preference', () => {
-    afterEach(() => {
-        localStorage.removeItem('oxidize_chart_grid');
-        delete globalThis.Chart;
-    });
-
-    it('shows the grid by default', () => {
-        localStorage.removeItem('oxidize_chart_grid');
-        expect(OxiUI.isChartGridEnabled()).toBe(true);
-        const c = OxiUI.getChartColors();
-        expect(c.showGrid).toBe(true);
-        expect(c.gridColor).toBe('#e2e8f0');
-    });
-
-    it('makes the grid transparent when turned off, and persists it', () => {
-        OxiUI.setChartGridEnabled(false);
-        expect(localStorage.getItem('oxidize_chart_grid')).toBe('off');
-        expect(OxiUI.isChartGridEnabled()).toBe(false);
-        expect(OxiUI.getChartColors().gridColor).toBe('transparent');
-        // Other colors are unaffected.
-        expect(OxiUI.getChartColors().textColor).toBe('#475569');
-        OxiUI.setChartGridEnabled(true);
-        expect(OxiUI.getChartColors().gridColor).toBe('#e2e8f0');
-    });
-
-    it('re-colors the grid of live charts and notifies listeners', () => {
-        const update = vi.fn();
-        const chart = {
-            options: { scales: { x: { grid: { color: '#e2e8f0' } }, y: { grid: { color: '#e2e8f0' } }, r: {} } },
-            update
+describe('OxiUI.chartGridPlugin (per-chart grid lines)', () => {
+    function fakeChart(canvas) {
+        return {
+            canvas,
+            options: { scales: { x: { grid: { display: true } }, y: { grid: { display: true } }, r: {} } }
         };
-        globalThis.Chart = { instances: { 0: chart }, defaults: { scale: { grid: { color: '#e2e8f0' } } } };
-        const seen = [];
-        const onChange = (e) => seen.push(e.detail);
-        window.addEventListener('chartGridChanged', onChange);
+    }
 
-        OxiUI.setChartGridEnabled(false);
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
 
-        window.removeEventListener('chartGridChanged', onChange);
-        expect(chart.options.scales.x.grid.color).toBe('transparent');
-        expect(chart.options.scales.y.grid.color).toBe('transparent');
-        expect(update).toHaveBeenCalledWith('none');
-        expect(globalThis.Chart.defaults.scale.grid.color).toBe('transparent');
-        expect(seen).toEqual([false]);
+    it('hides every scale grid for a chart inside data-grid="off"', () => {
+        document.body.innerHTML = '<div class="widget-chart" data-grid="off"><canvas></canvas></div>';
+        const chart = fakeChart(document.querySelector('canvas'));
+        OxiUI.chartGridPlugin.beforeUpdate(chart);
+        expect(chart.options.scales.x.grid.display).toBe(false);
+        expect(chart.options.scales.y.grid.display).toBe(false);
+    });
+
+    it('leaves charts with the grid on untouched', () => {
+        document.body.innerHTML =
+            '<div class="widget-chart" data-grid="on"><canvas id="a"></canvas></div>' +
+            '<div><canvas id="b"></canvas></div>';
+        for (const id of ['a', 'b']) {
+            const chart = fakeChart(document.getElementById(id));
+            OxiUI.chartGridPlugin.beforeUpdate(chart);
+            expect(chart.options.scales.x.grid.display).toBe(true);
+            expect(chart.options.scales.y.grid.display).toBe(true);
+        }
+    });
+
+    it('only affects the chart it belongs to', () => {
+        document.body.innerHTML =
+            '<div data-grid="off"><canvas id="off"></canvas></div>' +
+            '<div data-grid="on"><canvas id="on"></canvas></div>';
+        const off = fakeChart(document.getElementById('off'));
+        const on = fakeChart(document.getElementById('on'));
+        OxiUI.chartGridPlugin.beforeUpdate(off);
+        OxiUI.chartGridPlugin.beforeUpdate(on);
+        expect(off.options.scales.x.grid.display).toBe(false);
+        expect(on.options.scales.x.grid.display).toBe(true);
+    });
+});
+
+describe('pie / doughnut charts', () => {
+    afterEach(() => {
+        document.documentElement.removeAttribute('data-theme');
+    });
+
+    it('sorts slices largest-first, drops empty ones and uses absolute values', () => {
+        const slices = OxiUI.pieSlices(['a', 'b', 'c', 'd'], [10, -50, 0, 20]);
+        expect(slices.map(s => s.label)).toEqual(['b', 'd', 'a']);
+        expect(slices.map(s => s.value)).toEqual([50, 20, 10]);
+    });
+
+    it('folds the tail past the cap into one "Other" slice', () => {
+        const labels = ['a', 'b', 'c', 'd', 'e'];
+        const slices = OxiUI.pieSlices(labels, [50, 40, 30, 20, 10], null, 3);
+        expect(slices.map(s => s.label)).toEqual(['a', 'b', 'Other']);
+        expect(slices[2].value).toBe(60);
+        expect(slices[2].members).toEqual(['c', 'd', 'e']);
+    });
+
+    it('keeps explicit per-slice colors with their slice after sorting', () => {
+        const slices = OxiUI.pieSlices(['Earned', 'Spent'], [100, 300], ['#00aa00', '#aa0000']);
+        expect(slices.map(s => [s.label, s.color])).toEqual([['Spent', '#aa0000'], ['Earned', '#00aa00']]);
+    });
+
+    it('mixHex blends colors and passes non-hex values through', () => {
+        expect(OxiUI.mixHex('#000000', '#ffffff', 0.5)).toBe('#808080');
+        expect(OxiUI.mixHex('#123456', '#ffffff', 0)).toBe('#123456');
+        expect(OxiUI.mixHex('rgb(1,2,3)', '#ffffff', 0.5)).toBe('rgb(1,2,3)');
+    });
+
+    it('builds a doughnut with surface-colored slice gaps and a neutral "Other"', () => {
+        const labels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+        const data = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+        const config = OxiUI.pieChartConfig(labels, data);
+        const c = OxiUI.getChartColors();
+        const ds = config.data.datasets[0];
+        expect(config.type).toBe('doughnut');
+        expect(config.options.cutout).toBe('62%');
+        expect(config.data.labels).toHaveLength(8);
+        expect(config.data.labels[7]).toBe('Other');
+        expect(ds.borderColor).toBe(c.surface);
+        expect(ds.backgroundColor.slice(0, 7)).toEqual(c.series.slice(0, 7));
+        expect(ds.backgroundColor[7]).toBe(c.neutral);
+        expect(config.options.plugins.legend.labels.usePointStyle).toBe(true);
+        expect(config.options.plugins.oxiPieCenterTotal.display).toBe(true);
+    });
+
+    it('can leave the center empty when a total is meaningless', () => {
+        expect(OxiUI.pieChartConfig(['a'], [1]).options.plugins.oxiPieCenterTotal.display).toBe(true);
+        expect(OxiUI.pieChartConfig(['a'], [1], { showTotal: false }).options.plugins.oxiPieCenterTotal.display).toBe(false);
+    });
+
+    it('resolves named theme colors per theme', () => {
+        const light = OxiUI.pieChartConfig(['Earned', 'Spent'], [2, 1], { colors: ['earned', 'spent'] });
+        expect(light.data.datasets[0].backgroundColor).toEqual([OxiUI.getChartColors().earned, OxiUI.getChartColors().spent]);
+        document.documentElement.setAttribute('data-theme', 'dark');
+        const c = OxiUI.getChartColors();
+        const dark = OxiUI.pieChartConfig(['Earned', 'Spent'], [2, 1], { colors: ['earned', 'spent'] });
+        expect(dark.data.datasets[0].backgroundColor).toEqual([OxiUI.mixHex(c.earned, c.surface, 0.18), OxiUI.mixHex(c.spent, c.surface, 0.18)]);
+    });
+
+    it('softens slice colors toward the surface in dark mode', () => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        const c = OxiUI.getChartColors();
+        const config = OxiUI.pieChartConfig(['a'], [1]);
+        const color = config.data.datasets[0].backgroundColor[0];
+        expect(color).toBe(OxiUI.mixHex(c.series[0], c.surface, 0.18));
+        expect(color).not.toBe(c.series[0]);
+    });
+
+    it('formats tooltips with the value share and lists folded members', () => {
+        const labels = ['a', 'b', 'c'];
+        const config = OxiUI.pieChartConfig(labels, [60, 30, 10], { maxSlices: 2, format: (v) => '$' + v });
+        const cb = config.options.plugins.tooltip.callbacks;
+        expect(cb.label({ parsed: 60, label: 'a', dataIndex: 0 })).toBe(' a: $60 (60.0%)');
+        expect(cb.afterLabel({ dataIndex: 1 })).toContain('b, c');
+        expect(cb.afterLabel({ dataIndex: 0 })).toBe('');
     });
 });
 

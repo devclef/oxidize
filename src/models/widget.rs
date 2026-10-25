@@ -103,6 +103,9 @@ pub struct Widget {
 pub struct ChartOptions {
     #[serde(default = "default_show_points")]
     pub show_points: bool,
+    /// Draw the background grid lines on this chart.
+    #[serde(default = "default_show_grid")]
+    pub show_grid: bool,
     #[serde(default = "default_x_axis_limit")]
     pub x_axis_limit: i32,
     #[serde(default = "default_y_axis_limit")]
@@ -156,6 +159,9 @@ fn default_chart_height() -> i32 {
 
 fn default_show_points() -> bool {
     false
+}
+fn default_show_grid() -> bool {
+    true
 }
 fn default_x_axis_limit() -> i32 {
     6
@@ -241,6 +247,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn chart_options_show_grid_defaults_on_and_round_trips() {
+        let opts: ChartOptions = serde_json::from_str("{}").unwrap();
+        assert!(opts.show_grid, "grid lines are shown unless turned off");
+
+        let opts: ChartOptions = serde_json::from_str(r#"{"show_grid": false}"#).unwrap();
+        assert!(!opts.show_grid);
+        let json = serde_json::to_value(&opts).unwrap();
+        assert_eq!(json["show_grid"], serde_json::json!(false));
+    }
+
+    #[test]
     fn chart_options_defaults_for_legacy_json() {
         // Widgets saved before the trend line option existed must still
         // deserialize, picking up the new defaults.
@@ -284,6 +301,7 @@ mod tests {
         // must come back unchanged (non-default values for all fields).
         let json = serde_json::json!({
             "show_points": true,
+            "show_grid": false,
             "x_axis_limit": 9,
             "y_axis_limit": 3,
             "fill_area": false,

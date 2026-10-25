@@ -104,6 +104,13 @@ describe('OxiUI.widgetOptionSupport (shared option matrix)', () => {
         expect(support('balance', { chartMode: 'split' }).stacked).toBe(true);
     });
 
+    it('offers grid lines on every chart with axes', () => {
+        for (const t of ALL_TYPES) {
+            expect(support(t, { chartType: 'line' }).grid, t).toBe(!['saved_this_month', 'sankey'].includes(t));
+        }
+        expect(support('budget_spent', { chartType: 'pie' }).grid).toBe(false);
+    });
+
     it('does not offer Line/Pie where no pie is implemented', () => {
         for (const t of ['net_worth', 'card_paydown', 'saved_this_month', 'sankey']) {
             expect(support(t).chartType, t).toBe(false);
@@ -238,6 +245,7 @@ const CONTROL_MAP = {
     forecast: { dash: 'enable-forecast', builder: 'enable-forecast' },
     trendline: { dash: 'enable-trendline', builder: 'enable-trendline' },
     lineStyle: { dash: 'show-points', builder: 'show-points-toggle' },
+    grid: { dash: 'show-grid', builder: 'show-grid-toggle' },
     beginAtZero: { dash: 'begin-zero', builder: 'begin-zero-toggle' },
     ticks: { dash: 'x-limit', builder: 'x-axis-limit' },
     exclusions: { dash: 'exclude-categories', builder: 'exclude-categories-select' }
@@ -347,12 +355,12 @@ describe('dashboard widget settings follow the option matrix', () => {
     it('uses the builder wording for every option (sentence case)', () => {
         renderDashSettings({ id: 'b', widget_type: 'balance', accounts: ['1'], chart_mode: 'split', chart_options: {} });
         const text = document.body.textContent;
-        for (const label of ['Layout:', 'Style:', 'Stacked', 'Show % change', 'Show points', 'Fill area',
+        for (const label of ['Layout:', 'Style:', 'Stacked', 'Show % change', 'Show points', 'Show grid lines', 'Fill area',
             'Y-axis from zero', 'X-axis ticks:', 'Y-axis ticks:', 'Line smoothness:', 'Forecast trend',
             'Trend line (moving average)', 'Window (points):', 'Compare with previous period', 'Accounts:', 'Groups:']) {
             expect(text, label).toContain(label);
         }
-        for (const old of ['Chart Mode', 'Chart Type', 'Stack Values', 'Show Points', 'Fill Area', 'Trend Window']) {
+        for (const old of ['Chart Mode', 'Chart Type', 'Stack Values', 'Show Points', 'Show Grid Lines', 'Fill Area', 'Trend Window']) {
             expect(text, old).not.toContain(old);
         }
     });
@@ -375,10 +383,12 @@ describe('Graph Builder controls follow the same option matrix', () => {
         }
     }
 
-    it('hides the advanced section entirely for card paydown', () => {
+    it('leaves only the grid lines option for card paydown', () => {
         setBuilderState('card_paydown', STATES[0]);
-        expect(isShown(document.getElementById('advanced-section'))).toBe(false);
         expect(isShown(document.getElementById('display-group'))).toBe(false);
+        const shown = Array.from(document.querySelectorAll('#advanced-section [data-opt]'))
+            .filter(isShown).map(el => el.dataset.opt);
+        expect(shown).toEqual(['grid']);
     });
 
     it('drops the Saved This Month preview when another type is charted', async () => {
@@ -521,10 +531,10 @@ describe('dashboard multi-series widgets honor every display option', () => {
     it('renders a pie of per-series totals with explicit colors', () => {
         dash.renderMultiSeriesWidget({}, { id: 'm1', chart_type: 'pie' }, HISTORY, ds => ds.label === 'Fun' ? '#123456' : null);
         const chart = dash.widgetCharts.m1;
-        expect(chart.config.type).toBe('pie');
+        expect(chart.config.type).toBe('doughnut'); // shared OxiUI pie (doughnut + total)
         expect(chart.data.labels).toEqual(['Groceries', 'Fun']);
         expect(chart.data.datasets[0].data).toEqual([40, 12]);
-        expect(chart.data.datasets[0].borderColor[1]).toBe('#123456');
+        expect(String(chart.data.datasets[0].backgroundColor[1]).toLowerCase()).toContain('123456');
     });
 });
 
@@ -560,7 +570,7 @@ describe('dashboard widget rendering state', () => {
         );
         expect(document.getElementById('r1-error').textContent).toBe('');
         expect(document.getElementById('r1-legend').style.display).toBe('none');
-        expect(dash.widgetCharts.r1.config.type).toBe('pie');
+        expect(dash.widgetCharts.r1.config.type).toBe('doughnut');
     });
 
     it('treats a balance widget without chart_mode as combined (what the settings show)', async () => {
@@ -593,6 +603,7 @@ describe('dashboard widget settings are saved with the widget', () => {
         const widget = { id: 'x', widget_type: 'balance', accounts: ['1'], chart_mode: 'split', chart_options: null };
         render(widget);
         set('x-show-points', 'checked', true);
+        set('x-show-grid', 'checked', false);
         set('x-fill-area', 'checked', false);
         set('x-begin-zero', 'checked', true);
         set('x-x-limit', 'value', '8');
@@ -616,7 +627,7 @@ describe('dashboard widget settings are saved with the widget', () => {
         dash.readWidgetSettings('x', widget);
 
         expect(widget.chart_options).toMatchObject({
-            show_points: true, fill_area: false, begin_at_zero: true, x_axis_limit: 8, y_axis_limit: 5,
+            show_points: true, show_grid: false, fill_area: false, begin_at_zero: true, x_axis_limit: 8, y_axis_limit: 5,
             tension: 0.3, show_pct: true, pct_mode: 'from_first', enable_forecast: true, forecast_days: 45,
             show_trendline: true, trendline_window: 9, stacked: true, enable_comparison: true,
             comparison_start_date: '2025-01-01', comparison_end_date: '2025-01-31'

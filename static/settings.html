@@ -207,27 +207,6 @@
 
     <section class="section-card">
         <div class="section-header">
-            <h3 class="section-title">Appearance</h3>
-        </div>
-
-        <div class="setting-row">
-            <div class="setting-info">
-                <label class="setting-title" for="chart-grid-toggle">Chart grid lines</label>
-                <p class="setting-desc">
-                    Draw the background grid on every chart. Saved in this
-                    browser, like the light/dark theme.
-                </p>
-            </div>
-            <span class="switch" title="Toggle chart grid lines">
-                <input type="checkbox" id="chart-grid-toggle" role="switch"
-                       aria-label="Show chart grid lines">
-                <span class="slider" aria-hidden="true"></span>
-            </span>
-        </div>
-    </section>
-
-    <section class="section-card">
-        <div class="section-header">
             <h3 class="section-title">Features</h3>
         </div>
 
@@ -448,16 +427,7 @@
                     return r.json();
                 })
                 .then(s => {
-                    const gridToggle = document.getElementById('chart-grid-toggle');
-        if (gridToggle) {
-            gridToggle.checked = OxiUI.isChartGridEnabled();
-            gridToggle.addEventListener('change', () => {
-                OxiUI.setChartGridEnabled(gridToggle.checked);
-                toast(gridToggle.checked ? 'Chart grid lines on' : 'Chart grid lines off', 'success');
-            });
-        }
-
-        for (const [id, f] of Object.entries(fields)) {
+                    for (const [id, f] of Object.entries(fields)) {
                         const el = document.getElementById(id);
                         if (el) el.checked = !!s[f.key];
                     }

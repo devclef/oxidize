@@ -34,6 +34,7 @@ parity for every type and state, saving, rendering) and
 | Show % change + mode | ✓ (line) | – | ✓ (line) | ✓ | – | – | – |
 | Compare with previous period | ✓ (line) | – | – | – | – | – | – |
 | Show points / fill area / smoothness | ✓ (line) | – | ✓ (line) | ✓ | – | – | – |
+| Show grid lines | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | ✓ | – | – |
 | Y-axis from zero | ✓ (line) | delta line only | ✓ (line) | ✓ | – | – | – |
 | X/Y-axis ticks | ✓ (line) | ✓ (line) | ✓ (line) | ✓ | – | – | – |
 | Forecast | ✓ (line) | – | – | – | – | – | – |
@@ -120,7 +121,7 @@ parity for every type and state, saving, rendering) and
     are enabled.
 20. **Same wording on both pages, in sentence case** (per CLAUDE.md):
     Layout, Style, Variant, Group by, Stacked (was "Stack Values"), Show %
-    change, Show points, Fill area, Y-axis from zero, X/Y-axis ticks, Line
+    change, Show points, Show grid lines, Fill area, Y-axis from zero, X/Y-axis ticks, Line
     smoothness, Window (points), and so on. The dashboard groups its
     settings as Data / Date range / Display / Exclusions / Width / Assign to
     dashboards.
