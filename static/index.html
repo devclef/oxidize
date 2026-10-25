@@ -290,9 +290,13 @@
                     <div class="toggle-group" id="budget-breakdown-options-group" style="display: none;">
                         <span class="control-caption">Break down by</span>
                         <div class="earned-chart-type-selector">
-                            <label class="mode-label" title="One series per category the selected budgets are charged to">
+                            <label class="mode-label" title="One series per full category (Parent:Sub) the selected budgets are charged to">
                                 <input type="radio" name="budget-breakdown-by" value="category" checked>
-                                Categories
+                                Full categories
+                            </label>
+                            <label class="mode-label" title="One series per main category: subcategories (Parent:Sub) are rolled up into their main category">
+                                <input type="radio" name="budget-breakdown-by" value="main_category">
+                                Main categories
                             </label>
                             <label class="mode-label" title="One series per destination account the selected budgets' spend is charged to">
                                 <input type="radio" name="budget-breakdown-by" value="destination">

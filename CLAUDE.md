@@ -181,15 +181,17 @@ this budget's money actually go?":
 
 - `GET /api/budgets/breakdown?start&end&period&by&budgets[]&accounts[]
   &exclude_categories[]&exclude_budgets[]` — standard `ChartLine`, one
-  dataset per category (default `by=category`) or per destination account
-  (`by=destination`), sorted by total spend desc, built from the shared
+  dataset per full category (default `by=category`, e.g. `Dining:Bars`),
+  per main category (`by=main_category`: subcategories rolled up into the
+  part before `:`) or per destination account (`by=destination`), sorted by total spend desc, built from the shared
   transaction pipeline (`fetch_all_transactions` + `is_journal_spent` +
   exclusion filtering). Only spend charged to a selected budget counts
   (empty selection = all budgeted spend); missing category/destination
   names fall back to "Uncategorized" / "Unknown account".
 
 The widget reuses `budget_names` (required in the builder, ≥1 selected),
-stores `budget_breakdown_by` (`"category"` default / `"destination"`),
+stores `budget_breakdown_by` (`"category"` default = full category /
+`"main_category"` / `"destination"`),
 and reuses `accounts`/`group_ids` (optional account filter), `interval`,
 `chart_type` (line/pie), exclusions and stacking. Widget settings on the
 dashboard page expose budget multi-selects and a "break down by" selector.
@@ -450,7 +452,7 @@ CREATE TABLE groups (
 **`Widget`** — configurable dashboard chart widget:
 - `widget_type`: `"balance"` (default), `"earned_spent"`, `"budget_spent"`, `"expenses_by_category"`, `"category_subcat"`, `"net_worth"`, `"card_paydown"`, `"saved_this_month"`, `"sankey"`, `"label_spend"`, `"subscription_cost"` or `"budget_breakdown"`
 - `include_unlabeled`: optional bool for `label_spend` widgets (absent = include the "Unlabeled" series)
-- `budget_breakdown_by`: optional string for `budget_breakdown` widgets — `"category"` (default; absent) or `"destination"` (chart the selected budgets' spend per destination account instead of per category)
+- `budget_breakdown_by`: optional string for `budget_breakdown` widgets — `"category"` (default; absent — full `Parent:Sub` category), `"main_category"` (subcategories rolled up into their main category) or `"destination"` (chart the selected budgets' spend per destination account instead of per category)
 - `subscription_ids` / `subscription_group_ids`: id arrays for `subscription_cost` widgets (Firefly III bill ids + object-group ids; both empty = all subscriptions)
 - `exclude_categories` / `exclude_budgets`: optional name arrays that exclude categories/budgets entirely from the widget's data (merged with dashboard-level exclusions)
 - `chart_options`: optional `ChartOptions` struct with display settings (show_points, fill_area, tension, x/y axis limits, begin_at_zero, show_pct, pct_mode)
@@ -539,7 +541,7 @@ All five page handlers inject server-side config as a `window.OXIDIZE_CONFIG` sc
 | `GET` | `/api/budgets/list` | `start`, `end` | Budget list |
 | `GET` | `/api/budgets/spent` | `start`, `end`, `exclude_budgets[]` | Spent per budget for the period |
 | `GET` | `/api/budgets/spent-history` | `start`, `end`, `period`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Spent-per-budget time series |
-| `GET` | `/api/budgets/breakdown` | `start`, `end`, `period`, `by` (`category` default / `destination`), `budgets[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Selected budgets' spend over time, one series per category or destination account (Budget Breakdown widget) |
+| `GET` | `/api/budgets/breakdown` | `start`, `end`, `period`, `by` (`category` default / `main_category` / `destination`), `budgets[]`, `accounts[]`, `exclude_categories[]`, `exclude_budgets[]` | Selected budgets' spend over time, one series per category or destination account (Budget Breakdown widget) |
 | `GET` | `/api/budgets/comparison` | `start`, `end`, `budget_names` (repeatable), `exclude_categories[]`, `exclude_budgets[]` | This year vs last year + projections vs limits |
 | `GET` | `/api/budgets/avg-cost` | `budget_names` (repeatable), `mode`, `months`, `account_ids` (comma-separated), `month`, `year`, `exclude_categories[]`, `exclude_budgets[]` | Average monthly cost per budget |
 | `GET` | `/api/card-paydown` | `start`, `end`, `accounts[]`, `debug` | Credit card paydown analysis |

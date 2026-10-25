@@ -467,12 +467,14 @@ pub async fn get_budget_spent_history(
 }
 
 /// GET endpoint for budget breakdown: the selected budgets' spend over
-/// time, broken down per category or per destination account.
+/// time, broken down per category (full or main) or per destination
+/// account.
 ///
 /// Query params:
 ///   start, end (default: last 365 days / today), period (default "1M"),
 ///   budgets[] (optional: only spend charged to these budgets; empty =
-///   all budgeted spend), by ("category" default | "destination"),
+///   all budgeted spend), by ("category" default = full "Parent:Sub" name |
+///   "main_category" = main category only | "destination"),
 ///   accounts[] (optional), exclude_categories[], exclude_budgets[].
 ///
 /// Response: standard ChartLine (one dataset per category or destination

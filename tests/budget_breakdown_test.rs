@@ -279,6 +279,42 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn breakdown_by_main_category() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let chart = get_breakdown(
+            "/api/budgets/breakdown?start=2026-01-01&end=2026-02-28&period=1M\
+             &by=main_category&budgets[]=Groceries&budgets[]=Dining%20Out",
+        )
+        .await;
+        // Subcategories roll up into their main category: Dining (Bars 20
+        // + Restaurants 40 = 60) < Groceries (Supermarkets 80).
+        assert_eq!(labels(&chart), vec!["Groceries", "Dining"]);
+        let datasets = chart.as_array().unwrap();
+        assert_eq!(datasets[0]["entries"]["2026-01-31T00:00:00+00:00"], -50.0);
+        assert_eq!(datasets[0]["entries"]["2026-02-28T00:00:00+00:00"], -30.0);
+        assert_eq!(datasets[1]["entries"]["2026-01-31T00:00:00+00:00"], -20.0);
+        assert_eq!(datasets[1]["entries"]["2026-02-28T00:00:00+00:00"], -40.0);
+    }
+
+    #[actix_web::test]
+    async fn breakdown_by_full_category_keeps_subcategories() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let chart = get_breakdown(
+            "/api/budgets/breakdown?start=2026-01-01&end=2026-02-28&period=1M\
+             &by=category&budgets[]=Groceries&budgets[]=Dining%20Out",
+        )
+        .await;
+        assert_eq!(
+            labels(&chart),
+            vec![
+                "Groceries:Supermarkets",
+                "Dining:Restaurants",
+                "Dining:Bars"
+            ]
+        );
+    }
+
+    #[actix_web::test]
     async fn breakdown_by_destination() {
         let _guard = TEST_LOCK.lock().unwrap();
         let chart = get_breakdown(

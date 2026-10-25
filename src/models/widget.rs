@@ -63,8 +63,9 @@ pub struct Widget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sankey_flow_type: Option<String>,
     /// Budget breakdown widgets: what the selected budgets' spend is
-    /// charted over time by: "category" (default; absent = category) or
-    /// "destination" (the destination account of the spend).
+    /// charted over time by: "category" (default; absent = full category
+    /// incl. subcategory), "main_category" (subcategories rolled up into
+    /// their main category) or "destination" (the destination account).
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget_breakdown_by: Option<String>,

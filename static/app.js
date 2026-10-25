@@ -1872,7 +1872,7 @@ function buildBudgetBreakdownParams({ startDate, endDate, interval,
     if (startDate) params.append('start', startDate);
     if (endDate) params.append('end', endDate);
     if (interval && interval !== 'auto') params.append('period', interval);
-    params.append('by', by === 'destination' ? 'destination' : 'category');
+    params.append('by', normalizeBudgetBreakdownBy(by));
     (budgetNames || []).forEach(name => params.append('budgets[]', name));
     (accountIds || []).forEach(id => params.append('accounts[]', id));
     (excludedCategories || []).forEach(c => params.append('exclude_categories[]', c));
@@ -1880,10 +1880,23 @@ function buildBudgetBreakdownParams({ startDate, endDate, interval,
     return params;
 }
 
+/** "destination" | "main_category" | "category" (default for anything else). */
+function normalizeBudgetBreakdownBy(by) {
+    return by === 'destination' || by === 'main_category' ? by : 'category';
+}
+
+/** Chart title for a budget_breakdown "break down by" mode. */
+function budgetBreakdownTitle(by) {
+    const mode = normalizeBudgetBreakdownBy(by);
+    if (mode === 'destination') return 'Budget Breakdown: Destination Accounts';
+    if (mode === 'main_category') return 'Budget Breakdown: Main Categories';
+    return 'Budget Breakdown: Categories';
+}
+
 /** The selected "break down by" radio value in the builder. */
 function getBudgetBreakdownBy() {
     const radio = document.querySelector('input[name="budget-breakdown-by"]:checked');
-    return radio && radio.value === 'destination' ? 'destination' : 'category';
+    return normalizeBudgetBreakdownBy(radio && radio.value);
 }
 
 async function fetchSubscriptions() {
@@ -5018,9 +5031,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'saved_this_month': 'Saved This Month',
                     'label_spend': 'Spending by Label',
                     'subscription_cost': 'Subscription Cost Over Time',
-                    'budget_breakdown': getBudgetBreakdownBy() === 'destination'
-                        ? 'Budget Breakdown: Destination Accounts'
-                        : 'Budget Breakdown: Categories',
+                    'budget_breakdown': budgetBreakdownTitle(getBudgetBreakdownBy()),
                 };
                 chartTitle.textContent = titles[widgetType] || 'Account Balance History';
             }
@@ -5167,9 +5178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         radio.addEventListener('change', () => {
             const chartTitle = document.getElementById('chart-title');
             if (chartTitle) {
-                chartTitle.textContent = getBudgetBreakdownBy() === 'destination'
-                    ? 'Budget Breakdown: Destination Accounts'
-                    : 'Budget Breakdown: Categories';
+                chartTitle.textContent = budgetBreakdownTitle(getBudgetBreakdownBy());
             }
             fetchChartData();
         });
