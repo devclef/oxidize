@@ -2381,10 +2381,11 @@ button:hover {
     white-space: nowrap;
 }
 
-.nav-brand svg {
-    width: 18px;
-    height: 18px;
+.nav-brand-logo {
+    width: 22px;
+    height: 22px;
     flex-shrink: 0;
+    border-radius: 5px;
 }
 
 /* ── Keyboard focus ──────────────────────────────────────────────────── */

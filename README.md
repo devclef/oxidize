@@ -1,3 +1,5 @@
+<p align="center"><img src="static/icons/logo.svg" width="96" height="96" alt="Oxidize logo"></p>
+
 # Oxidize
 
 A lightweight Rust web dashboard for [Firefly III](https://firefly-iii.org/). Oxidize proxies the Firefly III API, aggregates financial data, and presents it through a configurable web UI with chart widgets, account groups, and multiple views.

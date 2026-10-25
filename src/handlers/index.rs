@@ -63,7 +63,12 @@ pub async fn service_worker() -> HttpResponse {
 
 #[get("/favicon.ico")]
 pub async fn favicon() -> HttpResponse {
-    // Return a minimal valid favicon.ico (16x16 transparent PNG as ICO)
-    // Actually, just return 204 No Content to suppress the 404
-    HttpResponse::NoContent().finish()
+    // Browsers accept a PNG served at /favicon.ico.
+    match std::fs::read("./static/icons/favicon-32x32.png") {
+        Ok(bytes) => HttpResponse::Ok()
+            .content_type("image/png")
+            .insert_header(("Cache-Control", "public, max-age=86400"))
+            .body(bytes),
+        Err(_) => HttpResponse::NoContent().finish(),
+    }
 }
