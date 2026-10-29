@@ -4,7 +4,9 @@ version = "0.10.0"
 edition = "2021"
 
 [dependencies]
-actix-web = "4"
+# http2 is left out: the server only speaks plain HTTP/1, and it pulls in the
+# unmaintained h2 0.3 (RUSTSEC-2026-0258).
+actix-web = { version = "4", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
 actix-files = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
